@@ -1,10 +1,22 @@
+import asyncio
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.routers import auth, users, residents, forge, profile, search
 from app.ws.handler import websocket_handler
+from app.tasks.heat_cron import heat_cron_loop
 
-app = FastAPI(title="Skills World API")
+
+@asynccontextmanager
+async def lifespan(app):
+    # Start heat cron on startup
+    task = asyncio.create_task(heat_cron_loop())
+    yield
+    task.cancel()
+
+
+app = FastAPI(title="Skills World API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
