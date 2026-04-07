@@ -25,3 +25,17 @@ class ResidentDetail(ResidentListItem):
     total_conversations: int
     avg_rating: float
     creator_id: str
+
+
+class ResidentEditRequest(BaseModel):
+    ability_md: str | None = None
+    persona_md: str | None = None
+    soul_md: str | None = None
+
+
+class VersionSnapshot(BaseModel):
+    version_number: int
+    ability_md: str
+    persona_md: str
+    soul_md: str
+    created_at: str

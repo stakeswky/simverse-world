@@ -20,6 +20,7 @@ class Resident(Base):
     persona_md: Mapped[str] = mapped_column(Text, default="")
     soul_md: Mapped[str] = mapped_column(Text, default="")
     meta_json: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=None)
+    versions_json: Mapped[list] = mapped_column(JSON, default=list, nullable=True)
     sprite_key: Mapped[str] = mapped_column(String(100), default="伊莎贝拉")
     tile_x: Mapped[int] = mapped_column(Integer, default=76)  # Default spawn: Central Plaza
     tile_y: Mapped[int] = mapped_column(Integer, default=50)
