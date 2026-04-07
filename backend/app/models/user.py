@@ -15,3 +15,4 @@ class User(Base):
     avatar: Mapped[str | None] = mapped_column(String(500), nullable=True)
     soul_coin_balance: Mapped[int] = mapped_column(Integer, default=100)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    last_daily_reward_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

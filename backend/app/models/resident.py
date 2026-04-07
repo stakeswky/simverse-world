@@ -29,3 +29,4 @@ class Resident(Base):
     avg_rating: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     last_conversation_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    search_vector: Mapped[str | None] = mapped_column(Text, nullable=True)
