@@ -62,14 +62,35 @@
 ### 居民的"住所"
 
 每个通过审核的居民在城市里有一个固定位置（一间像素小屋/工位/摊位）。访客走近时能看到：
-- 居民的像素头像（可自动生成或创作者上传）
+- 居民的像素头像（可自动生成、AI 生成、或创作者上传自定义皮肤）
 - 名牌：名字 + 一句话简介
 - 状态灯：🟢 空闲 / 🟡 对话中 / 🔴 维护中
 - 热度指标：最近被访问的频率
 
+### 居民状态与行为（参考 Star Office UI）
+
+居民不是静止的立绘，而是有状态驱动的像素角色。状态自动映射到行为动画：
+
+| 状态 | 行为表现 | 头顶气泡 |
+|------|---------|---------|
+| idle（空闲） | 待在住所，偶尔小动作（伸懒腰、看书） | 随机显示口头禅或想法 |
+| chatting（对话中） | 面朝访客，说话动画 | 💬 + 对话摘要 |
+| busy（被占用） | 忙碌动画（打字、翻文件） | 🔒 正在和别人聊 |
+| sleeping（长期无访问） | 趴在桌上打瞌睡 | 💤 |
+| popular（高热度） | 精神抖擞，住所周围有光效 | 🔥 |
+
+气泡系统：角色头顶浮动气泡，支持 emoji + 短文本，根据状态和 Persona 动态生成。
+
 ### 街区分配逻辑
 
 居民入住时，系统根据 `meta.json` 中的 `role`、`tags` 自动推荐街区。创作者也可以手动选择。虚构角色和无法分类的人格默认进入自由区。
+
+### 资产自定义
+
+创作者可以自定义居民的视觉外观（参考 Star Office UI 的资产管理系统）：
+- 像素头像：系统自动生成 / AI 生图生成 / 创作者上传自定义 spritesheet
+- 住所装饰：从预设模板中选择，或上传自定义装饰素材
+- 布局配置化：所有坐标、层级、资源路径统一管理在配置文件中（参考 Star Office UI 的 `layout.js` 模式），避免 magic numbers
 
 ### 子世界：体验场
 
@@ -276,9 +297,23 @@ residents/{slug}/
 
 ### 参考实现
 
-本项目的像素世界渲染方案参考 [x-glacier/GenerativeAgentsCN](https://github.com/x-glacier/GenerativeAgentsCN)（斯坦福 AI 小镇中文重构版）。该项目验证了 Phaser.js + Tiled 地图 + 32x32 像素角色的技术可行性。
+本项目的像素世界方案参考两个开源项目：
 
-关键差异：GenerativeAgentsCN 是离线模拟 + 回放（先跑模拟存数据，再启动 Flask 回放）；Skills World 是实时交互（玩家在线操控 avatar，实时与居民对话），需要 WebSocket 实时通信层。
+**1. [x-glacier/GenerativeAgentsCN](https://github.com/x-glacier/GenerativeAgentsCN)**（斯坦福 AI 小镇中文重构版）
+- 提供：Phaser.js + Tiled 地图 + 32x32 像素角色的完整渲染方案
+- 借鉴：地图系统、角色 spritesheet 动画、摄像头跟随、寻路系统
+- 差异：该项目是离线模拟+回放；Skills World 是实时交互
+
+**2. [ringhyacinth/Star-Office-UI](https://github.com/ringhyacinth/Star-Office-UI)**（像素风 AI 办公室看板）
+- 提供：状态驱动的像素角色行为、气泡系统、资产管理、多 Agent 协作
+- 借鉴：
+  - 状态→区域自动映射（idle/chatting/busy/sleeping 对应不同行为动画）
+  - 头顶气泡系统（emoji + 短文本，动态显示状态和想法）
+  - 资产自定义（侧边栏管理角色皮肤、场景装饰，支持动态替换）
+  - AI 生图（接入 AI API 生成像素头像和场景背景）
+  - Join Key 机制（邀请其他 agent 加入空间，可用于私人庄园访客系统）
+  - layout.js 配置化（坐标、层级、资源路径统一管理，避免 magic numbers）
+- 差异：该项目是单场景看板（1280x720 固定画布，纯 CSS 动画）；Skills World 是可滚动大地图（需要 Phaser.js 游戏引擎）
 
 ### 整体架构
 
@@ -504,7 +539,172 @@ Phase B:  + Agent Loop → 持久进程 → 长期记忆 + 目标系统
 
 ---
 
-## 附录：colleague-skill 分析
+## 八、MVP 缺口分析与补充设计
+
+对照当前 spec，以下是 MVP 阶段前后端需要补充的关键设计。
+
+### 前端缺口
+
+**F1. 地图制作工作流未定义**
+
+当前 spec 说了"用 Tiled 编辑器"，但没有定义谁来做地图、地图多大、怎么分区。
+
+补充设计：
+- MVP 地图尺寸：140x100 tiles（4480x3200 像素），与 GenerativeAgentsCN 一致
+- 初始地图包含：中央广场 + 工程街区 + 学院区 + 自由区（4 个区域）
+- 地图由项目团队用 Tiled 预制，MVP 不开放用户自建地图
+- 每个街区预留 20-30 个居民位（tile 坐标），居民入住时从空位中分配
+- 地图数据结构：`tilemap.json`（渲染层）+ `collision.json`（碰撞层）+ `zones.json`（区域标注层）
+
+**F2. 寻路系统**
+
+玩家和居民在地图上移动需要绕过建筑和障碍物。GenerativeAgentsCN 的 `maze.py` 有碰撞检测但寻路较简单。
+
+补充设计：
+- 使用 [easystarjs](https://github.com/prettymuchbryce/easystarjs)（Phaser 生态的 A* 寻路库）
+- 碰撞层从 Tiled 导出的 collision layer 生成
+- 玩家移动：键盘 WASD/方向键直接控制，碰撞检测阻止穿墙
+- 居民移动（Phase C/B）：A* 寻路到目标位置
+
+**F3. 响应式与移动端**
+
+当前 spec 说"MVP 不做移动端"，但 Web 游戏天然会被手机打开。
+
+补充设计：
+- MVP 支持基础的移动端访问：触屏虚拟摇杆移动，点击居民交互
+- 画布自适应缩放（参考 Star Office UI 的 zoom 参数和 GenerativeAgentsCN 的 `Scale.FIT`）
+- 对话界面在移动端全屏覆盖，避免小屏幕上游戏画面和对话框挤在一起
+
+**F4. 加载体验**
+
+像素地图 + 多个 tileset + 角色 spritesheet，首次加载资源量不小。
+
+补充设计：
+- 骨架屏 + 像素风加载进度条（参考 Star Office UI 的 `totalAssets` 计数方式）
+- 资源按需加载：先加载当前街区的 tileset 和附近居民的 spritesheet，远处的延迟加载
+- tileset 图片使用 WebP 格式（不透明资源）+ PNG（透明资源），参考 Star Office UI 的 `forcePng` 策略
+
+**F5. 对话 UI**
+
+当前 spec 只说"弹出信息卡片"和"进入对话界面"，没有具体设计。
+
+补充设计：
+- 走近居民 → 弹出悬浮信息卡（名字、简介、状态、热度、对话费用）
+- 点击"开始对话" → 右侧滑出对话面板（游戏画面左移让出空间，参考 Star Office UI 的 `drawer-open` 布局偏移）
+- 对话面板：居民像素头像 + 聊天气泡式消息流 + 输入框
+- LLM 响应流式输出（SSE / WebSocket），逐字显示
+- 对话结束 → 评分弹窗（1-5 星）→ 关闭面板回到地图
+
+### 后端缺口
+
+**B1. 认证与安全**
+
+当前 spec 只说"注册/登录"，没有具体方案。
+
+补充设计：
+- MVP 使用 OAuth 2.0 社交登录（GitHub 优先，面向开发者群体）+ 邮箱密码注册
+- JWT token 认证，存 Redis，支持过期刷新
+- WebSocket 连接时验证 JWT
+- API 限流：对话接口按用户限流（防止刷代币），全局限流（防止 LLM 成本失控）
+- 参考 Star Office UI 的安全实践：Session Cookie 加固、弱密码拦截
+
+**B2. LLM 调用的成本控制**
+
+混合分层说了 Haiku/Sonnet/Opus 三档，但没有定义具体的成本控制策略。
+
+补充设计：
+- 每轮对话设置 max_tokens 上限（标准层 512 tokens，高级层 1024 tokens）
+- 系统 prompt 压缩：ability.md + persona.md + soul.md 合并后如果超过 4K tokens，自动摘要压缩
+- 对话上下文窗口：保留最近 10 轮，更早的轮次摘要化
+- 每用户每日对话轮次上限（MVP：免费用户 50 轮/天）
+- LLM 调用异步队列化，避免并发高峰打爆 API quota
+- 支持 Ollama 本地模型作为免费层的降级方案
+
+**B3. 居民数据的存储与检索**
+
+当前 spec 把 `ability_md`, `persona_md`, `soul_md` 直接存在 residents 表里。三个 Markdown 文件可能很大。
+
+补充设计：
+- 三层 Markdown 存 S3/OSS，数据库只存引用路径 + 摘要（用于搜索和展示）
+- 居民搜索：PostgreSQL 全文检索（`tsvector`），索引字段：name, tags, district, 摘要
+- 热门居民缓存：Redis sorted set，按 heat 排序，首页公告板直接读缓存
+
+**B4. WebSocket 状态同步**
+
+当前 spec 说了 WebSocket 用于"玩家移动、状态同步"，但没有定义协议。
+
+补充设计：
+- WebSocket 消息协议（JSON）：
+
+```json
+// 客户端 → 服务端
+{"type": "move", "x": 120, "y": 85}
+{"type": "start_chat", "resident_id": "zhangsan"}
+{"type": "chat_msg", "text": "你好"}
+{"type": "end_chat"}
+
+// 服务端 → 客户端
+{"type": "player_moved", "player_id": "xxx", "x": 120, "y": 85}
+{"type": "resident_status", "resident_id": "zhangsan", "status": "chatting"}
+{"type": "chat_reply", "text": "先说一下context...", "done": false}
+{"type": "chat_reply", "text": "", "done": true}
+{"type": "nearby_residents", "residents": [...]}
+{"type": "coin_update", "balance": 95, "delta": -1, "reason": "chat"}
+```
+
+- 玩家只接收视野范围内的状态更新（减少带宽）
+- 居民状态变更广播给同一街区的所有在线玩家
+
+**B5. 炼化器后端**
+
+当前 spec 定义了炼化的问答流程，但没有定义后端如何生成三层 Skill。
+
+补充设计：
+- 炼化流程是一个多步 LLM pipeline：
+  1. 用户回答 Q1-Q5 → 收集原始输入
+  2. 调用 LLM（Sonnet）生成 `ability.md`（参考 colleague-skill 的 `work_analyzer.md` prompt）
+  3. 调用 LLM（Sonnet）生成 `persona.md`（参考 `persona_analyzer.md` + `persona_builder.md`）
+  4. 调用 LLM（Sonnet）生成 `soul.md`（新增 prompt，提取价值观、经历、兴趣、情感）
+  5. 合并为 `SKILL.md` → 自动评分 → 分配街区
+- 如果用户上传了原材料（文档、聊天记录），先用 LLM 提取关键信息，再喂给上述 pipeline
+- 炼化是异步任务（可能需要 30-60 秒），前端显示进度条
+- 炼化结果存入 S3 + 数据库，生成居民记录
+
+**B6. 进化与纠正机制**
+
+colleague-skill 的进化机制（追加文件 + 对话纠正）需要在 Skills World 中实现。
+
+补充设计：
+- 创作者可以在个人主页对自己的居民执行：
+  - 追加原材料 → 触发增量分析 → merge 进对应层
+  - 手动编辑三层 Markdown（高级模式）
+- 访客在对话中说"你不应该这样"类似的纠正 → 记录到 Correction Log → 通知创作者审核
+- 每次更新自动版本存档（最多保留 10 个版本）
+
+### 跨端缺口
+
+**C1. 多人同屏**
+
+当前 spec 没有明确说 Skills World 是否支持多个访客同时在线、互相可见。
+
+补充设计：
+- MVP 支持多人同屏：你能看到其他访客的 avatar 在地图上移动
+- 但 MVP 不支持访客之间的直接对话（只能和居民对话）
+- 同一居民同时只能和一个访客对话（状态变为 busy，其他人看到 🔒）
+- 在线玩家数通过 WebSocket 连接数管理，MVP 目标支撑 100 并发
+
+**C2. 离线/弱网体验**
+
+补充设计：
+- 地图资源加载后缓存到 Service Worker，二次访问秒开
+- WebSocket 断线自动重连（指数退避）
+- 对话中断线 → 重连后恢复对话上下文（从 Redis 读取）
+
+---
+
+## 附录：参考项目分析
+
+### A. colleague-skill
 
 本设计基于对 [titanwings/colleague-skill](https://github.com/titanwings/colleague-skill) 的深度分析。该项目的核心贡献：
 
@@ -514,3 +714,25 @@ Phase B:  + Agent Loop → 持久进程 → 长期记忆 + 目标系统
 4. **进化机制**（追加文件 + 对话纠正 + 版本管理）— 完整保留
 5. **多源数据采集**（飞书/钉钉/Slack/邮件）— 作为炼化工具之一兼容
 6. **AgentSkills 标准** — 本设计的 Skill 格式完全兼容
+
+### B. GenerativeAgentsCN
+
+[x-glacier/GenerativeAgentsCN](https://github.com/x-glacier/GenerativeAgentsCN) 提供了像素世界的核心渲染方案：
+
+1. **Phaser.js 3.x + Tiled tilemap** — 验证了 2D 像素世界的技术可行性
+2. **32x32 像素角色 spritesheet** — 四方向行走动画标准
+3. **CuteRPG tileset 资源体系** — 可复用的地图素材
+4. **maze.json 地图数据格式** — 碰撞层 + 区域层的结构化表示
+5. **agent 模拟循环**（感知→记忆→思考→行动）— Phase B/C 的 Agent Loop 可参考
+
+### C. Star Office UI
+
+[ringhyacinth/Star-Office-UI](https://github.com/ringhyacinth/Star-Office-UI) 提供了产品设计层面的关键借鉴：
+
+1. **状态→区域自动映射** — 角色根据状态自动走到对应区域，本设计扩展为居民状态行为系统
+2. **气泡系统** — emoji + 短文本的头顶气泡，比简单状态灯更有表现力
+3. **资产管理与自定义** — 侧边栏管理角色皮肤/场景装饰，支持动态替换
+4. **AI 生图** — 接入 AI API 生成像素素材，可用于居民头像和场景生成
+5. **Join Key 多人机制** — 邀请制加入空间，可用于私人庄园访客系统
+6. **layout.js 配置化** — 坐标/层级/资源路径统一管理，工程实践值得采纳
+7. **桌面宠物模式（Electron）** — 未来可作为 Skills World 的桌面分发形态
