@@ -33,6 +33,7 @@ from app.llm.forge_prompts import (
     SOUL_SYSTEM_PROMPT, SOUL_USER_TEMPLATE,
     SCORING_SYSTEM_PROMPT, SCORING_USER_TEMPLATE,
     DISTRICT_SYSTEM_PROMPT, DISTRICT_USER_TEMPLATE,
+    QUICK_EXTRACT_SYSTEM_PROMPT, QUICK_EXTRACT_USER_TEMPLATE,
 )
 from app.models.resident import Resident
 
@@ -244,6 +245,116 @@ async def run_generation_pipeline(forge_id: str, db: AsyncSession) -> None:
     except Exception as e:
         session["status"] = "error"
         session["error"] = str(e)
+
+
+async def run_quick_pipeline(forge_id: str, db: AsyncSession) -> None:
+    """
+    Quick forge pipeline: single LLM call to extract all three layers from raw text.
+    Much faster than the 5-step pipeline (1 call vs 5).
+    """
+    session = _sessions.get(forge_id)
+    if not session:
+        return
+
+    try:
+        name = session["name"]
+        raw_text = session["answers"].get("2", "")  # raw_text stored in answer 2
+
+        client = get_client()
+        from app.config import settings as _settings
+        model = _settings.effective_model
+
+        # Single LLM call to extract all three layers
+        user_msg = QUICK_EXTRACT_USER_TEMPLATE.format(name=name, raw_text=raw_text)
+        import logging
+        logging.info(f"Quick forge: calling LLM for '{name}' ({len(raw_text)} chars)")
+
+        resp = await client.messages.create(
+            model=model,
+            max_tokens=4096,
+            system=QUICK_EXTRACT_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+        full_text = _extract_text(resp)
+        logging.info(f"Quick forge: LLM returned {len(full_text)} chars")
+
+        # Split on ===SPLIT===
+        parts = [p.strip() for p in full_text.split("===SPLIT===")]
+        session["ability_md"] = parts[0] if len(parts) > 0 else ""
+        session["persona_md"] = parts[1] if len(parts) > 1 else ""
+        session["soul_md"] = parts[2] if len(parts) > 2 else ""
+
+        # If split didn't work well, try to parse by headers
+        if len(parts) < 3 and "# 人格档案" in full_text:
+            _parse_combined_output(session, full_text)
+
+        # Score quality using fallback (skip LLM scoring for speed)
+        session["star_rating"] = _compute_star_rating_fallback(
+            session["ability_md"], session["persona_md"], session["soul_md"]
+        )
+
+        # Assign district using keyword matching (skip LLM for speed)
+        combined = (session["ability_md"] + session["persona_md"]).lower()
+        if any(kw in combined for kw in ["engineer", "backend", "frontend", "algorithm", "code", "编程", "架构", "开发"]):
+            district = "engineering"
+        elif any(kw in combined for kw in ["product", "design", "产品", "设计", "运营"]):
+            district = "product"
+        elif any(kw in combined for kw in ["teacher", "professor", "学者", "教授", "导师", "哲学"]):
+            district = "academy"
+        else:
+            district = "free"
+        session["district"] = district
+
+        # Find tile, slug, create resident
+        tile_x, tile_y = await _find_available_tile(db, district)
+        slug = _generate_slug(name)
+        existing = await db.execute(select(Resident).where(Resident.slug == slug))
+        if existing.scalar_one_or_none():
+            slug = f"{slug}-{uuid.uuid4().hex[:6]}"
+
+        resident = Resident(
+            slug=slug, name=name, district=district, status="idle", heat=0,
+            model_tier="standard", token_cost_per_turn=1, creator_id=session["user_id"],
+            ability_md=session["ability_md"], persona_md=session["persona_md"],
+            soul_md=session["soul_md"],
+            meta_json={
+                "role": _extract_role(session["ability_md"]),
+                "impression": _extract_impression(session["persona_md"]),
+                "origin": "quick_forge",
+            },
+            sprite_key=random.choice(SPRITE_KEYS),
+            tile_x=tile_x, tile_y=tile_y, star_rating=session["star_rating"],
+        )
+        db.add(resident)
+        await db.commit()
+        await db.refresh(resident)
+        session["resident_id"] = resident.id
+
+        from app.services.coin_service import reward
+        await reward(db, session["user_id"], 50, "forge_creation")
+
+        session["status"] = "done"
+        logging.info(f"Quick forge: '{name}' done — {district}, {session['star_rating']}★")
+
+    except Exception as e:
+        import logging, traceback
+        logging.error(f"Quick forge error: {e}\n{traceback.format_exc()}")
+        session["status"] = "error"
+        session["error"] = str(e)
+
+
+def _parse_combined_output(session: dict, text: str) -> None:
+    """Fallback parser if ===SPLIT=== didn't work — split by top-level headers."""
+    ability_start = text.find("# 能力")
+    persona_start = text.find("# 人格")
+    soul_start = text.find("# 灵魂")
+
+    if ability_start >= 0 and persona_start > ability_start:
+        session["ability_md"] = text[ability_start:persona_start].strip()
+    if persona_start >= 0 and soul_start > persona_start:
+        session["persona_md"] = text[persona_start:soul_start].strip()
+    if soul_start >= 0:
+        session["soul_md"] = text[soul_start:].strip()
 
 
 async def _score_quality(client, model: str, name: str,
