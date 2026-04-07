@@ -1,6 +1,7 @@
 import { useGameStore } from '../stores/gameStore'
 
 let socket: WebSocket | null = null
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 const wsListeners = new Set<(data: Record<string, unknown>) => void>()
 
 export function connectWS(): void {
@@ -13,7 +14,6 @@ export function connectWS(): void {
   socket.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data as string) as Record<string, unknown>
-      // Handle coin updates centrally
       if (data.type === 'coin_update' && typeof data.balance === 'number') {
         useGameStore.getState().updateBalance(data.balance)
       }
@@ -25,8 +25,7 @@ export function connectWS(): void {
 
   socket.onclose = () => {
     socket = null
-    // Reconnect after 3 seconds (exponential backoff could be added later)
-    setTimeout(connectWS, 3000)
+    reconnectTimer = setTimeout(connectWS, 3000)
   }
 
   socket.onerror = () => {
@@ -46,6 +45,10 @@ export function sendWS(data: Record<string, unknown>): void {
 }
 
 export function disconnectWS(): void {
+  if (reconnectTimer !== null) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
   socket?.close()
   socket = null
 }
