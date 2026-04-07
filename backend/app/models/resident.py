@@ -1,6 +1,6 @@
 import uuid
-from datetime import datetime
-from sqlalchemy import String, Integer, Float, DateTime, Text, JSON
+from datetime import datetime, UTC
+from sqlalchemy import String, Integer, Float, DateTime, Text, JSON, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
@@ -15,16 +15,16 @@ class Resident(Base):
     heat: Mapped[int] = mapped_column(Integer, default=0)
     model_tier: Mapped[str] = mapped_column(String(20), default="standard")
     token_cost_per_turn: Mapped[int] = mapped_column(Integer, default=1)
-    creator_id: Mapped[str] = mapped_column(String, index=True)
+    creator_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True)
     ability_md: Mapped[str] = mapped_column(Text, default="")
     persona_md: Mapped[str] = mapped_column(Text, default="")
     soul_md: Mapped[str] = mapped_column(Text, default="")
-    meta_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    meta_json: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=None)
     sprite_key: Mapped[str] = mapped_column(String(100), default="伊莎贝拉")
-    tile_x: Mapped[int] = mapped_column(Integer, default=76)
+    tile_x: Mapped[int] = mapped_column(Integer, default=76)  # Default spawn: Central Plaza
     tile_y: Mapped[int] = mapped_column(Integer, default=50)
     star_rating: Mapped[int] = mapped_column(Integer, default=1)
     total_conversations: Mapped[int] = mapped_column(Integer, default=0)
     avg_rating: Mapped[float] = mapped_column(Float, default=0.0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    last_conversation_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    last_conversation_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
