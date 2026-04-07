@@ -3,6 +3,7 @@ import { TopNav } from '../components/TopNav'
 import { ChatDrawer } from '../components/ChatDrawer'
 import { NpcTooltip } from '../components/NpcTooltip'
 import { useGameStore } from '../stores/gameStore'
+import { connectWS, disconnectWS } from '../services/ws'
 
 export function GamePage() {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -10,6 +11,7 @@ export function GamePage() {
 
   useEffect(() => {
     let destroyed = false
+    connectWS()
     import('../game/GameScene').then(({ initGame, destroyGame }) => {
       if (!destroyed && containerRef.current) {
         initGame(containerRef.current)
@@ -18,6 +20,7 @@ export function GamePage() {
     })
     return () => {
       destroyed = true
+      disconnectWS()
       import('../game/GameScene').then(({ destroyGame }) => destroyGame())
     }
   }, [])
