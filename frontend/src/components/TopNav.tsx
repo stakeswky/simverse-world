@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useGameStore } from '../stores/gameStore'
+import { SearchDropdown } from './SearchDropdown'
 
 export function TopNav() {
   const user = useGameStore((s) => s.user)
@@ -22,6 +23,7 @@ export function TopNav() {
           fontWeight: 600, cursor: 'pointer',
         }}>+ 炼化新居民</button>
       </div>
+      <SearchDropdown />
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
         <span style={{
           color: 'var(--accent-green)', fontSize: 13,
