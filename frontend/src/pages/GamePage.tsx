@@ -9,11 +9,17 @@ export function GamePage() {
   const chatOpen = useGameStore((s) => s.chatOpen)
 
   useEffect(() => {
-    import('../game/GameScene').then(({ initGame }) => {
-      if (containerRef.current) {
+    let destroyed = false
+    import('../game/GameScene').then(({ initGame, destroyGame }) => {
+      if (!destroyed && containerRef.current) {
         initGame(containerRef.current)
       }
+      return destroyGame
     })
+    return () => {
+      destroyed = true
+      import('../game/GameScene').then(({ destroyGame }) => destroyGame())
+    }
   }, [])
 
   return (

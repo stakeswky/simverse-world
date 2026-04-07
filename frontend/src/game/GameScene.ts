@@ -41,6 +41,13 @@ export interface ResidentData {
 
 let gameInstance: Phaser.Game | null = null
 
+export function destroyGame(): void {
+  if (gameInstance) {
+    gameInstance.destroy(true)
+    gameInstance = null
+  }
+}
+
 export function initGame(container: HTMLElement): void {
   if (gameInstance) return
   const zoom = Math.max(1, window.innerWidth / 4400)
@@ -100,7 +107,7 @@ class MainScene extends Phaser.Scene {
       }
     }
 
-    if (spritesToLoad.length > 0) {
+    if (spritesToLoad.length > 0 && !this.load.isLoading()) {
       this.load.start()
       await new Promise<void>((resolve) => this.load.once('complete', resolve))
     }
@@ -118,7 +125,7 @@ class MainScene extends Phaser.Scene {
     }
 
     const allTilesets = Object.entries(tilesetMap)
-      .filter(([k, v]) => k !== 'blocks_1' && v !== null)
+      .filter(([k, v]) => k !== 'blocks_1' && v !== null)  // blocks_1 is collision-only, not rendered
       .map(([, v]) => v!) as Phaser.Tilemaps.Tileset[]
 
     const layerNames = [
@@ -218,13 +225,31 @@ class MainScene extends Phaser.Scene {
     const up = this.cursors.up.isDown || this.wasd.up.isDown
     const down = this.cursors.down.isDown || this.wasd.down.isDown
 
-    if (left) { body.setVelocityX(-PLAYER_SPEED); this.player.anims.play('player-left-walk', true) }
-    else if (right) { body.setVelocityX(PLAYER_SPEED); this.player.anims.play('player-right-walk', true) }
-    else if (up) { body.setVelocityY(-PLAYER_SPEED); this.player.anims.play('player-up-walk', true) }
-    else if (down) { body.setVelocityY(PLAYER_SPEED); this.player.anims.play('player-down-walk', true) }
-    else { this.player.anims.stop() }
+    // Allow both axes for diagonal movement
+    if (left) body.setVelocityX(-PLAYER_SPEED)
+    else if (right) body.setVelocityX(PLAYER_SPEED)
 
-    body.velocity.normalize().scale(PLAYER_SPEED)
+    if (up) body.setVelocityY(-PLAYER_SPEED)
+    else if (down) body.setVelocityY(PLAYER_SPEED)
+
+    // Normalize diagonal speed so it doesn't exceed PLAYER_SPEED
+    if (body.velocity.length() > 0) {
+      body.velocity.normalize().scale(PLAYER_SPEED)
+    }
+
+    // Determine animation direction (priority: horizontal > vertical)
+    const moving = left || right || up || down
+    if (!moving) {
+      this.player.anims.stop()
+    } else if (left) {
+      this.player.anims.play('player-left-walk', true)
+    } else if (right) {
+      this.player.anims.play('player-right-walk', true)
+    } else if (up) {
+      this.player.anims.play('player-up-walk', true)
+    } else if (down) {
+      this.player.anims.play('player-down-walk', true)
+    }
 
     // NPC proximity
     let nearest: ResidentData | null = null
