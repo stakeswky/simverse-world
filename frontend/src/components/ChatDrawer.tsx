@@ -3,6 +3,7 @@ import { bridge } from '../game/phaserBridge'
 import { useGameStore } from '../stores/gameStore'
 import { sendWS, onWSMessage } from '../services/ws'
 import type { ResidentData } from '../game/GameScene'
+import { RatingPopup } from './RatingPopup'
 
 interface Message {
   role: 'user' | 'npc'
@@ -15,6 +16,7 @@ export function ChatDrawer() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [streamingText, setStreamingText] = useState('')
+  const [pendingRating, setPendingRating] = useState<{ conversationId: string; residentName: string } | null>(null)
   const streamingRef = useRef('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -49,6 +51,12 @@ export function ChatDrawer() {
           streamingRef.current += data.text
           setStreamingText(streamingRef.current)
         }
+      } else if (data.type === 'chat_ended') {
+        const convId = data.conversation_id as string | undefined
+        const resident = useGameStore.getState().chatResident
+        if (convId && resident) {
+          setPendingRating({ conversationId: convId, residentName: resident.name })
+        }
       }
     })
   }, [])
@@ -63,6 +71,19 @@ export function ChatDrawer() {
 
   const close = () => {
     sendWS({ type: 'end_chat' })
+    // Don't call closeChat() here — wait for chat_ended WS event + rating popup
+  }
+
+  const handleRate = (rating: number) => {
+    if (pendingRating) {
+      sendWS({ type: 'rate_chat', rating, conversation_id: pendingRating.conversationId })
+    }
+    setPendingRating(null)
+    closeChat()
+  }
+
+  const handleSkipRating = () => {
+    setPendingRating(null)
     closeChat()
   }
 
@@ -139,6 +160,14 @@ export function ChatDrawer() {
         }}>发送</button>
         <span style={{ color: 'var(--text-muted)', fontSize: 11, whiteSpace: 'nowrap' }}>1🪙</span>
       </div>
+      {pendingRating && (
+        <RatingPopup
+          residentName={pendingRating.residentName}
+          conversationId={pendingRating.conversationId}
+          onRate={handleRate}
+          onSkip={handleSkipRating}
+        />
+      )}
     </div>
   )
 }
