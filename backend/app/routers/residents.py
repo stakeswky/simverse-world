@@ -1,12 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+import io
+import json
+import re
+import random
+import zipfile
+
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.schemas.resident import ResidentListItem, ResidentDetail, ResidentEditRequest, VersionSnapshot
+from app.models.resident import Resident
+from app.schemas.resident import ResidentListItem, ResidentDetail, ResidentEditRequest, VersionSnapshot, ResidentImportResponse
 from app.services.resident_service import list_residents, get_resident_by_slug
 from app.services.version_service import create_version_snapshot, get_versions
 from app.services.auth_service import get_current_user
 from app.services.scoring_service import compute_star_rating
+from app.services.forge_service import DISTRICT_TILE_SLOTS, _find_available_tile, _generate_slug, SPRITE_KEYS
 
 router = APIRouter(prefix="/residents", tags=["residents"])
 
@@ -22,10 +30,151 @@ async def _require_user_auth(request: Request, db: AsyncSession = Depends(get_db
     return user
 
 
+def _parse_skill_md(content: str) -> dict:
+    """Parse combined SKILL.md into separate layers."""
+    sections = {"ability_md": "", "persona_md": "", "soul_md": ""}
+    current_key = None
+
+    for line in content.split("\n"):
+        stripped = line.strip().lower()
+        if re.match(r'^#\s*(ability|能力)', stripped):
+            current_key = "ability_md"
+            sections[current_key] = line + "\n"
+        elif re.match(r'^#\s*(persona|人格)', stripped):
+            current_key = "persona_md"
+            sections[current_key] = line + "\n"
+        elif re.match(r'^#\s*(soul|灵魂)', stripped):
+            current_key = "soul_md"
+            sections[current_key] = line + "\n"
+        elif current_key:
+            sections[current_key] += line + "\n"
+
+    return sections
+
+
 @router.get("", response_model=list[ResidentListItem])
 async def list_all(db: AsyncSession = Depends(get_db)):
     residents = await list_residents(db)
     return [ResidentListItem.model_validate(r, from_attributes=True) for r in residents]
+
+
+@router.post("/import", response_model=ResidentImportResponse)
+async def import_resident(
+    request: Request,
+    file: UploadFile = File(...),
+    name: str = Form(...),
+    slug: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Import a resident from SKILL.md or zip file."""
+    user = await _require_user_auth(request, db)
+
+    # Check slug uniqueness
+    existing = await get_resident_by_slug(db, slug)
+    if existing:
+        raise HTTPException(status_code=409, detail="Slug already exists")
+
+    content = await file.read()
+    filename = file.filename or ""
+
+    # Parse based on file type
+    ability_md, persona_md, soul_md = "", "", ""
+    meta_json: dict = {}
+
+    if filename.endswith(".md") or filename.endswith(".txt"):
+        # Single SKILL.md
+        text = content.decode("utf-8", errors="replace")
+        layers = _parse_skill_md(text)
+        ability_md = layers["ability_md"]
+        persona_md = layers["persona_md"]
+        soul_md = layers["soul_md"]
+
+    elif filename.endswith(".zip"):
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                names = zf.namelist()
+
+                # Try ability.md (or work.md for colleague-skill format)
+                if "ability.md" in names:
+                    ability_md = zf.read("ability.md").decode("utf-8", errors="replace")
+                elif "work.md" in names:
+                    # colleague-skill format
+                    ability_md = zf.read("work.md").decode("utf-8", errors="replace")
+
+                if "persona.md" in names:
+                    persona_md = zf.read("persona.md").decode("utf-8", errors="replace")
+
+                # soul.md optional — empty string if not present (colleague-skill)
+                if "soul.md" in names:
+                    soul_md = zf.read("soul.md").decode("utf-8", errors="replace")
+
+                if "meta.json" in names:
+                    try:
+                        meta_json = json.loads(zf.read("meta.json").decode("utf-8"))
+                    except Exception:
+                        meta_json = {}
+        except zipfile.BadZipFile:
+            raise HTTPException(status_code=400, detail="Invalid zip file")
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported file format. Use .md or .zip")
+
+    # Create a mock-like object for scoring
+    class _ResidentForScoring:
+        pass
+    r_score = _ResidentForScoring()
+    r_score.ability_md = ability_md
+    r_score.persona_md = persona_md
+    r_score.soul_md = soul_md
+    r_score.total_conversations = 0
+    r_score.avg_rating = 0.0
+
+    star_rating = compute_star_rating(r_score)
+
+    # Auto-assign district based on content
+    district = "free"
+    combined = (ability_md + persona_md).lower()
+    if any(kw in combined for kw in ["backend", "frontend", "engineer", "algorithm", "devops", "golang", "python", "rust", "java"]):
+        district = "engineering"
+    elif any(kw in combined for kw in ["product", "design", "analyst", "marketing", "operations"]):
+        district = "product"
+    elif any(kw in combined for kw in ["professor", "teacher", "mentor", "philosopher", "historian"]):
+        district = "academy"
+
+    tile_x, tile_y = await _find_available_tile(db, district)
+
+    resident = Resident(
+        slug=slug,
+        name=name,
+        district=district,
+        status="idle",
+        heat=0,
+        model_tier="standard",
+        token_cost_per_turn=1,
+        creator_id=user.id,
+        ability_md=ability_md,
+        persona_md=persona_md,
+        soul_md=soul_md,
+        meta_json={**meta_json, "origin": "import"},
+        sprite_key=random.choice(SPRITE_KEYS),
+        tile_x=tile_x,
+        tile_y=tile_y,
+        star_rating=star_rating,
+    )
+    db.add(resident)
+    await db.commit()
+    await db.refresh(resident)
+
+    return ResidentImportResponse(
+        id=resident.id,
+        slug=resident.slug,
+        name=resident.name,
+        district=resident.district,
+        star_rating=resident.star_rating,
+        ability_md=resident.ability_md,
+        persona_md=resident.persona_md,
+        soul_md=resident.soul_md,
+        meta_json=resident.meta_json,
+    )
 
 
 @router.get("/{slug}", response_model=ResidentDetail)

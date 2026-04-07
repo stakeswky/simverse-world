@@ -39,3 +39,15 @@ class VersionSnapshot(BaseModel):
     persona_md: str
     soul_md: str
     created_at: str
+
+
+class ResidentImportResponse(BaseModel):
+    id: str
+    slug: str
+    name: str
+    district: str
+    star_rating: int
+    ability_md: str
+    persona_md: str
+    soul_md: str
+    meta_json: dict | None
