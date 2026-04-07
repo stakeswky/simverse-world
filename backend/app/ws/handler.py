@@ -175,8 +175,11 @@ async def websocket_handler(ws: WebSocket):
                     fresh_conv.tokens_used += len(full_reply)  # character count proxy
                     await db.commit()
 
-                    # Reward creator (1 SC per turn)
-                    await reward(db, current_resident.creator_id, 1, f"chat_reward:{current_resident.slug}")
+                    # Reward creator (1 SC per turn) and send notification if they're online
+                    from app.services.coin_service import reward_creator_passive
+                    creator_notification = await reward_creator_passive(db, current_resident.creator_id, current_resident.slug)
+                    if creator_notification:
+                        await manager.send(current_resident.creator_id, creator_notification)
 
                 elif msg_type == "end_chat" and current_conversation and current_resident:
                     try:
