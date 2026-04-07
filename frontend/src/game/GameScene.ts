@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { bridge } from './phaserBridge'
 import { applyStatusVisuals, STATUS_CONFIG } from './StatusVisuals'
 import { useGameStore } from '../stores/gameStore'
+import { sendPosition } from '../services/ws'
 
 const TILE_SIZE = 32
 const PLAYER_SPEED = 160
@@ -71,6 +72,7 @@ class MainScene extends Phaser.Scene {
   private npcSprites: Phaser.Physics.Arcade.Sprite[] = []
   private residents: ResidentData[] = []
   private mapReady = false
+  private otherPlayerSprites: Map<string, Phaser.GameObjects.Text> = new Map()
 
   preload() {
     const base = '/assets/village/tilemap/'
@@ -250,6 +252,34 @@ class MainScene extends Phaser.Scene {
     } else if (down) {
       this.player.anims.play('player-down-walk', true)
     }
+
+    // Broadcast player position when moving
+    if (left || right || up || down) {
+      const dir = left ? 'left' : right ? 'right' : up ? 'up' : 'down'
+      sendPosition(this.player.x, this.player.y, dir)
+    }
+
+    // Render/update other players (as simple name labels for MVP)
+    const onlinePlayers = useGameStore.getState().onlinePlayers
+    onlinePlayers.forEach((p, playerId) => {
+      if (!this.otherPlayerSprites.has(playerId)) {
+        const label = this.add.text(p.x, p.y - 20, p.name, {
+          fontSize: '11px', color: '#0ea5e9',
+          backgroundColor: '#0ea5e920', padding: { x: 4, y: 2 },
+        }).setDepth(5)
+        this.otherPlayerSprites.set(playerId, label)
+      } else {
+        const label = this.otherPlayerSprites.get(playerId)!
+        label.setPosition(p.x, p.y - 20)
+      }
+    })
+    // Remove disconnected players
+    this.otherPlayerSprites.forEach((label, playerId) => {
+      if (!onlinePlayers.has(playerId)) {
+        label.destroy()
+        this.otherPlayerSprites.delete(playerId)
+      }
+    })
 
     // NPC proximity
     let nearest: ResidentData | null = null

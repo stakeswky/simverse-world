@@ -36,6 +36,15 @@ async def websocket_handler(ws: WebSocket):
                 "new_balance": reward_result["new_balance"],
             })
 
+    # Send current online players and announce join
+    online_players = manager.get_online_players(exclude=user_id)
+    if online_players:
+        await manager.send(user_id, {"type": "online_players", "players": online_players})
+    await manager.broadcast(
+        {"type": "player_joined", "player_id": user_id},
+        exclude=user_id,
+    )
+
     current_conversation: Conversation | None = None
     current_resident: Resident | None = None
     chat_messages: list[dict] = []
@@ -45,6 +54,19 @@ async def websocket_handler(ws: WebSocket):
             raw = await ws.receive_text()
             data = json.loads(raw)
             msg_type = data.get("type")
+
+            # Handle move without DB (position only — fast path)
+            if msg_type == "move":
+                x = float(data.get("x", 0))
+                y = float(data.get("y", 0))
+                direction = str(data.get("direction", "down"))
+                manager.update_position(user_id, x, y, direction, user_id)
+                await manager.broadcast(
+                    {"type": "player_moved", "player_id": user_id,
+                     "x": x, "y": y, "direction": direction},
+                    exclude=user_id,
+                )
+                continue
 
             async with async_session() as db:
                 if msg_type == "start_chat":
@@ -61,6 +83,9 @@ async def websocket_handler(ws: WebSocket):
                         continue
                     if resident.status == "chatting":
                         await manager.send(user_id, {"type": "error", "message": "Resident is busy"})
+                        continue
+                    if not manager.lock_resident(resident.id, user_id):
+                        await manager.send(user_id, {"type": "error", "message": "Resident is busy with another player"})
                         continue
                     if resident.status == "sleeping":
                         resident.status = "idle"
@@ -179,6 +204,9 @@ async def websocket_handler(ws: WebSocket):
 
                     await db.commit()
 
+                    # Release the resident lock
+                    manager.unlock_resident(resident_id)
+
                     prev_status = fresh_resident.status if fresh_resident else "idle"
                     await manager.send(user_id, {
                         "type": "chat_ended",
@@ -252,10 +280,12 @@ async def websocket_handler(ws: WebSocket):
 
     except WebSocketDisconnect:
         if current_conversation and current_resident:
+            manager.unlock_resident(current_resident.id)
             async with async_session() as db:
                 result = await db.execute(select(Resident).where(Resident.id == current_resident.id))
                 r = result.scalar_one_or_none()
                 if r and r.status == "chatting":
                     r.status = "popular" if r.heat >= 50 else "idle"
                     await db.commit()
+        await manager.broadcast({"type": "player_left", "player_id": user_id}, exclude=user_id)
         manager.disconnect(user_id)

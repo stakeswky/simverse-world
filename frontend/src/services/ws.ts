@@ -17,6 +17,29 @@ export function connectWS(): void {
       if (data.type === 'coin_update' && typeof data.balance === 'number') {
         useGameStore.getState().updateBalance(data.balance)
       }
+      // Handle online players
+      if (data.type === 'player_moved') {
+        useGameStore.getState().setOnlinePlayer({
+          player_id: data.player_id as string,
+          name: (data.name as string) || '?',
+          x: data.x as number,
+          y: data.y as number,
+          direction: (data.direction as string) || 'down',
+        })
+      }
+      if (data.type === 'player_left') {
+        useGameStore.getState().removeOnlinePlayer(data.player_id as string)
+      }
+      if (data.type === 'online_players') {
+        const players = data.players as Array<Record<string, unknown>>
+        players.forEach((p) => useGameStore.getState().setOnlinePlayer({
+          player_id: p.player_id as string,
+          name: (p.name as string) || '?',
+          x: p.x as number,
+          y: p.y as number,
+          direction: (p.direction as string) || 'down',
+        }))
+      }
       wsListeners.forEach((cb) => cb(data))
     } catch {
       // ignore malformed messages
@@ -25,6 +48,7 @@ export function connectWS(): void {
 
   socket.onclose = () => {
     socket = null
+    useGameStore.getState().clearOnlinePlayers()
     reconnectTimer = setTimeout(connectWS, 3000)
   }
 
@@ -51,4 +75,15 @@ export function disconnectWS(): void {
   }
   socket?.close()
   socket = null
+}
+
+let lastSentX = -1
+let lastSentY = -1
+
+export function sendPosition(x: number, y: number, direction: string): void {
+  // Only send if moved more than 4px
+  if (Math.abs(x - lastSentX) < 4 && Math.abs(y - lastSentY) < 4) return
+  lastSentX = x
+  lastSentY = y
+  sendWS({ type: 'move', x: Math.round(x), y: Math.round(y), direction })
 }
