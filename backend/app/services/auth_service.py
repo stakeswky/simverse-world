@@ -3,7 +3,9 @@ from datetime import datetime, timedelta, UTC
 from jose import jwt
 from passlib.context import CryptContext
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import HTTPException
 
 from app.config import settings
 from app.models.user import User
@@ -27,7 +29,11 @@ async def register_user(db: AsyncSession, name: str, email: str, password: str) 
     user = User(id=user_id, name=name, email=email, hashed_password=pwd_context.hash(password))
     db.add(user)
     db.add(Transaction(user_id=user_id, amount=100, reason="signup_bonus"))
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Email already registered")
     await db.refresh(user)
     return user, create_token(user.id)
 

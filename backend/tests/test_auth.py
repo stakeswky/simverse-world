@@ -48,3 +48,9 @@ async def test_get_me(client):
 async def test_get_me_no_token(client):
     resp = await client.get("/users/me")
     assert resp.status_code == 401
+
+@pytest.mark.anyio
+async def test_register_duplicate_email(client):
+    await client.post("/auth/register", json={"name": "A", "email": "dup@example.com", "password": "pass123"})
+    resp = await client.post("/auth/register", json={"name": "B", "email": "dup@example.com", "password": "pass123"})
+    assert resp.status_code == 409
