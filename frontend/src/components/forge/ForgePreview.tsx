@@ -113,7 +113,7 @@ export function ForgePreview({ state }: ForgePreviewProps) {
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 20px' }}>
 
         {/* Collected answers summary */}
         {state?.answers && Object.keys(state.answers).length > 0 && (

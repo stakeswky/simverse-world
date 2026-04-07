@@ -149,7 +149,7 @@ export function ForgeChat({ onStateUpdate, onComplete }: ForgeChatProps) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* Progress bar */}
       <div style={{
         padding: '12px 20px', borderBottom: '1px solid var(--border)',
@@ -172,9 +172,9 @@ export function ForgeChat({ onStateUpdate, onComplete }: ForgeChatProps) {
         </span>
       </div>
 
-      {/* Messages */}
+      {/* Messages — minHeight: 0 is critical for flex overflow scrolling */}
       <div style={{
-        flex: 1, overflowY: 'auto', padding: 20,
+        flex: 1, minHeight: 0, overflowY: 'auto', padding: 20,
         display: 'flex', flexDirection: 'column', gap: 16,
       }}>
         {messages.map((m, i) => (

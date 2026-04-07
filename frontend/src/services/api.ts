@@ -65,3 +65,7 @@ export function forgeAnswer(forge_id: string, answer: string): Promise<ForgeAnsw
 export function forgeStatus(forge_id: string): Promise<ForgeStatusResponse> {
   return apiFetch(`/forge/status/${forge_id}`)
 }
+
+export function forgeQuick(name: string, raw_text: string): Promise<{ forge_id: string; status: string }> {
+  return apiFetch('/forge/quick', { method: 'POST', body: JSON.stringify({ name, raw_text }) })
+}

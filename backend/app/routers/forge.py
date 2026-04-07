@@ -67,6 +67,52 @@ async def forge_answer(
     return ForgeAnswerResponse(**result)
 
 
+from pydantic import BaseModel
+
+class QuickForgeRequest(BaseModel):
+    name: str
+    raw_text: str   # free-form text about the person — biography, chat logs, descriptions, etc.
+
+
+@router.post("/quick")
+async def forge_quick(
+    req: QuickForgeRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    One-shot forge: provide a name + raw text, the system extracts all three layers.
+    The raw_text is used for ability, persona, and soul descriptions simultaneously.
+    Returns forge_id immediately; poll /forge/status/:id for results.
+    """
+    user = await _require_auth(request, db)
+    if not req.name.strip():
+        raise HTTPException(status_code=400, detail="Name cannot be empty")
+    if not req.raw_text.strip():
+        raise HTTPException(status_code=400, detail="Text cannot be empty")
+
+    # Pre-fill all 5 answers using raw_text as source for all layers
+    forge_id_data = start_forge(user.id, req.name.strip())
+    forge_id = forge_id_data["forge_id"]
+
+    from app.services.forge_service import _sessions
+    session = _sessions[forge_id]
+    session["answers"]["2"] = req.raw_text  # ability source
+    session["answers"]["3"] = req.raw_text  # persona source
+    session["answers"]["4"] = req.raw_text  # soul source
+    session["answers"]["5"] = "跳过"        # no extra material
+    session["step"] = 5
+    session["status"] = "generating"
+
+    async def _run_pipeline():
+        async with async_session() as sess:
+            await run_generation_pipeline(forge_id, sess)
+    background_tasks.add_task(_run_pipeline)
+
+    return {"forge_id": forge_id, "status": "generating"}
+
+
 @router.get("/status/{forge_id}", response_model=ForgeStatusResponse)
 async def forge_status(
     forge_id: str,
