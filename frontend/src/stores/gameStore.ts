@@ -14,6 +14,7 @@ interface GameState {
   chatOpen: boolean
   chatResident: { slug: string; name: string; role: string } | null
   inputFocused: boolean
+  profileTab: 'residents' | 'conversations' | 'transactions' | 'settings'
 
   setAuth: (user: User, token: string) => void
   logout: () => void
@@ -21,6 +22,7 @@ interface GameState {
   closeChat: () => void
   setInputFocused: (v: boolean) => void
   updateBalance: (balance: number) => void
+  setProfileTab: (tab: 'residents' | 'conversations' | 'transactions' | 'settings') => void
 }
 
 export const useGameStore = create<GameState>((set) => ({
@@ -29,6 +31,7 @@ export const useGameStore = create<GameState>((set) => ({
   chatOpen: false,
   chatResident: null,
   inputFocused: false,
+  profileTab: 'residents',
 
   setAuth: (user, token) => {
     localStorage.setItem('token', token)
@@ -44,4 +47,5 @@ export const useGameStore = create<GameState>((set) => ({
   closeChat: () => set({ chatOpen: false, chatResident: null, inputFocused: false }),
   setInputFocused: (v) => set({ inputFocused: v }),
   updateBalance: (balance) => set((s) => s.user ? { user: { ...s.user, soul_coin_balance: balance } } : {}),
+  setProfileTab: (tab) => set({ profileTab: tab }),
 }))

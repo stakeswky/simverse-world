@@ -27,11 +27,15 @@ export function TopNav() {
           color: 'var(--accent-green)', fontSize: 13,
           background: '#53d76915', padding: '4px 12px', borderRadius: 16,
         }}>🪙 {balance}</span>
-        <div style={{
-          width: 30, height: 30, background: 'var(--bg-input)', borderRadius: '50%',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14,
-          fontWeight: 700, color: 'var(--text-primary)',
-        }}>
+        <div
+          onClick={() => navigate('/profile')}
+          style={{
+            width: 30, height: 30, background: 'var(--bg-input)', borderRadius: '50%',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14,
+            fontWeight: 700, color: 'var(--text-primary)', cursor: 'pointer',
+          }}
+          title="个人主页"
+        >
           {user?.name?.[0]?.toUpperCase() || '?'}
         </div>
       </div>
