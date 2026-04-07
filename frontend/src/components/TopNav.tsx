@@ -1,8 +1,10 @@
+import { useNavigate } from 'react-router-dom'
 import { useGameStore } from '../stores/gameStore'
 
 export function TopNav() {
   const user = useGameStore((s) => s.user)
   const balance = user?.soul_coin_balance ?? 0
+  const navigate = useNavigate()
 
   return (
     <nav style={{
@@ -11,7 +13,15 @@ export function TopNav() {
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       padding: '0 16px', zIndex: 20,
     }}>
-      <span style={{ fontWeight: 700, fontSize: 15 }}>🏙️ Skills World</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <span style={{ fontWeight: 700, fontSize: 15, cursor: 'pointer' }}
+              onClick={() => navigate('/')}>🏙️ Skills World</span>
+        <button onClick={() => navigate('/forge')} style={{
+          background: 'var(--accent-red)', color: 'white', border: 'none',
+          padding: '5px 12px', borderRadius: 'var(--radius)', fontSize: 12,
+          fontWeight: 600, cursor: 'pointer',
+        }}>+ 炼化新居民</button>
+      </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
         <span style={{
           color: 'var(--accent-green)', fontSize: 13,
@@ -20,7 +30,10 @@ export function TopNav() {
         <div style={{
           width: 30, height: 30, background: 'var(--bg-input)', borderRadius: '50%',
           display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14,
-        }}>👤</div>
+          fontWeight: 700, color: 'var(--text-primary)',
+        }}>
+          {user?.name?.[0]?.toUpperCase() || '?'}
+        </div>
       </div>
     </nav>
   )
