@@ -18,6 +18,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.llm.client import get_client
+
+
+def _extract_text(response) -> str:
+    """Extract text from LLM response, skipping ThinkingBlocks (extended thinking)."""
+    for block in response.content:
+        if hasattr(block, "text"):
+            return block.text
+    return ""
 from app.llm.forge_prompts import (
     FORGE_QUESTIONS,
     ABILITY_SYSTEM_PROMPT, ABILITY_USER_TEMPLATE,
@@ -153,7 +161,8 @@ async def run_generation_pipeline(forge_id: str, db: AsyncSession) -> None:
             material = "无补充材料"
 
         client = get_client()
-        model = "claude-haiku-4-5-20251001"  # use haiku for cost efficiency
+        from app.config import settings as _settings
+        model = _settings.effective_model
 
         # Generate ability.md
         ability_resp = await client.messages.create(
@@ -163,7 +172,7 @@ async def run_generation_pipeline(forge_id: str, db: AsyncSession) -> None:
                 personality_description=personality_desc, material=material,
             )}],
         )
-        session["ability_md"] = ability_resp.content[0].text
+        session["ability_md"] = _extract_text(ability_resp)
 
         # Generate persona.md
         persona_resp = await client.messages.create(
@@ -174,7 +183,7 @@ async def run_generation_pipeline(forge_id: str, db: AsyncSession) -> None:
                 material=material,
             )}],
         )
-        session["persona_md"] = persona_resp.content[0].text
+        session["persona_md"] = _extract_text(persona_resp)
 
         # Generate soul.md
         soul_resp = await client.messages.create(
@@ -185,7 +194,7 @@ async def run_generation_pipeline(forge_id: str, db: AsyncSession) -> None:
                 ability_description=ability_desc, material=material,
             )}],
         )
-        session["soul_md"] = soul_resp.content[0].text
+        session["soul_md"] = _extract_text(soul_resp)
 
         # Score quality
         star_rating = await _score_quality(
@@ -246,7 +255,7 @@ async def _score_quality(client, model: str, name: str,
                 name=name, ability_md=ability_md, persona_md=persona_md, soul_md=soul_md,
             )}],
         )
-        text = resp.content[0].text.strip()
+        text = _extract_text(resp).strip()
         match = re.search(r'\{[^}]+\}', text)
         if match:
             data = json.loads(match.group())
@@ -286,7 +295,7 @@ async def _assign_district(client, model: str, name: str,
                 personality_description=personality_desc,
             )}],
         )
-        text = resp.content[0].text.strip()
+        text = _extract_text(resp).strip()
         match = re.search(r'\{[^}]+\}', text)
         if match:
             data = json.loads(match.group())

@@ -10,8 +10,20 @@ class Settings(BaseSettings):
     github_client_id: str = ""
     github_client_secret: str = ""
     anthropic_api_key: str = ""
+    # Custom LLM endpoint (overrides anthropic_api_key if set)
+    llm_api_key: str = ""
+    llm_base_url: str = ""
+    llm_model: str = ""
     llm_default_model: str = "claude-haiku-4-5-20251001"
     llm_max_tokens: int = 512
+
+    @property
+    def effective_api_key(self) -> str:
+        return self.llm_api_key or self.anthropic_api_key
+
+    @property
+    def effective_model(self) -> str:
+        return self.llm_model or self.llm_default_model
     cors_origins: list[str] = ["http://localhost:5173"]
 
     model_config = {"env_file": ".env"}

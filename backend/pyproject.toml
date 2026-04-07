@@ -16,6 +16,7 @@ dependencies = [
     "httpx>=0.27",
     "redis>=5.2",
     "anthropic>=0.42",
+    "aiosqlite>=0.20",
 ]
 
 [project.optional-dependencies]
