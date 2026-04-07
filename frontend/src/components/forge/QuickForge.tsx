@@ -75,11 +75,16 @@ export function QuickForge({ onStateUpdate, onComplete }: QuickForgeProps) {
     }
     setError(null)
     setIsGenerating(true)
-    setProgress('开始提取...')
+    setProgress('正在调用 AI 提取（约 20-60 秒）...')
 
     try {
-      const { forge_id } = await forgeQuick(name.trim(), rawText.trim())
-      pollStatus(forge_id)
+      // Submit — returns immediately with forge_id + "generating"
+      const resp = await forgeQuick(name.trim(), rawText.trim())
+      const forgeId = resp.forge_id
+      if (!forgeId) throw new Error('No forge_id returned')
+
+      // Poll for results
+      pollStatus(forgeId)
     } catch (e) {
       setIsGenerating(false)
       setError(e instanceof Error ? e.message : '请求失败')

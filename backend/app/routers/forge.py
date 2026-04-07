@@ -60,10 +60,13 @@ async def forge_answer(
 
     # Trigger LLM generation in background after final answer
     if result["next_step"] is None:
+        import asyncio
+
         async def _run_pipeline():
             async with async_session() as session:
                 await run_generation_pipeline(req.forge_id, session)
-        background_tasks.add_task(_run_pipeline)
+
+        asyncio.create_task(_run_pipeline())
 
     return ForgeAnswerResponse(**result)
 
@@ -79,13 +82,11 @@ class QuickForgeRequest(BaseModel):
 async def forge_quick(
     req: QuickForgeRequest,
     request: Request,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
     """
     One-shot forge: provide a name + raw text, the system extracts all three layers.
-    The raw_text is used for ability, persona, and soul descriptions simultaneously.
-    Returns forge_id immediately; poll /forge/status/:id for results.
+    Runs synchronously (blocks until LLM responds) — typically 20-60s.
     """
     user = await _require_auth(request, db)
     if not req.name.strip():
@@ -93,23 +94,35 @@ async def forge_quick(
     if not req.raw_text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
-    # Create session and store raw_text for quick extraction
     forge_id_data = start_forge(user.id, req.name.strip())
     forge_id = forge_id_data["forge_id"]
 
     from app.services.forge_service import _sessions
     forge_session = _sessions[forge_id]
-    forge_session["answers"]["2"] = req.raw_text  # raw_text for extraction
+    forge_session["answers"]["2"] = req.raw_text
     forge_session["step"] = 5
     forge_session["status"] = "generating"
 
-    # Use quick pipeline (single LLM call) instead of 5-step pipeline
-    async def _run_pipeline():
-        async with async_session() as db_sess:
-            await run_quick_pipeline(forge_id, db_sess)
-    background_tasks.add_task(_run_pipeline)
+    # Use starlette Response + background to ensure task runs after response
+    from starlette.responses import JSONResponse
+    from starlette.background import BackgroundTask
+    import logging
 
-    return {"forge_id": forge_id, "status": "generating"}
+    async def _run():
+        logging.warning(f"[FORGE] Background task STARTED for {forge_id}")
+        try:
+            async with async_session() as db_sess:
+                await run_quick_pipeline(forge_id, db_sess)
+            logging.warning(f"[FORGE] Background task COMPLETED for {forge_id}")
+        except Exception as e:
+            logging.error(f"[FORGE] Background task FAILED: {e}")
+            forge_session["status"] = "error"
+            forge_session["error"] = str(e)
+
+    return JSONResponse(
+        content={"forge_id": forge_id, "status": "generating"},
+        background=BackgroundTask(_run),
+    )
 
 
 @router.get("/status/{forge_id}", response_model=ForgeStatusResponse)

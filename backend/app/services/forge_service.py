@@ -8,6 +8,7 @@ Flow:
   4. get_status()      → poll session state (collecting | generating | done | error)
 """
 
+import asyncio
 import json
 import uuid
 import re
@@ -258,25 +259,76 @@ async def run_quick_pipeline(forge_id: str, db: AsyncSession) -> None:
 
     try:
         name = session["name"]
-        raw_text = session["answers"].get("2", "")  # raw_text stored in answer 2
+        raw_text = session["answers"].get("2", "")
 
-        client = get_client()
         from app.config import settings as _settings
-        model = _settings.effective_model
-
-        # Single LLM call to extract all three layers
-        user_msg = QUICK_EXTRACT_USER_TEMPLATE.format(name=name, raw_text=raw_text)
+        import anthropic
         import logging
-        logging.info(f"Quick forge: calling LLM for '{name}' ({len(raw_text)} chars)")
 
-        resp = await client.messages.create(
-            model=model,
-            max_tokens=4096,
-            system=QUICK_EXTRACT_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_msg}],
+        model = _settings.effective_model
+        user_msg = QUICK_EXTRACT_USER_TEMPLATE.format(name=name, raw_text=raw_text)
+        logging.warning(f"[FORGE] LLM call starting for '{name}' ({len(raw_text)} chars)")
+
+        # Run LLM call in a subprocess to isolate from uvicorn's event loop
+        # (uvicorn's anyio backend breaks TLS handshake for external HTTPS calls in background tasks)
+        import subprocess, sys, tempfile
+
+        req_payload = json.dumps({
+            "api_key": _settings.effective_api_key,
+            "base_url": _settings.llm_base_url or "https://api.anthropic.com",
+            "model": model,
+            "max_tokens": 4096,
+            "system": QUICK_EXTRACT_SYSTEM_PROMPT,
+            "user_msg": user_msg,
+        })
+
+        # Write request to temp file (avoid shell escaping issues with Chinese text)
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            f.write(req_payload)
+            req_file = f.name
+
+        script = f"""
+import json, asyncio, sys
+
+async def call_llm():
+    with open('{req_file}') as f:
+        req = json.load(f)
+    import anthropic
+    client = anthropic.AsyncAnthropic(api_key=req['api_key'], base_url=req['base_url'])
+    resp = await client.messages.create(
+        model=req['model'], max_tokens=req['max_tokens'],
+        system=req['system'],
+        messages=[{{"role": "user", "content": req['user_msg']}}],
+    )
+    # Extract text block
+    for block in resp.content:
+        if hasattr(block, 'text'):
+            print(block.text)
+            return
+    print('')
+
+asyncio.run(call_llm())
+"""
+
+        logging.warning(f"[FORGE] Launching subprocess for LLM call...")
+        proc = await asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: subprocess.run(
+                [sys.executable, '-c', script],
+                capture_output=True, text=True, timeout=120,
+                env={**__import__('os').environ, 'NO_PROXY': '*', 'HTTPS_PROXY': '', 'HTTP_PROXY': ''},
+            ),
         )
-        full_text = _extract_text(resp)
-        logging.info(f"Quick forge: LLM returned {len(full_text)} chars")
+
+        # Cleanup temp file
+        import os
+        os.unlink(req_file)
+
+        if proc.returncode != 0:
+            raise RuntimeError(f"LLM subprocess failed: {proc.stderr[:500]}")
+
+        full_text = proc.stdout.strip()
+        logging.warning(f"[FORGE] LLM returned {len(full_text)} chars")
 
         # Split on ===SPLIT===
         parts = [p.strip() for p in full_text.split("===SPLIT===")]
