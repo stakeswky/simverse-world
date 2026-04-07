@@ -274,13 +274,19 @@ residents/{slug}/
 
 ## 五、技术架构
 
+### 参考实现
+
+本项目的像素世界渲染方案参考 [x-glacier/GenerativeAgentsCN](https://github.com/x-glacier/GenerativeAgentsCN)（斯坦福 AI 小镇中文重构版）。该项目验证了 Phaser.js + Tiled 地图 + 32x32 像素角色的技术可行性。
+
+关键差异：GenerativeAgentsCN 是离线模拟 + 回放（先跑模拟存数据，再启动 Flask 回放）；Skills World 是实时交互（玩家在线操控 avatar，实时与居民对话），需要 WebSocket 实时通信层。
+
 ### 整体架构
 
 ```
 ┌─────────────────────────────────────────────┐
 │                  客户端                       │
 │         2D 像素风 Web 游戏（浏览器）            │
-│     Phaser.js / PixiJS + WebSocket           │
+│   Phaser.js 3.x + Tiled Tilemap + WebSocket │
 └──────────────┬──────────────────────────────┘
                │
 ┌──────────────▼──────────────────────────────┐
@@ -298,7 +304,7 @@ residents/{slug}/
 ┌─────────────────────────────────────────────┐
 │              数据层                           │
 │  PostgreSQL（主库）+ Redis（状态/缓存）        │
-│  S3/OSS（Skill 文件 + 像素头像）              │
+│  S3/OSS（Skill 文件 + 像素头像 + 地图资源）    │
 └─────────────────────────────────────────────┘
                │
                ▼
@@ -306,15 +312,50 @@ residents/{slug}/
 │            LLM 调度层                        │
 │  模型路由：根据居民 model_tier 分发            │
 │  Haiku（免费层）→ Sonnet（标准）→ Opus（高级） │
-│  支持多供应商：Anthropic / OpenAI / 本地模型   │
+│  支持多供应商：Anthropic / OpenAI / Ollama    │
 └─────────────────────────────────────────────┘
+```
+
+### 像素世界渲染方案（参考 GenerativeAgentsCN）
+
+**地图系统**：
+- 使用 [Tiled](https://www.mapeditor.org/) 地图编辑器制作城市地图
+- 导出为 JSON tilemap 格式，Phaser.js 原生支持加载
+- 多图层结构：地面层、碰撞层、建筑层、装饰层、区域标注层
+- Tile 尺寸：32x32 像素（像素风标准尺寸）
+- 地图可用 [tiled_to_maze.json](https://github.com/jiejieje/tiled_to_maze.json) 工具生成碰撞和区域数据
+- Tileset 资源：复用 CuteRPG 系列（Field、Village、Forest、Harbor 等）+ Room_Builder 室内装饰
+
+**角色渲染**：
+- 居民和玩家 avatar 均为 32x32 像素 spritesheet
+- 四方向行走动画（上/下/左/右，每方向 4 帧）
+- 头顶状态气泡（emoji 或短文本）：显示当前情绪/状态/正在做的事
+- 居民名牌浮于角色上方
+
+**摄像头与交互**：
+- 摄像头跟随玩家 avatar
+- 键盘方向键 / WASD 移动
+- 点击/靠近居民触发交互面板
+- 支持缩放（zoom 参数可调）
+
+**Phaser 场景配置**（参考 GenerativeAgentsCN）：
+```javascript
+const config = {
+  type: Phaser.AUTO,
+  width: window.innerWidth / zoom,
+  height: window.innerHeight / zoom,
+  pixelArt: true,
+  physics: { default: "arcade", arcade: { gravity: { y: 0 } } },
+  scene: { preload, create, update },
+  scale: { zoom }
+};
 ```
 
 ### 四个核心服务
 
 | 服务 | 职责 | 关键接口 |
 |------|------|---------|
-| 世界服务 | 地图管理、玩家位置同步、街区数据 | `move(x,y)`, `get_nearby_residents()`, `get_district_info()` |
+| 世界服务 | 地图管理、玩家位置同步、街区数据、碰撞检测 | `move(x,y)`, `get_nearby_residents()`, `get_district_info()` |
 | 对话服务 | 组装 prompt、调用 LLM、管理上下文 | `start_conversation(resident_id)`, `send_message(text)`, `end_conversation()` |
 | 居民服务 | Skill 注册、审核评分、CRUD、导入 | `register_skill(files)`, `import_colleague_skill(repo)`, `get_resident(id)` |
 | 经济服务 | 代币余额、收支记录、奖励发放 | `get_balance()`, `charge(amount, reason)`, `reward(user_id, amount, reason)` |
@@ -335,24 +376,27 @@ residents/{slug}/
 
 | 层 | 选型 | 理由 |
 |----|------|------|
-| 前端游戏引擎 | Phaser.js | 2D 像素游戏事实标准，生态成熟 |
-| 前端 UI | React + Phaser 混合 | 游戏画面用 Phaser，对话框/菜单用 React overlay |
-| 后端 | Node.js (Fastify) 或 Python (FastAPI) | 取决于团队偏好 |
-| 实时通信 | WebSocket (Socket.io) | 玩家移动、状态同步 |
+| 前端游戏引擎 | Phaser.js 3.x | 2D 像素游戏事实标准，GenerativeAgentsCN 已验证可行性 |
+| 地图编辑 | Tiled Map Editor | 成熟的 2D 地图编辑方案，导出 JSON tilemap，Phaser 原生支持 |
+| Tile 尺寸 | 32x32 像素 | 像素风标准，与 GenerativeAgentsCN tileset 资源兼容 |
+| 前端 UI | React + Phaser 混合 | 游戏画面用 Phaser，对话框/菜单/炼化器用 React overlay |
+| 后端 | Python (FastAPI) | 与 GenerativeAgentsCN 的 agent 模块（Python）生态一致，便于复用 |
+| 实时通信 | WebSocket (Socket.io / FastAPI WebSocket) | 玩家移动、状态同步、对话流式输出 |
 | 数据库 | PostgreSQL | 居民数据、用户数据、经济流水 |
 | 缓存 | Redis | 在线状态、对话上下文、热数据 |
-| 文件存储 | S3 兼容（MinIO / 云 OSS） | Skill 文件、头像、地图资源 |
-| LLM | Anthropic API 为主，预留多供应商接口 | 混合分层需要多模型支持 |
+| 文件存储 | S3 兼容（MinIO / 云 OSS） | Skill 文件、头像、地图 tileset |
+| LLM | Anthropic API 为主，预留 OpenAI 兼容接口 + Ollama 本地部署 | 混合分层 + 支持本地模型降低成本 |
 
 ### 核心数据模型
 
 ```
 users          — id, name, avatar, soul_coin_balance, created_at
 residents      — id, slug, name, district, address, status, model_tier,
-                 heat, creator_id, ability_md, persona_md, soul_md, meta_json
+                 heat, creator_id, ability_md, persona_md, soul_md, meta_json,
+                 sprite_sheet, tile_x, tile_y
 conversations  — id, user_id, resident_id, started_at, turns, tokens_used
 transactions   — id, user_id, amount, type(earn/spend), reason, created_at
-districts      — id, name, type, map_data, capacity
+districts      — id, name, type, map_data, capacity, tilemap_json
 ```
 
 ---
