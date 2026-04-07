@@ -25,6 +25,17 @@ async def websocket_handler(ws: WebSocket):
 
     await manager.connect(user_id, ws)
 
+    # Attempt daily login reward
+    async with async_session() as db:
+        from app.services.daily_reward_service import claim_daily_reward
+        reward_result = await claim_daily_reward(db, user_id)
+        if reward_result["claimed"]:
+            await manager.send(user_id, {
+                "type": "daily_reward",
+                "amount": reward_result["amount"],
+                "new_balance": reward_result["new_balance"],
+            })
+
     current_conversation: Conversation | None = None
     current_resident: Resident | None = None
     chat_messages: list[dict] = []
