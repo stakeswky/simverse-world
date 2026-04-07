@@ -12,6 +12,7 @@ from app.services.coin_service import charge, reward
 from app.llm.prompt import assemble_system_prompt
 from app.llm.client import stream_chat
 from app.ws.manager import manager
+from app.ws.protocol import StartChat, ChatMsg, EndChat
 
 
 async def websocket_handler(ws: WebSocket):
@@ -36,7 +37,12 @@ async def websocket_handler(ws: WebSocket):
 
             async with async_session() as db:
                 if msg_type == "start_chat":
-                    slug = data.get("resident_slug", "")
+                    try:
+                        msg = StartChat(**data)
+                    except Exception:
+                        await manager.send(user_id, {"type": "error", "message": "Invalid message format"})
+                        continue
+                    slug = msg.resident_slug
                     result = await db.execute(select(Resident).where(Resident.slug == slug))
                     resident = result.scalar_one_or_none()
                     if not resident:
@@ -65,7 +71,25 @@ async def websocket_handler(ws: WebSocket):
                     )
 
                 elif msg_type == "chat_msg" and current_conversation and current_resident:
-                    text = data.get("text", "")
+                    try:
+                        ChatMsg(**data)
+                    except Exception:
+                        await manager.send(user_id, {"type": "error", "message": "Invalid message format"})
+                        continue
+                    # Re-fetch conversation to avoid detached mutation being dropped
+                    conv_result = await db.execute(
+                        select(Conversation).where(Conversation.id == current_conversation.id)
+                    )
+                    fresh_conv = conv_result.scalar_one_or_none()
+                    if not fresh_conv:
+                        await manager.send(user_id, {"type": "error", "message": "Conversation not found"})
+                        continue
+
+                    text = data.get("text", "").strip()
+                    if not text:
+                        await manager.send(user_id, {"type": "error", "message": "Empty message"})
+                        continue
+
                     cost = current_resident.token_cost_per_turn
 
                     ok = await charge(db, user_id, cost, f"chat:{current_resident.slug}")
@@ -74,11 +98,11 @@ async def websocket_handler(ws: WebSocket):
                         continue
 
                     db.add(Message(
-                        conversation_id=current_conversation.id,
+                        conversation_id=fresh_conv.id,
                         role="user",
                         content=text,
                     ))
-                    current_conversation.turns += 1
+                    fresh_conv.turns += 1
                     await db.commit()
 
                     # Get updated balance and notify client
@@ -108,28 +132,46 @@ async def websocket_handler(ws: WebSocket):
 
                     chat_messages.append({"role": "assistant", "content": full_reply})
                     db.add(Message(
-                        conversation_id=current_conversation.id,
+                        conversation_id=fresh_conv.id,
                         role="assistant",
                         content=full_reply,
                     ))
-                    current_conversation.tokens_used += len(full_reply.split())
+                    fresh_conv.tokens_used += len(full_reply)  # character count proxy
                     await db.commit()
 
                     # Reward creator (1 SC per turn)
                     await reward(db, current_resident.creator_id, 1, f"chat_reward:{current_resident.slug}")
 
                 elif msg_type == "end_chat" and current_conversation and current_resident:
-                    current_conversation.ended_at = datetime.now(UTC)
-                    prev_status = "popular" if current_resident.heat >= 50 else "idle"
-                    current_resident.status = prev_status
-                    current_resident.total_conversations += 1
-                    current_resident.last_conversation_at = datetime.now(UTC)
+                    try:
+                        EndChat(**data)
+                    except Exception:
+                        await manager.send(user_id, {"type": "error", "message": "Invalid message format"})
+                        continue
+                    resident_id = current_resident.id
+                    resident_slug = current_resident.slug
+                    # Re-fetch in the current session to avoid detached-object mutation being dropped
+                    res_result = await db.execute(select(Resident).where(Resident.id == resident_id))
+                    fresh_resident = res_result.scalar_one_or_none()
+                    if fresh_resident:
+                        fresh_resident.status = "popular" if fresh_resident.heat >= 50 else "idle"
+                        fresh_resident.total_conversations += 1
+                        fresh_resident.last_conversation_at = datetime.now(UTC)
+
+                    # Also re-fetch conversation in current session
+                    conv_result = await db.execute(
+                        select(Conversation).where(Conversation.id == current_conversation.id)
+                    )
+                    fresh_conv = conv_result.scalar_one_or_none()
+                    if fresh_conv:
+                        fresh_conv.ended_at = datetime.now(UTC)
+
                     await db.commit()
 
-                    slug = current_resident.slug
+                    prev_status = fresh_resident.status if fresh_resident else "idle"
                     await manager.send(user_id, {"type": "chat_ended"})
                     await manager.broadcast(
-                        {"type": "resident_status", "resident_slug": slug, "status": prev_status},
+                        {"type": "resident_status", "resident_slug": resident_slug, "status": prev_status},
                         exclude=user_id,
                     )
                     current_conversation = None
