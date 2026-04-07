@@ -1,7 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.routers import auth, users, residents
+from app.ws.handler import websocket_handler
 
 app = FastAPI(title="Skills World API")
 
@@ -16,6 +17,11 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(residents.router)
+
+
+@app.websocket("/ws")
+async def ws_endpoint(websocket: WebSocket):
+    await websocket_handler(websocket)
 
 
 @app.get("/health")
