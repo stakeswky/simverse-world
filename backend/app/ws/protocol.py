@@ -14,3 +14,9 @@ class ChatMsg(BaseModel):
 
 class EndChat(BaseModel):
     type: Literal["end_chat"] = "end_chat"
+
+
+class RateChat(BaseModel):
+    type: Literal["rate_chat"] = "rate_chat"
+    rating: int  # 1-5
+    conversation_id: str

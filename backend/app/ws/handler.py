@@ -169,7 +169,10 @@ async def websocket_handler(ws: WebSocket):
                     await db.commit()
 
                     prev_status = fresh_resident.status if fresh_resident else "idle"
-                    await manager.send(user_id, {"type": "chat_ended"})
+                    await manager.send(user_id, {
+                        "type": "chat_ended",
+                        "conversation_id": fresh_conv.id if fresh_conv else "",
+                    })
                     await manager.broadcast(
                         {"type": "resident_status", "resident_slug": resident_slug, "status": prev_status},
                         exclude=user_id,
@@ -177,6 +180,64 @@ async def websocket_handler(ws: WebSocket):
                     current_conversation = None
                     current_resident = None
                     chat_messages = []
+
+                elif msg_type == "rate_chat":
+                    from sqlalchemy import func
+                    conv_id = data.get("conversation_id", "")
+                    rating_value = int(data.get("rating", 0))
+
+                    if not (1 <= rating_value <= 5):
+                        await manager.send(user_id, {"type": "error", "message": "Rating must be 1-5"})
+                        continue
+
+                    conv_result = await db.execute(
+                        select(Conversation).where(
+                            Conversation.id == conv_id,
+                            Conversation.user_id == user_id,
+                        )
+                    )
+                    conv = conv_result.scalar_one_or_none()
+                    if not conv:
+                        await manager.send(user_id, {"type": "error", "message": "Conversation not found"})
+                        continue
+
+                    conv.rating = rating_value
+                    await db.commit()
+
+                    # Recalculate resident avg_rating
+                    avg_result = await db.execute(
+                        select(func.avg(Conversation.rating)).where(
+                            Conversation.resident_id == conv.resident_id,
+                            Conversation.rating.is_not(None),
+                        )
+                    )
+                    avg = avg_result.scalar()
+                    if avg is not None:
+                        res_result = await db.execute(
+                            select(Resident).where(Resident.id == conv.resident_id)
+                        )
+                        resident = res_result.scalar_one_or_none()
+                        if resident:
+                            resident.avg_rating = round(float(avg), 2)
+                            from app.services.scoring_service import compute_star_rating
+                            resident.star_rating = compute_star_rating(resident)
+                            await db.commit()
+
+                    # Reward creator 5 SC for 4+ star rating
+                    if rating_value >= 4 and conv.resident_id:
+                        res_result = await db.execute(
+                            select(Resident).where(Resident.id == conv.resident_id)
+                        )
+                        resident = res_result.scalar_one_or_none()
+                        if resident:
+                            from app.services.coin_service import reward
+                            await reward(db, resident.creator_id, 5, f"good_rating:{resident.slug}")
+
+                    await manager.send(user_id, {
+                        "type": "rating_saved",
+                        "conversation_id": conv_id,
+                        "rating": rating_value,
+                    })
 
     except WebSocketDisconnect:
         if current_conversation and current_resident:
