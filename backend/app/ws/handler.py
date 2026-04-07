@@ -25,6 +25,14 @@ async def websocket_handler(ws: WebSocket):
 
     await manager.connect(user_id, ws)
 
+    # Fetch user name from DB and cache it for the session
+    user_name = user_id  # fallback
+    async with async_session() as db:
+        result = await db.execute(select(User).where(User.id == user_id))
+        user_row = result.scalar_one_or_none()
+        if user_row:
+            user_name = user_row.name
+
     # Attempt daily login reward
     async with async_session() as db:
         from app.services.daily_reward_service import claim_daily_reward
@@ -36,12 +44,25 @@ async def websocket_handler(ws: WebSocket):
                 "new_balance": reward_result["new_balance"],
             })
 
+    # Initialize position so other players can see us immediately
+    manager.update_position(user_id, 76 * 32, 50 * 32, "down", user_name)
+
     # Send current online players and announce join
     online_players = manager.get_online_players(exclude=user_id)
     if online_players:
         await manager.send(user_id, {"type": "online_players", "players": online_players})
+
+    # Broadcast join with position so existing players can render the new player
+    pos = manager.positions.get(user_id, {})
     await manager.broadcast(
-        {"type": "player_joined", "player_id": user_id},
+        {
+            "type": "player_joined",
+            "player_id": user_id,
+            "name": user_name,
+            "x": pos.get("x", 0),
+            "y": pos.get("y", 0),
+            "direction": pos.get("direction", "down"),
+        },
         exclude=user_id,
     )
 
@@ -60,9 +81,10 @@ async def websocket_handler(ws: WebSocket):
                 x = float(data.get("x", 0))
                 y = float(data.get("y", 0))
                 direction = str(data.get("direction", "down"))
-                manager.update_position(user_id, x, y, direction, user_id)
+                manager.update_position(user_id, x, y, direction, user_name)
                 await manager.broadcast(
                     {"type": "player_moved", "player_id": user_id,
+                     "name": user_name,
                      "x": x, "y": y, "direction": direction},
                     exclude=user_id,
                 )

@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { useGameStore } from '../stores/gameStore'
 import { SearchDropdown } from './SearchDropdown'
+import { bridge } from '../game/phaserBridge'
 
 export function TopNav() {
   const user = useGameStore((s) => s.user)
@@ -22,6 +23,11 @@ export function TopNav() {
           padding: '5px 12px', borderRadius: 'var(--radius)', fontSize: 12,
           fontWeight: 600, cursor: 'pointer',
         }}>+ 炼化新居民</button>
+        <button onClick={() => bridge.emit('bulletin:open')} style={{
+          background: 'none', color: '#f59e0b', border: '1px solid #f59e0b44',
+          padding: '5px 12px', borderRadius: 'var(--radius)', fontSize: 12,
+          fontWeight: 600, cursor: 'pointer',
+        }}>📋 公告板</button>
       </div>
       <SearchDropdown />
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>

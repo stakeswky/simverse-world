@@ -69,3 +69,34 @@ export function forgeStatus(forge_id: string): Promise<ForgeStatusResponse> {
 export function forgeQuick(name: string, raw_text: string): Promise<{ forge_id: string; status: string }> {
   return apiFetch('/forge/quick', { method: 'POST', body: JSON.stringify({ name, raw_text }) })
 }
+
+export interface ImportSkillResponse {
+  id: string
+  slug: string
+  name: string
+  district: string
+  star_rating: number
+  ability_md: string
+  persona_md: string
+  soul_md: string
+  meta_json: Record<string, unknown> | null
+}
+
+export async function importSkill(file: File, name: string, slug: string): Promise<ImportSkillResponse> {
+  const token = getToken()
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('name', name)
+  formData.append('slug', slug)
+
+  const resp = await fetch(`${API_BASE}/residents/import`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  })
+  if (!resp.ok) {
+    const body = await resp.text()
+    throw new Error(`API ${resp.status}: ${body}`)
+  }
+  return resp.json() as Promise<ImportSkillResponse>
+}

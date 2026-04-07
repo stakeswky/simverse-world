@@ -3,6 +3,9 @@ import { useGameStore } from '../stores/gameStore'
 let socket: WebSocket | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 const wsListeners = new Set<(data: Record<string, unknown>) => void>()
+// Queue important messages that arrive before any listener is registered (e.g. daily_reward)
+const earlyMessageQueue: Record<string, unknown>[] = []
+const QUEUED_TYPES = new Set(['daily_reward', 'coin_earned'])
 
 export function connectWS(): void {
   const token = useGameStore.getState().token
@@ -27,6 +30,15 @@ export function connectWS(): void {
           direction: (data.direction as string) || 'down',
         })
       }
+      if (data.type === 'player_joined') {
+        useGameStore.getState().setOnlinePlayer({
+          player_id: data.player_id as string,
+          name: (data.name as string) || '?',
+          x: (data.x as number) ?? 0,
+          y: (data.y as number) ?? 0,
+          direction: (data.direction as string) || 'down',
+        })
+      }
       if (data.type === 'player_left') {
         useGameStore.getState().removeOnlinePlayer(data.player_id as string)
       }
@@ -40,7 +52,12 @@ export function connectWS(): void {
           direction: (p.direction as string) || 'down',
         }))
       }
-      wsListeners.forEach((cb) => cb(data))
+      // If no listeners registered yet, queue important messages for replay
+      if (wsListeners.size === 0 && QUEUED_TYPES.has(data.type as string)) {
+        earlyMessageQueue.push(data)
+      } else {
+        wsListeners.forEach((cb) => cb(data))
+      }
     } catch {
       // ignore malformed messages
     }
@@ -59,6 +76,12 @@ export function connectWS(): void {
 
 export function onWSMessage(cb: (data: Record<string, unknown>) => void): () => void {
   wsListeners.add(cb)
+  // Replay any messages that arrived before this listener was registered
+  if (earlyMessageQueue.length > 0) {
+    const queued = [...earlyMessageQueue]
+    earlyMessageQueue.length = 0
+    queued.forEach((msg) => cb(msg))
+  }
   return () => wsListeners.delete(cb)
 }
 

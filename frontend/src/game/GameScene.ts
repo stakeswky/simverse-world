@@ -72,7 +72,7 @@ class MainScene extends Phaser.Scene {
   private npcSprites: Phaser.Physics.Arcade.Sprite[] = []
   private residents: ResidentData[] = []
   private mapReady = false
-  private otherPlayerSprites: Map<string, Phaser.GameObjects.Text> = new Map()
+  private otherPlayerSprites: Map<string, { sprite: Phaser.Physics.Arcade.Sprite; label: Phaser.GameObjects.Text }> = new Map()
 
   preload() {
     const base = '/assets/village/tilemap/'
@@ -206,6 +206,16 @@ class MainScene extends Phaser.Scene {
     }) as { up: Phaser.Input.Keyboard.Key; down: Phaser.Input.Keyboard.Key; left: Phaser.Input.Keyboard.Key; right: Phaser.Input.Keyboard.Key }
     this.eKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.E)
 
+    // Listen for camera pan requests from React UI (search, bulletin board)
+    bridge.on('camera:pan', (data: unknown) => {
+      const { tile_x, tile_y } = data as { tile_x: number; tile_y: number }
+      const targetX = tile_x * TILE_SIZE + TILE_SIZE / 2
+      const targetY = tile_y * TILE_SIZE + TILE_SIZE
+      this.cameras.main.pan(targetX, targetY, 600, 'Power2')
+      // Move player to the target location
+      this.player.setPosition(targetX, targetY)
+    })
+
     this.mapReady = true
   }
 
@@ -259,24 +269,54 @@ class MainScene extends Phaser.Scene {
       sendPosition(this.player.x, this.player.y, dir)
     }
 
-    // Render/update other players (as simple name labels for MVP)
+    // Render/update other players as sprites with name labels
     const onlinePlayers = useGameStore.getState().onlinePlayers
     onlinePlayers.forEach((p, playerId) => {
       if (!this.otherPlayerSprites.has(playerId)) {
-        const label = this.add.text(p.x, p.y - 20, p.name, {
-          fontSize: '11px', color: '#0ea5e9',
-          backgroundColor: '#0ea5e920', padding: { x: 4, y: 2 },
-        }).setDepth(5)
-        this.otherPlayerSprites.set(playerId, label)
-      } else {
-        const label = this.otherPlayerSprites.get(playerId)!
-        label.setPosition(p.x, p.y - 20)
+        // Create sprite using shared player_atlas
+        const sprite = this.physics.add.sprite(p.x, p.y, 'player_atlas', p.direction || 'down')
+          .setSize(24, 24).setOffset(4, 8).setDepth(1)
+        sprite.displayWidth = 40
+        sprite.scaleY = sprite.scaleX
+        // Tint to distinguish from local player
+        sprite.setTint(0x88ccff)
+
+        const label = this.add.text(p.x, p.y - 28, p.name, {
+          fontSize: '11px', color: '#ffffff',
+          backgroundColor: '#0ea5e9cc', padding: { x: 4, y: 2 },
+        }).setOrigin(0.5).setDepth(5)
+
+        this.otherPlayerSprites.set(playerId, { sprite, label })
       }
+
+      const entry = this.otherPlayerSprites.get(playerId)!
+      const { sprite, label } = entry
+
+      // Smoothly move toward target position
+      const dx = p.x - sprite.x
+      const dy = p.y - sprite.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+
+      if (dist > 2) {
+        sprite.setPosition(sprite.x + dx * 0.3, sprite.y + dy * 0.3)
+        // Play walk animation based on direction
+        const animKey = `player-${p.direction}-walk`
+        if (sprite.anims.currentAnim?.key !== animKey) {
+          sprite.anims.play(animKey, true)
+        }
+      } else {
+        sprite.setPosition(p.x, p.y)
+        sprite.anims.stop()
+        sprite.setFrame(p.direction || 'down')
+      }
+
+      label.setPosition(sprite.x, sprite.y - 28)
     })
     // Remove disconnected players
-    this.otherPlayerSprites.forEach((label, playerId) => {
+    this.otherPlayerSprites.forEach((entry, playerId) => {
       if (!onlinePlayers.has(playerId)) {
-        label.destroy()
+        entry.sprite.destroy()
+        entry.label.destroy()
         this.otherPlayerSprites.delete(playerId)
       }
     })
