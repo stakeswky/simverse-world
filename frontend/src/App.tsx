@@ -5,6 +5,7 @@ import { GamePage } from './pages/GamePage'
 import { ForgePage } from './pages/ForgePage'
 import { ProfilePage } from './pages/ProfilePage'
 import { OnboardingPage } from './pages/OnboardingPage'
+import { AdminPage } from './pages/AdminPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = useGameStore((s) => s.token)
@@ -21,6 +22,7 @@ export default function App() {
         <Route path="/" element={<ProtectedRoute><GamePage /></ProtectedRoute>} />
         <Route path="/forge" element={<ProtectedRoute><ForgePage /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+        <Route path="/admin" element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>
   )

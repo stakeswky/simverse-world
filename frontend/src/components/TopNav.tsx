@@ -28,6 +28,13 @@ export function TopNav() {
           padding: '5px 12px', borderRadius: 'var(--radius)', fontSize: 12,
           fontWeight: 600, cursor: 'pointer',
         }}>📋 公告板</button>
+        {user?.is_admin && (
+          <button onClick={() => navigate('/admin')} style={{
+            background: 'none', color: '#ef4444', border: '1px solid #ef444444',
+            padding: '5px 12px', borderRadius: 'var(--radius)', fontSize: 12,
+            fontWeight: 600, cursor: 'pointer',
+          }}>🔐 管理</button>
+        )}
       </div>
       <SearchDropdown />
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>

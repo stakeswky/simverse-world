@@ -6,6 +6,7 @@ interface User {
   email: string
   avatar: string | null
   soul_coin_balance: number
+  is_admin?: boolean
 }
 
 export interface OnlinePlayer {
