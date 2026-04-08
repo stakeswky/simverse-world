@@ -15,8 +15,6 @@ import {
   type LLMSettings,
 } from '../../services/api'
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-
 // ─── Shared sub-components ────────────────────────────────────────
 
 function SectionHeader({ icon, title }: { icon: string; title: string }) {
@@ -271,7 +269,7 @@ function CharacterSection({ settings }: { settings: AllSettings }) {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             <img
-              src={`${API}/assets/village/agents/${selectedSprite}/texture.png`}
+              src={`/assets/village/agents/${selectedSprite}/texture.png`}
               alt={selectedSprite}
               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               onError={(e) => {
@@ -320,7 +318,7 @@ function CharacterSection({ settings }: { settings: AllSettings }) {
                 }}
               >
                 <img
-                  src={`${API}/assets/village/agents/${sprite.key}/texture.png`}
+                  src={`/assets/village/agents/${sprite.key}/texture.png`}
                   alt={sprite.key}
                   style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   onError={(e) => {
@@ -795,7 +793,7 @@ export function SettingsPanel() {
   }
 
   return (
-    <div style={{ maxWidth: 680 }}>
+    <div style={{ maxWidth: 720, margin: '0 auto' }}>
       <h1 style={{ fontSize: 20, fontWeight: 700, marginBottom: 24, color: 'var(--text-primary)' }}>
         设置
       </h1>
