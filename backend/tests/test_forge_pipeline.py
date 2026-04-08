@@ -1,6 +1,11 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 
+# Import models at module level so SQLAlchemy registers them with Base.metadata
+# before db_engine fixture runs create_all
+from app.models.user import User  # noqa: F401
+from app.models.forge_session import ForgeSession  # noqa: F401
+
 
 @pytest.mark.anyio
 async def test_input_router_public_figure():
@@ -148,3 +153,82 @@ async def test_validation_stage_returns_report():
     assert "style_check" in report
     assert "overall_score" in report
     assert report["overall_score"] >= 0
+
+
+@pytest.mark.anyio
+async def test_refinement_stage_improves_layers():
+    """Refinement stage should return improved layers and a log."""
+    from app.forge.refinement_stage import RefinementStage
+
+    mock_client = AsyncMock()
+    # Agent 1 (optimizer) response
+    optimizer_resp = AsyncMock(content=[AsyncMock(text="""{
+        "suggestions": ["加强表达DNA的口头禅部分", "补充决策启发式案例"],
+        "priority": "medium"
+    }""")])
+    # Agent 2 (creator perspective) response
+    creator_resp = AsyncMock(content=[AsyncMock(text="""{
+        "suggestions": ["身份卡的自我介绍不够有特色"],
+        "priority": "low"
+    }""")])
+    # Final refinement response
+    refined_resp = AsyncMock(content=[AsyncMock(text="# Ability Layer (refined)\n...")])
+
+    mock_client.messages.create = AsyncMock(
+        side_effect=[optimizer_resp, creator_resp, refined_resp, refined_resp, refined_resp]
+    )
+
+    stage = RefinementStage(llm_client=mock_client, model="test-model")
+    result = await stage.run(
+        character_name="萧炎",
+        ability_md="# Ability...",
+        persona_md="# Persona...",
+        soul_md="# Soul...",
+        validation_report={"suggestions": ["改进表达DNA"]},
+    )
+
+    assert "ability_md" in result
+    assert "persona_md" in result
+    assert "soul_md" in result
+    assert "refinement_log" in result
+    assert len(result["refinement_log"]) >= 2  # optimizer + creator logs
+
+
+@pytest.mark.anyio
+async def test_pipeline_quick_mode_skips_research(db_session):
+    """Quick mode should skip research/extraction/validation/refinement."""
+    from app.forge.pipeline import ForgePipeline
+
+    user = User(name="test", email="pipe@test.com")
+    db_session.add(user)
+    await db_session.commit()
+
+    mock_client = AsyncMock()
+    # Router returns quick
+    mock_client.messages.create = AsyncMock(return_value=AsyncMock(
+        content=[AsyncMock(text='{"route": "quick", "reason": "fictional"}')]
+    ))
+
+    pipeline = ForgePipeline(db=db_session, system_client=mock_client, user_client=mock_client, model="test")
+
+    # Override build stage to avoid real LLM call
+    from app.forge.build_stage import BuildStage
+    original_run = BuildStage.run
+
+    async def mock_build_run(self, **kwargs):
+        return {"ability_md": "# Ability", "persona_md": "# Persona", "soul_md": "# Soul"}
+    BuildStage.run = mock_build_run
+
+    try:
+        session = await pipeline.start(user_id=user.id, character_name="赛博黑客", raw_text="虚构角色")
+        assert session.mode == "quick"
+
+        # Run to completion
+        await pipeline.run_to_completion(session.id)
+        await db_session.refresh(session)
+        assert session.status == "done"
+        assert session.build_output != {}
+        # Research should be empty (skipped)
+        assert session.research_data == {}
+    finally:
+        BuildStage.run = original_run
