@@ -80,9 +80,11 @@ class MainScene extends Phaser.Scene {
       this.load.image(key, base + filename)
     }
     this.load.tilemapTiledJSON('map', base + 'tilemap.json')
+
+    const spriteKey = useGameStore.getState().playerSpriteKey
     this.load.atlas(
       'player_atlas',
-      '/assets/village/agents/埃迪/texture.png',
+      `/assets/village/agents/${spriteKey}/texture.png`,
       '/assets/village/agents/sprite.json',
     )
   }

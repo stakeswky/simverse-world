@@ -29,7 +29,7 @@ export function LoginPage() {
       }
       const data = await resp.json()
       setAuth(data.user, data.access_token)
-      navigate('/')
+      navigate('/onboarding')
     } catch {
       setError('网络错误，请重试')
     }

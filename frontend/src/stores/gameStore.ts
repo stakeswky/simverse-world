@@ -19,6 +19,7 @@ export interface OnlinePlayer {
 interface GameState {
   user: User | null
   token: string | null
+  playerSpriteKey: string
   chatOpen: boolean
   chatResident: { slug: string; name: string; role: string } | null
   inputFocused: boolean
@@ -27,6 +28,7 @@ interface GameState {
 
   setAuth: (user: User, token: string) => void
   logout: () => void
+  setPlayerSpriteKey: (key: string) => void
   openChat: (resident: { slug: string; name: string; role: string }) => void
   closeChat: () => void
   setInputFocused: (v: boolean) => void
@@ -40,6 +42,7 @@ interface GameState {
 export const useGameStore = create<GameState>((set) => ({
   user: (() => { try { return JSON.parse(localStorage.getItem('user') || 'null') } catch { return null } })(),
   token: localStorage.getItem('token'),
+  playerSpriteKey: '埃迪',
   chatOpen: false,
   chatResident: null,
   inputFocused: false,
@@ -56,6 +59,7 @@ export const useGameStore = create<GameState>((set) => ({
     localStorage.removeItem('user')
     set({ user: null, token: null })
   },
+  setPlayerSpriteKey: (key) => set({ playerSpriteKey: key }),
   openChat: (resident) => set({ chatOpen: true, chatResident: resident }),
   closeChat: () => set({ chatOpen: false, chatResident: null, inputFocused: false }),
   setInputFocused: (v) => set({ inputFocused: v }),

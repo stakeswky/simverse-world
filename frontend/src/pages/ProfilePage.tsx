@@ -5,6 +5,7 @@ import { ResidentList } from '../components/profile/ResidentList'
 import { ConversationHistory } from '../components/profile/ConversationHistory'
 import { TransactionHistory } from '../components/profile/TransactionHistory'
 import { ResidentEditor } from '../components/profile/ResidentEditor'
+import { SettingsPanel } from '../components/profile/SettingsPanel'
 import { useGameStore } from '../stores/gameStore'
 
 export function ProfilePage() {
@@ -37,11 +38,7 @@ export function ProfilePage() {
           )}
           {profileTab === 'conversations' && <ConversationHistory />}
           {profileTab === 'transactions' && <TransactionHistory />}
-          {profileTab === 'settings' && (
-            <div style={{ color: 'var(--text-muted)', padding: 40, textAlign: 'center' }}>
-              设置功能开发中...
-            </div>
-          )}
+          {profileTab === 'settings' && <SettingsPanel />}
         </div>
       </div>
     </>
