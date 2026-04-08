@@ -10,8 +10,8 @@ from app.services.sprite_service import (
 
 
 def test_sprite_templates_count():
-    """Should have exactly 25 sprite templates."""
-    assert len(SPRITE_TEMPLATES) == 25
+    """Should have exactly 20 sprite templates."""
+    assert len(SPRITE_TEMPLATES) == 20
 
 
 def test_sprite_template_structure():
@@ -28,7 +28,7 @@ def test_sprite_template_structure():
 def test_get_all_templates():
     """Should return list of template dicts for API response."""
     result = get_all_templates()
-    assert len(result) == 25
+    assert len(result) == 20
     assert "key" in result[0]
     assert "gender" in result[0]
     assert "vibe" in result[0]
@@ -91,4 +91,4 @@ async def test_match_sprite_by_persona_llm_failure_fallback():
         result = await match_sprite_by_persona("some persona text")
 
     assert isinstance(result, list)
-    assert len(result) == 25  # all templates as fallback
+    assert len(result) == 20  # all templates as fallback

@@ -15,6 +15,7 @@ class UserResponse(BaseModel):
     email: str
     avatar: str | None
     soul_coin_balance: int
+    is_admin: bool = False
 
 class AuthResponse(BaseModel):
     access_token: str

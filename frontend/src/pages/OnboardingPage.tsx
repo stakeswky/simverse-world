@@ -270,7 +270,6 @@ interface PresetCardItemProps {
 
 function PresetCardItem({ card, isSelected, disabled, onSelect }: PresetCardItemProps) {
   const [hovered, setHovered] = useState(false)
-  const [imgError, setImgError] = useState(false)
 
   const borderColor = isSelected
     ? 'var(--accent-red)'
@@ -305,24 +304,19 @@ function PresetCardItem({ card, isSelected, disabled, onSelect }: PresetCardItem
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        overflow: 'hidden',
+        overflow: 'visible',
         position: 'relative',
       }}>
-        {!imgError ? (
-          <img
-            src={`/assets/village/agents/${encodeURIComponent(card.sprite_key)}/texture.png`}
-            alt={card.name}
-            onError={() => setImgError(true)}
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'contain',
-              imageRendering: 'pixelated',
-            }}
-          />
-        ) : (
-          <div style={{ fontSize: 32, color: 'var(--text-muted)' }}>👤</div>
-        )}
+        <div style={{
+          width: 32,
+          height: 32,
+          backgroundImage: `url(/assets/village/agents/${encodeURIComponent(card.sprite_key)}/texture.png)`,
+          backgroundPosition: '-32px 0px',
+          backgroundSize: '96px 128px',
+          imageRendering: 'pixelated',
+          transform: 'scale(2)',
+          transformOrigin: 'center',
+        }} />
       </div>
 
       {/* Name + district */}

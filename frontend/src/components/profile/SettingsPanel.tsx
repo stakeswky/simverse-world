@@ -265,22 +265,24 @@ function CharacterSection({ settings }: { settings: AllSettings }) {
           <div style={{
             width: 72, height: 72,
             background: 'var(--bg-input)', border: '1px solid var(--border)',
-            borderRadius: 10, overflow: 'hidden',
+            borderRadius: 10,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
+            overflow: 'visible',
           }}>
-            <img
-              src={`/assets/village/agents/${selectedSprite}/texture.png`}
-              alt={selectedSprite}
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              onError={(e) => {
-                const target = e.target as HTMLImageElement
-                target.style.display = 'none'
-                if (target.parentElement) {
-                  target.parentElement.style.fontSize = '32px'
-                  target.parentElement.textContent = '🧑'
-                }
-              }}
-            />
+            {selectedSprite ? (
+              <div style={{
+                width: 32,
+                height: 32,
+                backgroundImage: `url(/assets/village/agents/${encodeURIComponent(selectedSprite)}/texture.png)`,
+                backgroundPosition: '-32px 0px',
+                backgroundSize: '96px 128px',
+                imageRendering: 'pixelated',
+                transform: 'scale(2)',
+                transformOrigin: 'center',
+              }} />
+            ) : (
+              <span style={{ fontSize: 32 }}>🧑</span>
+            )}
           </div>
         </div>
 
@@ -312,24 +314,22 @@ function CharacterSection({ settings }: { settings: AllSettings }) {
                   border: selectedSprite === sprite.key
                     ? '2px solid var(--accent)'
                     : '1px solid var(--border)',
-                  borderRadius: 8, overflow: 'hidden', cursor: 'pointer',
+                  borderRadius: 8, cursor: 'pointer',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   transition: 'border-color 0.15s',
+                  overflow: 'visible',
                 }}
               >
-                <img
-                  src={`/assets/village/agents/${sprite.key}/texture.png`}
-                  alt={sprite.key}
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement
-                    target.style.display = 'none'
-                    if (target.parentElement) {
-                      target.parentElement.style.fontSize = '20px'
-                      target.parentElement.textContent = '🧑'
-                    }
-                  }}
-                />
+                <div style={{
+                  width: 32,
+                  height: 32,
+                  backgroundImage: `url(/assets/village/agents/${encodeURIComponent(sprite.key)}/texture.png)`,
+                  backgroundPosition: '-32px 0px',
+                  backgroundSize: '96px 128px',
+                  imageRendering: 'pixelated',
+                  transform: 'scale(1.25)',
+                  transformOrigin: 'center',
+                }} />
               </div>
             ))}
           </div>

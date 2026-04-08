@@ -17,5 +17,6 @@ async def me(request: Request, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=401)
     return UserResponse(
         id=user.id, name=user.name, email=user.email,
-        avatar=user.avatar, soul_coin_balance=user.soul_coin_balance
+        avatar=user.avatar, soul_coin_balance=user.soul_coin_balance,
+        is_admin=user.is_admin
     )

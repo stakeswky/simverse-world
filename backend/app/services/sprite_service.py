@@ -1,4 +1,4 @@
-"""Sprite template registry with 25 pre-annotated character sprites and LLM-based matching."""
+"""Sprite template registry with 20 pre-annotated character sprites and LLM-based matching."""
 import json
 import logging
 import re
@@ -20,7 +20,7 @@ class SpriteTemplate:
 
 
 SPRITE_TEMPLATES: list[SpriteTemplate] = [
-    # Original 20 from forge_service.py
+    # 20 templates with confirmed texture.png files
     SpriteTemplate("伊莎贝拉", "female", "adult", "elegant", ["graceful", "noble"]),
     SpriteTemplate("克劳斯", "male", "adult", "serious", ["stern", "analytical"]),
     SpriteTemplate("亚当", "male", "young", "energetic", ["athletic", "bold"]),
@@ -41,12 +41,6 @@ SPRITE_TEMPLATES: list[SpriteTemplate] = [
     SpriteTemplate("乔治", "male", "elder", "dignified", ["veteran", "respected"]),
     SpriteTemplate("简", "female", "young", "intellectual", ["bookish", "witty"]),
     SpriteTemplate("埃迪", "male", "young", "punk", ["rebellious", "tech"]),
-    # 5 new templates to reach 25
-    SpriteTemplate("苏菲", "female", "young", "mystical", ["ethereal", "intuitive"]),
-    SpriteTemplate("雷克斯", "male", "adult", "tough", ["street-smart", "gritty"]),
-    SpriteTemplate("林", "neutral", "young", "hacker", ["cyberpunk", "underground"]),
-    SpriteTemplate("奥利维亚", "female", "elder", "regal", ["aristocratic", "sage"]),
-    SpriteTemplate("凯", "neutral", "adult", "minimalist", ["zen", "balanced"]),
 ]
 
 _TEMPLATE_DICT_CACHE: list[dict] | None = None

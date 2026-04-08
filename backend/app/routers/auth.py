@@ -100,7 +100,8 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
     user, token = await register_user(db, req.name, req.email, req.password)
     return AuthResponse(access_token=token, user=UserResponse(
         id=user.id, name=user.name, email=user.email,
-        avatar=user.avatar, soul_coin_balance=user.soul_coin_balance
+        avatar=user.avatar, soul_coin_balance=user.soul_coin_balance,
+        is_admin=user.is_admin
     ))
 
 @router.post("/login", response_model=AuthResponse)
@@ -111,7 +112,8 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     user, token = result
     return AuthResponse(access_token=token, user=UserResponse(
         id=user.id, name=user.name, email=user.email,
-        avatar=user.avatar, soul_coin_balance=user.soul_coin_balance
+        avatar=user.avatar, soul_coin_balance=user.soul_coin_balance,
+        is_admin=user.is_admin
     ))
 
 
