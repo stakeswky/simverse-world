@@ -4,17 +4,19 @@ import { TopNav } from '../components/TopNav'
 import { ForgeChat } from '../components/forge/ForgeChat'
 import { ForgePreview } from '../components/forge/ForgePreview'
 import { QuickForge } from '../components/forge/QuickForge'
-import type { ForgeStatusResponse } from '../services/api'
+import { DeepForge } from '../components/forge/DeepForge'
+import type { ForgeStatusResponse, DeepForgeStatusResponse } from '../services/api'
 
-type Mode = 'guided' | 'quick'
+type Mode = 'guided' | 'quick' | 'deep'
 
 export function ForgePage() {
   const navigate = useNavigate()
   const [forgeState, setForgeState] = useState<ForgeStatusResponse | null>(null)
   const [mode, setMode] = useState<Mode>('guided')
 
-  const handleStateUpdate = useCallback((state: ForgeStatusResponse) => {
-    setForgeState(state)
+  const handleStateUpdate = useCallback((state: ForgeStatusResponse | DeepForgeStatusResponse) => {
+    // ForgePreview uses ForgeStatusResponse shape; DeepForgeStatusResponse is compatible for preview
+    setForgeState(state as ForgeStatusResponse)
   }, [])
 
   const handleComplete = useCallback((_residentId: string) => {
@@ -54,8 +56,9 @@ export function ForgePage() {
         {/* Mode tabs */}
         <div style={{ display: 'flex', background: 'var(--bg-input)', borderRadius: 8, padding: 3, gap: 2 }}>
           {([
-            { key: 'guided', label: '📝 引导模式', desc: '5步问答' },
-            { key: 'quick', label: '⚡ 快速提取', desc: '粘贴文本' },
+            { key: 'guided', label: '📝 引导式炼化', desc: '5步问答引导' },
+            { key: 'quick',  label: '⚡ 快速炼化',   desc: '粘贴文本即提取' },
+            { key: 'deep',   label: '🧪 深度蒸馏',   desc: '多阶段 AI 管线' },
           ] as { key: Mode; label: string; desc: string }[]).map((m) => (
             <button
               key={m.key}
@@ -68,7 +71,11 @@ export function ForgePage() {
                 cursor: 'pointer',
                 fontSize: 12,
                 fontWeight: 600,
-                background: mode === m.key ? 'var(--accent-red)' : 'transparent',
+                background: mode === m.key
+                  ? m.key === 'deep'
+                    ? 'linear-gradient(135deg, #8b5cf6, #6d28d9)'
+                    : 'var(--accent-red)'
+                  : 'transparent',
                 color: mode === m.key ? 'white' : 'var(--text-muted)',
                 transition: 'all 0.15s',
               }}
@@ -90,10 +97,15 @@ export function ForgePage() {
           flexDirection: 'column',
           overflow: 'hidden',
         }}>
-          {mode === 'guided'
-            ? <ForgeChat onStateUpdate={handleStateUpdate} onComplete={handleComplete} />
-            : <QuickForge onStateUpdate={handleStateUpdate} onComplete={handleComplete} />
-          }
+          {mode === 'guided' && (
+            <ForgeChat onStateUpdate={handleStateUpdate} onComplete={handleComplete} />
+          )}
+          {mode === 'quick' && (
+            <QuickForge onStateUpdate={handleStateUpdate} onComplete={handleComplete} />
+          )}
+          {mode === 'deep' && (
+            <DeepForge onStateUpdate={handleStateUpdate} onComplete={handleComplete} />
+          )}
         </div>
 
         {/* Right preview */}

@@ -7,6 +7,7 @@ import { CoinNotification } from '../components/CoinNotification'
 import { useGameStore } from '../stores/gameStore'
 import { connectWS, disconnectWS } from '../services/ws'
 import { getSettings } from '../services/api'
+import { bridge } from '../game/phaserBridge'
 
 export function GamePage() {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -36,8 +37,15 @@ export function GamePage() {
 
     startGame()
 
+    // Listen for player interact events from the Phaser game scene
+    const unsubPlayerInteract = bridge.on('player:interact', (data) => {
+      const { userId, name } = data as { userId: string; name: string; x: number; y: number }
+      useGameStore.getState().setChatTarget({ type: 'player', userId, name })
+    })
+
     return () => {
       destroyed = true
+      unsubPlayerInteract()
       disconnectWS()
       import('../game/GameScene').then(({ destroyGame }) => destroyGame())
     }

@@ -7,6 +7,7 @@ import { sendPosition, onWSMessage } from '../services/ws'
 const TILE_SIZE = 32
 const PLAYER_SPEED = 160
 const NPC_INTERACT_DISTANCE = 60
+const PLAYER_INTERACT_DISTANCE = 80
 
 const TILESET_IMAGE_MAP: Record<string, string> = {
   blocks_1: 'blocks_1.png',
@@ -360,6 +361,25 @@ class MainScene extends Phaser.Scene {
       if (cfg?.canChat) {
         bridge.emit('npc:interact', nearest)
       }
+    }
+
+    // Other player proximity
+    let nearestPlayer: { userId: string; name: string; x: number; y: number } | null = null
+    let nearestPlayerDist = Infinity
+    this.otherPlayerSprites.forEach(({ sprite }, playerId) => {
+      const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, sprite.x, sprite.y)
+      if (dist < PLAYER_INTERACT_DISTANCE && dist < nearestPlayerDist) {
+        nearestPlayerDist = dist
+        const p = onlinePlayers.get(playerId)
+        if (p) {
+          nearestPlayer = { userId: playerId, name: p.name, x: sprite.x, y: sprite.y }
+        }
+      }
+    })
+    bridge.emit('player:nearby', nearestPlayer)
+
+    if (Phaser.Input.Keyboard.JustDown(this.eKey) && nearestPlayer && !nearest) {
+      bridge.emit('player:interact', nearestPlayer)
     }
   }
 }

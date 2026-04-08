@@ -45,6 +45,24 @@ export function connectWS(): void {
       if (data.type === 'spawn_position') {
         useGameStore.getState().setSpawnPosition(data.x as number, data.y as number)
       }
+      // Player-to-player chat: reply from the target player (or auto-reply)
+      if (data.type === 'player_chat_reply') {
+        useGameStore.getState().addPlayerChatMessage({
+          from: (data.from_name as string) || '对方',
+          text: (data.text as string) || '',
+          isAuto: (data.is_auto as boolean) ?? false,
+          timestamp: typeof data.timestamp === 'number' ? data.timestamp : Date.now(),
+        })
+      }
+      // Incoming player_chat: another player messaged you
+      if (data.type === 'player_chat') {
+        useGameStore.getState().addPlayerChatMessage({
+          from: (data.from_name as string) || '对方',
+          text: (data.text as string) || '',
+          isAuto: false,
+          timestamp: typeof data.timestamp === 'number' ? data.timestamp : Date.now(),
+        })
+      }
       if (data.type === 'online_players') {
         const players = data.players as Array<Record<string, unknown>>
         players.forEach((p) => useGameStore.getState().setOnlinePlayer({
@@ -112,4 +130,8 @@ export function sendPosition(x: number, y: number, direction: string): void {
   lastSentX = x
   lastSentY = y
   sendWS({ type: 'move', x: Math.round(x), y: Math.round(y), direction })
+}
+
+export function sendPlayerChat(targetId: string, text: string): void {
+  sendWS({ type: 'player_chat', target_id: targetId, text })
 }

@@ -70,6 +70,53 @@ export function forgeQuick(name: string, raw_text: string): Promise<{ forge_id: 
   return apiFetch('/forge/quick', { method: 'POST', body: JSON.stringify({ name, raw_text }) })
 }
 
+export interface DeepForgeStartResponse {
+  forge_id: string
+  status: string
+}
+
+export type DeepForgeStage =
+  | 'routing'
+  | 'researching'
+  | 'extracting'
+  | 'building'
+  | 'validating'
+  | 'refining'
+  | 'done'
+  | 'error'
+
+export interface DeepForgeStatusResponse {
+  forge_id: string
+  status: DeepForgeStage
+  stage: DeepForgeStage
+  progress: number
+  name: string
+  ability_md: string | null
+  persona_md: string | null
+  soul_md: string | null
+  star_rating: number
+  district: string
+  resident_id: string | null
+  error: string | null
+}
+
+export function deepForgeStart(
+  token: string,
+  data: { character_name: string; raw_text?: string; user_material?: string },
+): Promise<DeepForgeStartResponse> {
+  return apiFetch('/forge/deep-start', {
+    method: 'POST',
+    body: JSON.stringify(data),
+    headers: { Authorization: `Bearer ${token}` },
+  })
+}
+
+export function deepForgeStatus(token: string, forgeId: string): Promise<DeepForgeStatusResponse> {
+  return apiFetch(`/forge/deep-status/${forgeId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+}
+
 export interface ImportSkillResponse {
   id: string
   slug: string
@@ -207,6 +254,37 @@ export function updatePrivacy(data: {
 
 export function getSpriteTemplates(): Promise<SpriteTemplate[]> {
   return apiFetch('/sprites/templates')
+}
+
+export interface LLMSettings {
+  system_allows_custom?: boolean
+  custom_llm_enabled?: boolean
+  api_format?: 'openai' | 'anthropic'
+  base_url?: string
+  api_key?: string
+  model?: string
+}
+
+export interface LLMTestResult {
+  success: boolean
+  message: string
+}
+
+export function updateLLM(data: LLMSettings): Promise<{ llm: Record<string, unknown> }> {
+  return apiFetch('/settings/llm', { method: 'PATCH', body: JSON.stringify(data) })
+}
+
+export function testLLMConnection(data: {
+  api_format: string
+  base_url: string
+  api_key: string
+  model: string
+}): Promise<LLMTestResult> {
+  return apiFetch('/settings/llm/test', { method: 'POST', body: JSON.stringify(data) })
+}
+
+export function updateEconomy(data: { low_balance_alert?: number }): Promise<{ economy: Record<string, unknown> }> {
+  return apiFetch('/settings/economy', { method: 'PATCH', body: JSON.stringify(data) })
 }
 
 // ─── Import Skill ────────────────────────────────────────────────

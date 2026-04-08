@@ -16,12 +16,25 @@ export interface OnlinePlayer {
   direction: string
 }
 
+export type ChatTarget =
+  | { type: 'npc'; slug: string; name: string; role: string }
+  | { type: 'player'; userId: string; name: string }
+
+export interface PlayerChatMessage {
+  from: string
+  text: string
+  isAuto: boolean
+  timestamp: number
+}
+
 interface GameState {
   user: User | null
   token: string | null
   playerSpriteKey: string
   chatOpen: boolean
   chatResident: { slug: string; name: string; role: string } | null
+  chatTarget: ChatTarget | null
+  playerChatMessages: PlayerChatMessage[]
   inputFocused: boolean
   profileTab: 'residents' | 'conversations' | 'transactions' | 'settings'
   onlinePlayers: Map<string, OnlinePlayer>
@@ -33,6 +46,9 @@ interface GameState {
   setPlayerSpriteKey: (key: string) => void
   openChat: (resident: { slug: string; name: string; role: string }) => void
   closeChat: () => void
+  setChatTarget: (target: ChatTarget) => void
+  clearChatTarget: () => void
+  addPlayerChatMessage: (msg: PlayerChatMessage) => void
   setInputFocused: (v: boolean) => void
   updateBalance: (balance: number) => void
   setProfileTab: (tab: 'residents' | 'conversations' | 'transactions' | 'settings') => void
@@ -48,6 +64,8 @@ export const useGameStore = create<GameState>((set) => ({
   playerSpriteKey: '埃迪',
   chatOpen: false,
   chatResident: null,
+  chatTarget: null,
+  playerChatMessages: [],
   inputFocused: false,
   profileTab: 'residents',
   onlinePlayers: new Map(),
@@ -66,7 +84,17 @@ export const useGameStore = create<GameState>((set) => ({
   },
   setPlayerSpriteKey: (key) => set({ playerSpriteKey: key }),
   openChat: (resident) => set({ chatOpen: true, chatResident: resident }),
-  closeChat: () => set({ chatOpen: false, chatResident: null, inputFocused: false }),
+  closeChat: () => set({ chatOpen: false, chatResident: null, chatTarget: null, inputFocused: false }),
+  setChatTarget: (target) => set({
+    chatTarget: target,
+    chatOpen: true,
+    ...(target.type === 'player' ? { playerChatMessages: [] } : {}),
+    ...(target.type === 'npc'
+      ? { chatResident: { slug: target.slug, name: target.name, role: target.role } }
+      : { chatResident: null }),
+  }),
+  clearChatTarget: () => set({ chatTarget: null, chatOpen: false, chatResident: null, inputFocused: false }),
+  addPlayerChatMessage: (msg) => set((s) => ({ playerChatMessages: [...s.playerChatMessages, msg] })),
   setInputFocused: (v) => set({ inputFocused: v }),
   updateBalance: (balance) => set((s) => s.user ? { user: { ...s.user, soul_coin_balance: balance } } : {}),
   setProfileTab: (tab) => set({ profileTab: tab }),
