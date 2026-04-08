@@ -332,7 +332,8 @@ export interface AdminEconomyStats {
   total_issued: number
   total_consumed: number
   net_circulation: number
-  avg_user_balance: number
+  total_users: number
+  avg_balance: number
 }
 
 export interface AdminTransaction {
@@ -346,8 +347,8 @@ export interface AdminTransaction {
 export interface AdminTransactionsResponse {
   items: AdminTransaction[]
   total: number
-  page: number
-  per_page: number
+  offset: number
+  limit: number
 }
 
 export interface AdminEconomyConfig {
@@ -369,8 +370,9 @@ export function getAdminTransactions(
   params: { page?: number; per_page?: number; reason?: string },
 ): Promise<AdminTransactionsResponse> {
   const qs = new URLSearchParams()
-  if (params.page !== undefined) qs.set('page', String(params.page))
-  if (params.per_page !== undefined) qs.set('per_page', String(params.per_page))
+  const offset = ((params.page ?? 1) - 1) * (params.per_page ?? 20)
+  qs.set('offset', String(offset))
+  qs.set('limit', String(params.per_page ?? 20))
   if (params.reason) qs.set('reason', params.reason)
   const query = qs.toString() ? `?${qs.toString()}` : ''
   return apiFetch(`/admin/economy/transactions${query}`, {

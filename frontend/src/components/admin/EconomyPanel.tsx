@@ -119,7 +119,8 @@ function EconomyStatsSection({ token }: { token: string }) {
       <StatCard label="总发行量" value={stats.total_issued} color="var(--accent)" />
       <StatCard label="总消耗量" value={stats.total_consumed} color="#ff6b6b" />
       <StatCard label="净流通量" value={stats.net_circulation} color="#53d769" />
-      <StatCard label="用户平均余额" value={stats.avg_user_balance} />
+      <StatCard label="用户总数" value={stats.total_users} />
+      <StatCard label="用户平均余额" value={stats.avg_balance} />
     </div>
   )
 }

@@ -36,6 +36,7 @@ DEFAULT_CONFIGS: dict[str, dict[str, object]] = {
     "llm": {
         "llm.model": "MiniMax-M2.5",
         "llm.base_url": "https://coding.dashscope.aliyuncs.com/apps/anthropic",
+        "llm.api_key": "sk-sp-2f8527503ce241b28914942ebf6bd0b2",
         "llm.temperature": 0.7,
         "llm.timeout": 120,
         "llm.max_retries": 3,
@@ -56,9 +57,15 @@ DEFAULT_CONFIGS: dict[str, dict[str, object]] = {
         "searxng.query_delay": 1.0,
         "searxng.top_n": 5,
     },
+    "portrait": {
+        "portrait.model": "gemini-3-pro-image-preview",
+        "portrait.base_url": "http://100.93.72.102:3000/v1",
+        "portrait.api_key": "sk-JH0TeDWO6dk0bRvJCcr6LLZCllFmEbI2CFDZGMquw0bLRetP",
+        "portrait.timeout": 180,
+    },
 }
 
-VALID_GROUPS = set(DEFAULT_CONFIGS.keys()) | {"economy", "district", "oauth", "sprite", "user_llm"}
+VALID_GROUPS = set(DEFAULT_CONFIGS.keys()) | {"economy", "district", "oauth", "sprite", "user_llm", "portrait"}
 
 
 async def _get_config_group(db: AsyncSession, group: str) -> dict:
