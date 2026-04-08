@@ -138,3 +138,36 @@ async def test_find_or_create_user_rejects_low_trust(db_session):
 
     with pytest.raises(ValueError, match="trust_level"):
         await find_or_create_user(db_session, ld_user, min_trust_level=1)
+
+
+# --- Router endpoint tests ---
+
+from httpx import AsyncClient
+
+
+@pytest.mark.anyio
+async def test_linuxdo_login_redirects(client: AsyncClient):
+    """GET /auth/linuxdo/login should redirect to LinuxDo authorize URL."""
+    with patch("app.routers.auth.settings") as mock_settings:
+        mock_settings.linuxdo_client_id = "test-client-id"
+        mock_settings.linuxdo_client_secret = "test-secret"
+        mock_settings.linuxdo_redirect_uri = "http://localhost:8000/auth/linuxdo/callback"
+        mock_settings.linuxdo_min_trust_level = 0
+
+        resp = await client.get("/auth/linuxdo/login", follow_redirects=False)
+
+    assert resp.status_code == 307
+    assert "connect.linux.do/oauth2/authorize" in resp.headers["location"]
+    assert "client_id=test-client-id" in resp.headers["location"]
+
+
+@pytest.mark.anyio
+async def test_linuxdo_login_returns_error_if_not_configured(client: AsyncClient):
+    """Should return 501 if LinuxDo OAuth not configured."""
+    with patch("app.routers.auth.settings") as mock_settings:
+        mock_settings.linuxdo_client_id = ""
+        mock_settings.linuxdo_client_secret = ""
+
+        resp = await client.get("/auth/linuxdo/login")
+
+    assert resp.status_code == 501
