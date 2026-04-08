@@ -519,7 +519,396 @@ user = User(
 
 ---
 
-## 8. 数据模型变更汇总
+## 8. 管理面板（Admin Panel）
+
+### 8.1 技术方案
+
+在现有 React 前端中新增 `/admin` 路由区域，复用现有技术栈和 API 客户端。
+
+**权限模型：**
+- User 模型新增 `is_admin: bool = False` 字段
+- 所有 `/admin/*` API 端点通过中间件校验 `is_admin`
+- 前端路由守卫：非 admin 用户访问 `/admin` 重定向到首页
+- 首个 admin 通过数据库手动设置或 CLI 命令创建
+
+**布局：**
+```
+┌──────────────────────────────────────────────┐
+│  Skills-World Admin          [用户名] [退出] │
+├────────┬─────────────────────────────────────┤
+│        │                                     │
+│ 仪表盘 │          内容区域                    │
+│ 用户   │                                     │
+│ 居民   │                                     │
+│ 炼化   │                                     │
+│ 经济   │                                     │
+│ 系统   │                                     │
+│        │                                     │
+├────────┴─────────────────────────────────────┤
+│  Skills-World v1.0                           │
+└──────────────────────────────────────────────┘
+```
+
+左侧固定导航栏 + 右侧内容区，标准后台布局。
+
+### 8.2 模块一：仪表盘（Dashboard）
+
+路由：`/admin`
+
+**实时指标卡片（4 个）：**
+
+| 指标 | 数据来源 | 刷新频率 |
+|------|---------|---------|
+| 当前在线用户 | WebSocket ConnectionManager.active 长度 | 实时（WS 推送） |
+| 今日新注册 | `SELECT COUNT(*) FROM users WHERE created_at >= today` | 30 秒轮询 |
+| 活跃对话数 | ConnectionManager.chatting 长度 | 实时（WS 推送） |
+| Soul Coin 净流通量 | `SUM(amount) FROM transactions WHERE created_at >= today` | 30 秒轮询 |
+
+**图表区域：**
+- 7 日用户增长趋势（折线图）
+- 7 日对话量趋势（柱状图）
+- Soul Coin 收支比（环形图：发放 vs 消耗）
+- 热门居民 Top 10（水平条形图，按 heat 排序）
+
+**快捷操作：**
+- 查看最近注册用户（5 条）
+- 查看最近炼化记录（5 条）
+- SearXNG 状态灯（绿/红，ping 检测）
+- LLM API 状态灯（绿/红，健康检查）
+
+### 8.3 模块二：用户管理（Users）
+
+路由：`/admin/users`
+
+**列表页：**
+
+| 列 | 内容 | 可排序 | 可筛选 |
+|----|------|--------|--------|
+| 用户名 | name | 是 | 搜索 |
+| 邮箱 | email | 否 | 搜索 |
+| 登录方式 | 邮箱/GitHub/LinuxDo 图标 | 否 | 多选筛选 |
+| Soul Coin | soul_coin_balance | 是 | 范围筛选 |
+| 创建居民数 | COUNT(residents) | 是 | - |
+| 注册时间 | created_at | 是 | 日期范围 |
+| 状态 | active/banned | 否 | 筛选 |
+| 操作 | 详情/调整余额/封禁 | - | - |
+
+分页：每页 20 条，服务端分页。
+
+**用户详情页** `/admin/users/{id}`：
+
+```
+基本信息卡片
+├── 头像、姓名、邮箱
+├── 登录方式（邮箱 ✓ / GitHub ✓ / LinuxDo ✓ trust_level=2）
+├── 注册时间、最后活跃时间
+└── Soul Coin 余额 [+调整]
+
+Tab 1: 创建的居民
+├── 居民列表（名称、街区、评分、热度）
+└── 点击跳转居民详情
+
+Tab 2: 对话记录
+├── 对话列表（居民名、开始时间、轮次、评分）
+└── 展开可查看消息内容
+
+Tab 3: 交易流水
+├── 时间、金额（+/-）、原因
+└── 筛选：类型（充值/消耗/奖励）
+
+Tab 4: 玩家角色
+├── 绑定的 Player Resident 信息
+├── 三层人设预览
+├── 回复模式（自动/手动）
+└── 精灵图 + 头像预览
+```
+
+**操作：**
+- **调整余额**：弹窗输入金额（正/负）+ 原因，创建 Transaction 记录
+- **封禁/解封**：设置 `is_banned` 字段，封禁后 JWT 校验拒绝
+- **设为管理员**：设置 `is_admin = True`
+- **重置密码**：生成临时密码（仅邮箱登录用户）
+
+### 8.4 模块三：居民管理（Residents）
+
+路由：`/admin/residents`
+
+**列表页：**
+
+| 列 | 内容 | 可排序 | 可筛选 |
+|----|------|--------|--------|
+| 名称 | name + sprite 缩略图 | 是 | 搜索 |
+| 类型 | NPC / Player | 否 | 筛选 |
+| 街区 | district | 否 | 多选筛选 |
+| 评分 | star_rating (1-3★) | 是 | 筛选 |
+| 热度 | heat | 是 | 范围 |
+| 状态 | idle/chatting/popular/sleeping | 否 | 多选筛选 |
+| 创建者 | creator.name | 否 | 搜索 |
+| 对话数 | total_conversations | 是 | - |
+| 创建时间 | created_at | 是 | 日期范围 |
+
+**居民详情页** `/admin/residents/{slug}`：
+
+```
+基本信息
+├── 头像（AI 生成）+ 精灵图预览
+├── 名称、slug、街区、状态、热度
+├── 创建者（链接到用户详情）
+├── 评分：★★☆ (2/3) | 对话数: 47 | 平均评分: 4.2
+└── 地图位置：(tile_x, tile_y)
+
+Tab 1: 三层人设
+├── Ability Layer（Markdown 渲染 + 编辑按钮）
+├── Persona Layer（Markdown 渲染 + 编辑按钮）
+├── Soul Layer（Markdown 渲染 + 编辑按钮）
+└── Meta（诚实边界、调研来源、炼化参数）
+
+Tab 2: 对话统计
+├── 对话量趋势（7日/30日）
+├── 评分分布（1-5星饼图）
+└── 最近对话列表
+
+Tab 3: 版本历史
+├── 版本列表（时间、修改摘要）
+└── 版本对比（diff 视图）
+```
+
+**预设人物管理** `/admin/residents/presets`：
+- 14 个预设人物的专用管理页
+- 支持：编辑三层数据、更新调研素材、重新生成头像
+- 新增预设：可从现有居民"提升"为预设，或直接导入 nuwa-skill 格式
+
+**批量操作：**
+- 批量调整街区
+- 批量重新评分（触发 scoring_service）
+- 批量状态重置（如将所有 sleeping 改为 idle）
+
+### 8.5 模块四：炼化监控（Forge Monitor）
+
+路由：`/admin/forge`
+
+**活跃会话面板：**
+
+| 列 | 内容 |
+|----|------|
+| 会话 ID | forge_id |
+| 用户 | creator name（链接） |
+| 目标人物 | character_name |
+| 模式 | 快速 / 深度 |
+| 当前阶段 | routing → researching → extracting → building → validating → refining → done |
+| 阶段进度 | 进度条（如 researching 3/6 维度完成） |
+| 已耗时 | 实时计时 |
+| Token 已用 | 累计 input + output tokens |
+
+**历史记录页：**
+
+| 列 | 可筛选 |
+|----|--------|
+| 状态（done/error/cancelled） | 多选 |
+| 模式（快速/深度） | 多选 |
+| 创建时间 | 日期范围 |
+| 总耗时 | 范围 |
+| Token 消耗 | 范围 |
+
+点击展开可查看：
+- 各阶段耗时明细
+- 调研结果摘要（搜索条数、来源分布）
+- 验证报告（三问验证结果、风格检测得分）
+- 精炼日志（双 Agent 建议）
+
+**SearXNG 健康监控：**
+- 最近 1 小时搜索成功率
+- 平均响应时间
+- 引擎可用状态（Brave ✓ / DuckDuckGo ✓ / Startpage ✗）
+- 手动 ping 测试按钮
+
+### 8.6 模块五：经济系统（Economy）
+
+路由：`/admin/economy`
+
+**全局统计卡片：**
+- Soul Coin 总发行量（所有正向 transaction 之和）
+- Soul Coin 总消耗量（所有负向 transaction 之和）
+- 净流通量（总发行 - 总消耗）
+- 用户平均余额
+
+**交易流水表：**
+
+| 列 | 可筛选 |
+|----|--------|
+| 时间 | 日期范围 |
+| 用户 | 搜索 |
+| 金额 | 正/负/范围 |
+| 原因 | 类型筛选（signup_bonus / daily_reward / chat / forge_creation / creator_passive / good_rating） |
+
+**参数配置面板：**
+
+所有经济参数集中配置，修改后即时生效（写入数据库配置表，不需要重启服务）：
+
+```
+┌─ Soul Coin 参数配置 ──────────────────────────┐
+│                                                │
+│  注册奖励          [100] SC                    │
+│  每日登录奖励      [  5] SC                    │
+│  对话默认成本/轮   [  1] SC                    │
+│  创建居民奖励      [ 50] SC                    │
+│  创作者被动收益/轮  [  1] SC                    │
+│  高评分奖励        [  5] SC（≥ [4] 星触发）     │
+│                                                │
+│                          [恢复默认]  [保存]     │
+└────────────────────────────────────────────────┘
+```
+
+### 8.7 模块六：系统配置（System Config）
+
+路由：`/admin/system`
+
+**分组配置面板：**
+
+#### LLM 配置
+```
+模型（炼化/对话）   [MiniMax-M2.5        ▼]
+API Base URL        [https://coding.dashscope...]
+max_tokens（对话）   [  512]
+max_tokens（Ability）[1500]
+max_tokens（Persona）[2000]
+max_tokens（Soul）   [1500]
+头像生成模型        [gemini-3-pro-image-preview]
+头像 API Base URL   [http://100.93.72.102:3000/v1]
+```
+
+#### 热度与状态规则
+```
+Popular 热度阈值    [ 50] 次对话/7天
+Sleeping 无活动天数  [  7] 天
+热度计算 Cron 间隔   [3600] 秒
+```
+
+#### 评分规则
+```
+最低内容长度/层      [ 50] 字符
+3星最低对话数        [ 50] 次
+3星最低平均评分      [3.5]
+```
+
+#### 版本控制
+```
+最大保留版本数       [ 10]
+```
+
+#### 街区地图配置
+```
+┌─ engineering ─────────────────┐
+│ 基准坐标: (58, 55)            │
+│ 槽位数: 20                    │
+│ [编辑坐标...]                 │
+├─ product ─────────────────────┤
+│ 基准坐标: (35, 40)            │
+│ 槽位数: 20                    │
+│ [编辑坐标...]                 │
+├─ academy ─────────────────────┤
+│ 基准坐标: (30, 65)            │
+│ 槽位数: 20                    │
+│ [编辑坐标...]                 │
+├─ free ────────────────────────┤
+│ 基准坐标: (100, 38)           │
+│ 槽位数: 20                    │
+│ [编辑坐标...]                 │
+└───────────────────────────────┘
+默认出生点: ([76], [50])
+```
+
+#### OAuth 状态
+```
+邮箱登录            [✓ 启用]
+GitHub OAuth        [✗ 未配置] client_id: (empty)
+LinuxDo OAuth       [? 待配置] client_id: (empty)
+LinuxDo 最低信任等级 [  1]
+```
+
+注意：OAuth secret 不在面板显示或修改，仅通过环境变量/密钥管理配置。
+
+#### 精灵模板管理
+```
+┌─ 25 个模板 ───────────────────────────────────┐
+│ [sprite] 伊莎贝拉  female / young / elegant    │
+│ [sprite] 克劳斯    male / mature / serious     │
+│ [sprite] 亚当      male / young / casual       │
+│ ... (每个可编辑属性标注)                        │
+│                                                │
+│ [+ 上传新模板]                                  │
+└────────────────────────────────────────────────┘
+```
+
+### 8.8 Admin API 端点
+
+```
+# 仪表盘
+GET    /admin/dashboard/stats         # 实时指标
+GET    /admin/dashboard/trends        # 7日趋势数据
+GET    /admin/dashboard/health        # 服务健康状态
+
+# 用户管理
+GET    /admin/users                   # 用户列表（分页/筛选/排序）
+GET    /admin/users/{id}              # 用户详情
+PATCH  /admin/users/{id}              # 修改用户（余额/封禁/admin）
+POST   /admin/users/{id}/adjust-coin  # 调整余额（带原因）
+
+# 居民管理
+GET    /admin/residents               # 居民列表（分页/筛选/排序）
+GET    /admin/residents/{slug}        # 居民详情
+PATCH  /admin/residents/{slug}        # 修改居民
+POST   /admin/residents/batch         # 批量操作
+GET    /admin/residents/presets       # 预设人物列表
+POST   /admin/residents/presets       # 新增预设
+PUT    /admin/residents/presets/{slug} # 更新预设
+
+# 炼化监控
+GET    /admin/forge/active            # 活跃炼化会话
+GET    /admin/forge/history           # 历史记录（分页/筛选）
+GET    /admin/forge/{id}/detail       # 会话详情（各阶段数据）
+GET    /admin/forge/searxng-health    # SearXNG 健康检查
+
+# 经济系统
+GET    /admin/economy/stats           # 经济统计
+GET    /admin/economy/transactions    # 交易流水（分页/筛选）
+GET    /admin/economy/config          # 获取经济参数
+PUT    /admin/economy/config          # 更新经济参数
+
+# 系统配置
+GET    /admin/config/{group}          # 获取配置组（llm/heat/scoring/districts/oauth/sprites）
+PUT    /admin/config/{group}          # 更新配置组
+GET    /admin/config/sprites          # 精灵模板列表
+PUT    /admin/config/sprites/{key}    # 更新模板属性
+POST   /admin/config/sprites          # 上传新模板
+```
+
+### 8.9 动态配置存储
+
+当前所有参数都是硬编码常量或 .env 环境变量（修改需重启）。管理面板需要支持**运行时动态配置**。
+
+**方案：新增 SystemConfig 模型**
+
+```python
+class SystemConfig(Base):
+    __tablename__ = "system_config"
+    key: str        # 配置键，如 "economy.signup_bonus"
+    value: str      # JSON 序列化的值
+    group: str      # 分组：economy / heat / scoring / llm / districts / sprites
+    updated_at: datetime
+    updated_by: str # 修改人 user_id
+```
+
+**配置读取优先级：**
+```
+数据库 SystemConfig（运行时可改） > .env 环境变量 > 代码默认值
+```
+
+启动时加载到内存缓存，管理面板修改后刷新缓存，无需重启服务。
+
+---
+
+## 9. 数据模型变更汇总
 
 ### Resident 模型新增
 
@@ -542,6 +931,8 @@ last_x: int = 2432                   # 上次下线位置 X（像素）
 last_y: int = 1600                   # 上次下线位置 Y（像素）
 linuxdo_id: str | None               # LinuxDo 用户 ID（unique, nullable）
 linuxdo_trust_level: int | None      # LinuxDo 信任等级 (0-4)
+is_admin: bool = False               # 管理员标识
+is_banned: bool = False              # 封禁标识
 ```
 
 ### ForgeSession 模型（新建）
@@ -562,9 +953,19 @@ created_at: datetime
 updated_at: datetime
 ```
 
+### SystemConfig 模型（新建）
+
+```python
+key: str                              # 配置键，如 "economy.signup_bonus"（primary key）
+value: str                            # JSON 序列化的值
+group: str                            # 分组：economy / heat / scoring / llm / districts / sprites
+updated_at: datetime
+updated_by: str                       # 修改人 user_id
+```
+
 ---
 
-## 8. API 变更汇总
+## 10. API 变更汇总
 
 ### 新增端点
 
@@ -588,6 +989,15 @@ POST   /sprites/match                  # 基于人设智能匹配精灵
 
 GET    /presets                        # 获取预设人物列表
 GET    /presets/{slug}                 # 获取预设人物详情（含三层数据）
+
+# 管理面板（完整列表见 8.8 节）
+GET    /admin/dashboard/stats         # 仪表盘实时指标
+GET    /admin/users                   # 用户管理
+GET    /admin/residents               # 居民管理
+GET    /admin/forge/active            # 炼化监控
+GET    /admin/economy/stats           # 经济统计
+GET    /admin/config/{group}          # 系统配置读取
+PUT    /admin/config/{group}          # 系统配置修改
 ```
 
 ### 修改端点
@@ -601,7 +1011,7 @@ WebSocket handler 扩展:
 
 ---
 
-## 9. MVP 验证结果
+## 11. MVP 验证结果
 
 ### 自动调研 + 炼化管线（已验证）
 
@@ -621,7 +1031,7 @@ WebSocket handler 扩展:
 
 ---
 
-## 10. 技术依赖
+## 12. 技术依赖
 
 | 组件 | 技术 | 位置 |
 |------|------|------|
