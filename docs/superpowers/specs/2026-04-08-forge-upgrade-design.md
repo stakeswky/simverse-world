@@ -766,15 +766,96 @@ Tab 3: 版本历史
 **分组配置面板：**
 
 #### LLM 配置
+
+LLM 调用分为**系统 LLM**（平台承担）和**用户 LLM**（可由用户自带 Key）两类。
+
+**调用归属：**
+
+| 归属 | 调用场景 | 特征 |
+|------|---------|------|
+| 系统 LLM | 智能路由判断、质量评分（1-3星）、街区分配、Skill 格式检测、精灵图匹配、预设角色初始炼化 | 轻量（<500 token/次）、平台基础设施 |
+| 用户 LLM | 对话（NPC/玩家）、炼化全流程（生成+验证+精炼）、Skill 格式转换、AI 头像生成 | 重量（500-30000 token/次）、用户直接受益 |
+
 ```
-模型（炼化/对话）   [MiniMax-M2.5        ▼]
-API Base URL        [https://coding.dashscope...]
-max_tokens（对话）   [  512]
-max_tokens（Ability）[1500]
-max_tokens（Persona）[2000]
-max_tokens（Soul）   [1500]
-头像生成模型        [gemini-3-pro-image-preview]
-头像 API Base URL   [http://100.93.72.102:3000/v1]
+┌─ 系统 LLM ────────────────────────────────────────────────────┐
+│                                                                │
+│  ── 基础配置 ──                                                │
+│  模型              [MiniMax-M2.5           ▼]                  │
+│  API Base URL      [https://coding.dashscope...]               │
+│  API Key           [sk-sp-****...****bd0b2] [显示/隐藏]        │
+│                                                                │
+│  ── 生成参数 ──                                                │
+│  max_tokens（路由/评分）  [ 200]                                │
+│  max_tokens（街区分配）   [ 100]                                │
+│  Temperature             [ 0.3]   （系统调用偏低温，确定性高）   │
+│                                                                │
+│  ── 高级参数 ──                                                │
+│  启用 Thinking     [✗ 关闭]   （系统轻量调用不需要深度推理）     │
+│  请求超时          [  30] 秒                                   │
+│  最大重试次数      [   2]                                       │
+│  Fallback 模型     [qwen3.5-plus           ▼] [✗ 未启用]      │
+│  Fallback 触发条件  ○ 主模型超时  ○ 主模型报错  ● 两者皆触发    │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+
+┌─ 用户 LLM（默认）──────────────────────────────────────────────┐
+│                                                                │
+│  ── 基础配置 ──                                                │
+│  模型              [MiniMax-M2.5           ▼]                  │
+│  API Base URL      [https://coding.dashscope...]               │
+│  API Key           [sk-sp-****...****bd0b2] [显示/隐藏]        │
+│                                                                │
+│  ── 生成参数 ──                                                │
+│  max_tokens（对话）       [  512]                               │
+│  max_tokens（Ability）    [1500]                                │
+│  max_tokens（Persona）    [2000]                                │
+│  max_tokens（Soul）       [1500]                                │
+│  max_tokens（快速炼化）   [4096]                                │
+│  Temperature（对话）      [ 0.7]                                │
+│  Temperature（炼化）      [ 0.5]                                │
+│                                                                │
+│  ── 高级参数 ──                                                │
+│  启用 Thinking     [✓ 开启]   思考 token 预算 [8192]           │
+│  请求超时          [ 120] 秒                                   │
+│  最大重试次数      [   3]                                       │
+│  并发限制          [   5] 个同时请求（防止 API 限流）           │
+│  Fallback 模型     [qwen3.5-plus           ▼] [✓ 已启用]      │
+│  Fallback 触发条件  ○ 主模型超时  ○ 主模型报错  ● 两者皆触发    │
+│                                                                │
+│  ── 深度蒸馏专用 ──                                            │
+│  调研阶段并发数    [   2] （SearXNG 查询并发，避免限流）        │
+│  调研查询间隔      [   1] 秒                                   │
+│  验证阶段模型      [与主模型相同  ▼]  （可选择更强模型做验证）   │
+│  精炼阶段模型      [与主模型相同  ▼]                            │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+
+┌─ 头像生成 LLM ─────────────────────────────────────────────────┐
+│                                                                │
+│  模型              [gemini-3-pro-image-preview ▼]              │
+│  API Base URL      [http://100.93.72.102:3000/v1]              │
+│  API Key           [sk-JH****...****RetP] [显示/隐藏]          │
+│  请求超时          [ 180] 秒                                   │
+│  Fallback 模型     [gemini-3.1-flash-image-preview ▼] [✓]     │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+
+┌─ 用户自定义 LLM 策略 ─────────────────────────────────────────┐
+│                                                                │
+│  允许用户自带 API Key    [✗ 关闭]                              │
+│                                                                │
+│  开启后：                                                      │
+│  ├─ 用户可在个人设置中填写自己的 API Key / Base URL / Model    │
+│  ├─ 用户 LLM 调用优先使用用户自己的 Key                        │
+│  ├─ 用户未配置时 fallback 到系统默认用户 LLM                   │
+│  ├─ 系统 LLM 调用始终使用系统 Key（不受影响）                  │
+│  └─ 对话/炼化不扣 Soul Coin（用户自付 API 费用）               │
+│                                                                │
+│  允许的 API 格式   [✓] OpenAI 兼容  [✓] Anthropic 兼容        │
+│  用户 Key 验证     [✓ 启用] （填写时自动发送测试请求验证可用）  │
+│  用户可选模型白名单 [留空则不限制]                              │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
 ```
 
 #### 热度与状态规则
@@ -908,7 +989,168 @@ class SystemConfig(Base):
 
 ---
 
-## 9. 数据模型变更汇总
+## 9. 用户设置面板（User Settings）
+
+路由：`/settings`
+
+普通用户的个人设置页，包含 5 个分组。
+
+### 9.1 账户设置
+
+```
+┌─ 账户 ─────────────────────────────────────────┐
+│                                                  │
+│  显示名称     [萧炎] [保存]                       │
+│                                                  │
+│  邮箱         xiaoyan@linux.do (不可修改)         │
+│                                                  │
+│  修改密码     [当前密码] [新密码] [确认] [保存]     │
+│  (仅邮箱注册用户显示)                              │
+│                                                  │
+│  ── 第三方账号绑定 ──                              │
+│  GitHub       [✗ 未绑定]  [去绑定]                │
+│  LinuxDo      [✓ 已绑定]  trust_level: 2  [解绑]  │
+│                                                  │
+│  ── 危险操作 ──                                   │
+│  [注销账号]  (需输入密码或二次确认)                 │
+│                                                  │
+└──────────────────────────────────────────────────┘
+```
+
+### 9.2 角色设置
+
+```
+┌─ 我的角色 ─────────────────────────────────────────────────────┐
+│                                                                │
+│  [头像预览]  [精灵图预览]                                       │
+│                                                                │
+│  角色名     [萧炎] [保存]                                       │
+│                                                                │
+│  ── 精灵图 ──                                                  │
+│  当前: [克劳斯]                                                │
+│  [25 个精灵图缩略选择网格]  [保存]                              │
+│                                                                │
+│  ── 头像 ──                                                    │
+│  [当前 AI 头像]                                                 │
+│  [重新生成]  [上传自定义]                                       │
+│                                                                │
+│  ── 三层人设 ──                                                │
+│  Ability Layer  [查看] [编辑]                                   │
+│  Persona Layer  [查看] [编辑]                                   │
+│  Soul Layer     [查看] [编辑]                                   │
+│  (编辑后自动保存版本快照)                                       │
+│                                                                │
+│  ── 快捷操作 ──                                                │
+│  [重新炼化角色]  — 重新走炼化流程覆盖当前人设                    │
+│  [导入 Skill]   — 上传/粘贴 Skill 文件替换当前人设              │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+```
+
+### 9.3 互动设置
+
+```
+┌─ 互动 ─────────────────────────────────────────────────────────┐
+│                                                                │
+│  ── 回复模式 ──                                                │
+│  当前模式:  ○ 手动（自己打字回复）                               │
+│            ● 自动（LLM 基于你的人设代为回复）                    │
+│                                                                │
+│  ── 离线行为 ──                                                │
+│  离线时允许 LLM 代替回复    [✓ 开启]                            │
+│  (关闭后，离线时其他玩家对你发的消息将排队，上线后推送)            │
+│                                                                │
+│  ── 通知 ──                                                    │
+│  有人发起对话时弹窗提醒      [✓ 开启]                           │
+│  仅手动模式时提醒            [✗ 关闭]                           │
+│  创作的居民被对话时通知      [✓ 开启]                           │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+```
+
+### 9.4 隐私设置
+
+```
+┌─ 隐私 ─────────────────────────────────────────────────────────┐
+│                                                                │
+│  ── 地图可见性 ──                                              │
+│  在地图上显示我的角色    [✓ 可见]                               │
+│  (关闭后进入隐身模式，其他玩家看不到你)                          │
+│                                                                │
+│  ── 人设公开范围 ──                                            │
+│  其他玩家可以看到:                                              │
+│    ● 完整人设（Ability + Persona + Soul 全部公开）              │
+│    ○ 仅身份卡（只显示 50 字简介）                               │
+│    ○ 完全隐藏（其他玩家看不到你的人设）                          │
+│                                                                │
+│  ── 对话记录 ──                                                │
+│  允许对话出现在居民统计中  [✓ 允许]                             │
+│  (关闭后你与 NPC 的对话不计入居民的"最近对话"数据)               │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+```
+
+### 9.5 LLM 设置（仅当管理员开启"允许用户自带 API Key"时显示）
+
+```
+┌─ 自定义 LLM ───────────────────────────────────────────────────┐
+│                                                                │
+│  启用自定义 LLM    [✗ 关闭]                                    │
+│  (开启后，你的对话和炼化将使用你自己的 API Key，不扣 Soul Coin)  │
+│                                                                │
+│  API 格式     ○ OpenAI 兼容  ● Anthropic 兼容                  │
+│  API Base URL [                                    ]           │
+│  API Key      [                                    ]           │
+│  模型名称     [                                    ]           │
+│                                                                │
+│  [测试连接]  → ✓ 连接成功，模型响应正常                         │
+│                                                                │
+│  ── 高级（可选）──                                             │
+│  启用 Thinking     [✗ 关闭]                                    │
+│  Temperature       [ 0.7]                                      │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+```
+
+### 9.6 经济设置
+
+```
+┌─ Soul Coin ────────────────────────────────────────────────────┐
+│                                                                │
+│  当前余额: 🪙 347 Soul Coins                                  │
+│                                                                │
+│  低余额提醒阈值    [ 10] SC                                    │
+│  (余额低于此值时弹窗提醒)                                       │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+```
+
+### 9.7 User Settings API 端点
+
+```
+GET    /settings                      # 获取所有用户设置
+PATCH  /settings/account              # 修改账户信息（名称/密码）
+POST   /settings/account/bind-github  # 绑定 GitHub
+POST   /settings/account/bind-linuxdo # 绑定 LinuxDo
+DELETE /settings/account/unbind/{provider} # 解绑第三方账号
+DELETE /settings/account              # 注销账号
+
+PATCH  /settings/character            # 修改角色（名称/精灵图）
+PUT    /settings/character/persona    # 更新三层人设
+POST   /settings/character/reforge    # 重新炼化
+POST   /settings/character/import     # 导入 Skill
+POST   /settings/character/avatar     # 重新生成/上传头像
+
+PATCH  /settings/interaction          # 修改互动设置（回复模式/离线行为/通知）
+PATCH  /settings/privacy              # 修改隐私设置（可见性/人设公开/对话记录）
+PATCH  /settings/llm                  # 修改自定义 LLM 配置
+POST   /settings/llm/test             # 测试自定义 LLM 连接
+PATCH  /settings/economy              # 修改经济设置（余额提醒阈值）
+```
+
+---
+
+## 10. 数据模型变更汇总
 
 ### Resident 模型新增
 
@@ -933,6 +1175,42 @@ linuxdo_id: str | None               # LinuxDo 用户 ID（unique, nullable）
 linuxdo_trust_level: int | None      # LinuxDo 信任等级 (0-4)
 is_admin: bool = False               # 管理员标识
 is_banned: bool = False              # 封禁标识
+
+# 用户设置
+settings_json: JSON = {}             # 用户个人设置（互动/隐私/经济，结构见下方）
+
+# 自定义 LLM（仅当系统开启 allow_user_custom_llm 时生效）
+custom_llm_enabled: bool = False     # 是否启用自定义 LLM
+custom_llm_api_format: str = "anthropic"  # "openai" | "anthropic"
+custom_llm_api_key: str | None       # 用户 API Key（AES 加密存储）
+custom_llm_base_url: str | None      # 用户自定义端点
+custom_llm_model: str | None         # 用户选择的模型
+```
+
+**settings_json 结构：**
+
+```json
+{
+  "interaction": {
+    "reply_mode": "manual",
+    "offline_auto_reply": true,
+    "notify_on_chat": true,
+    "notify_only_manual": false,
+    "notify_creator_earnings": true
+  },
+  "privacy": {
+    "map_visible": true,
+    "persona_visibility": "full",
+    "allow_conversation_stats": true
+  },
+  "economy": {
+    "low_balance_alert": 10
+  },
+  "llm": {
+    "thinking_enabled": false,
+    "temperature": 0.7
+  }
+}
 ```
 
 ### ForgeSession 模型（新建）
@@ -965,7 +1243,7 @@ updated_by: str                       # 修改人 user_id
 
 ---
 
-## 10. API 变更汇总
+## 11. API 变更汇总
 
 ### 新增端点
 
@@ -990,6 +1268,15 @@ POST   /sprites/match                  # 基于人设智能匹配精灵
 GET    /presets                        # 获取预设人物列表
 GET    /presets/{slug}                 # 获取预设人物详情（含三层数据）
 
+# 用户设置（完整列表见 9.7 节）
+GET    /settings                      # 获取所有用户设置
+PATCH  /settings/account              # 修改账户信息
+PATCH  /settings/character            # 修改角色设置
+PATCH  /settings/interaction          # 修改互动设置
+PATCH  /settings/privacy              # 修改隐私设置
+PATCH  /settings/llm                  # 修改自定义 LLM
+POST   /settings/llm/test             # 测试自定义 LLM 连接
+
 # 管理面板（完整列表见 8.8 节）
 GET    /admin/dashboard/stats         # 仪表盘实时指标
 GET    /admin/users                   # 用户管理
@@ -1011,7 +1298,7 @@ WebSocket handler 扩展:
 
 ---
 
-## 11. MVP 验证结果
+## 12. MVP 验证结果
 
 ### 自动调研 + 炼化管线（已验证）
 
@@ -1031,7 +1318,7 @@ WebSocket handler 扩展:
 
 ---
 
-## 12. 技术依赖
+## 13. 技术依赖
 
 | 组件 | 技术 | 位置 |
 |------|------|------|
