@@ -21,11 +21,10 @@ interface PresetCard {
 }
 
 const DISTRICT_LABELS: Record<string, string> = {
-  tech: '科技区',
-  arts: '艺术区',
-  commerce: '商业区',
+  engineering: '工程区',
+  product: '产品区',
+  academy: '学术区',
   free: '自由区',
-  plaza: '中央广场',
 }
 
 function districtLabel(district: string): string {
@@ -34,11 +33,10 @@ function districtLabel(district: string): string {
 
 function districtColor(district: string): string {
   const map: Record<string, string> = {
-    tech: '#0ea5e9',
-    arts: '#a855f7',
-    commerce: '#f59e0b',
+    engineering: '#0ea5e9',
+    product: '#a855f7',
+    academy: '#f59e0b',
     free: '#53d769',
-    plaza: '#e94560',
   }
   return map[district] ?? '#71717a'
 }
@@ -89,29 +87,18 @@ export function OnboardingPage() {
           (r) => r.meta_json?.origin === 'preset'
         )
 
-        // If no presets exist in DB, fall back to showing sprite templates as cards
-        const cards: PresetCard[] = presetResidents.length > 0
-          ? presetResidents.map((r) => {
-              const tmpl = templateMap.get(r.sprite_key)
-              return {
-                slug: r.slug,
-                name: r.name,
-                district: r.district,
-                sprite_key: r.sprite_key,
-                star_rating: r.star_rating,
-                vibe: tmpl?.vibe,
-                tags: tmpl?.tags,
-              }
-            })
-          : templates.slice(0, 6).map((t) => ({
-              slug: t.key,
-              name: t.key,
-              district: 'free',
-              sprite_key: t.key,
-              star_rating: 3,
-              vibe: t.vibe,
-              tags: t.tags,
-            }))
+        const cards: PresetCard[] = presetResidents.map((r) => {
+          const tmpl = templateMap.get(r.sprite_key)
+          return {
+            slug: r.slug,
+            name: r.name,
+            district: r.district,
+            sprite_key: r.sprite_key,
+            star_rating: r.star_rating,
+            vibe: tmpl?.vibe,
+            tags: tmpl?.tags,
+          }
+        })
 
         setPresets(cards)
       } catch (err: unknown) {
@@ -157,13 +144,14 @@ export function OnboardingPage() {
 
   return (
     <div style={{
-      minHeight: '100vh',
+      height: '100vh',
       background: 'linear-gradient(135deg, #0f0f17 0%, #1a1a2e 50%, #0f3460 100%)',
       overflowY: 'auto',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
       padding: '40px 20px 80px',
+      boxSizing: 'border-box',
     }}>
       {/* Header */}
       <div style={{ textAlign: 'center', marginBottom: 36, maxWidth: 600 }}>
@@ -224,8 +212,16 @@ export function OnboardingPage() {
 
       {/* No presets fallback */}
       {!loading && presets.length === 0 && !error && (
-        <div style={{ color: 'var(--text-muted)', fontSize: 14, marginTop: 20 }}>
-          暂无可选角色
+        <div style={{
+          color: 'var(--text-muted)',
+          fontSize: 15,
+          marginTop: 40,
+          textAlign: 'center',
+          lineHeight: 2,
+        }}>
+          暂无预设角色
+          <br />
+          <span style={{ fontSize: 13 }}>请点击下方按钮使用默认角色进入游戏</span>
         </div>
       )}
 
