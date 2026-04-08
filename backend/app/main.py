@@ -11,6 +11,19 @@ from app.tasks.heat_cron import heat_cron_loop
 
 @asynccontextmanager
 async def lifespan(app):
+    # Auto-create tables (dev mode — production uses Alembic migrations)
+    from app.database import engine, Base
+    # Import all models so Base.metadata knows about them
+    import app.models.user  # noqa: F401
+    import app.models.resident  # noqa: F401
+    import app.models.conversation  # noqa: F401
+    import app.models.transaction  # noqa: F401
+    import app.models.system_config  # noqa: F401
+    import app.models.forge_session  # noqa: F401
+    import app.models.pending_message  # noqa: F401
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
     # Start heat cron on startup
     task = asyncio.create_task(heat_cron_loop())
     yield
