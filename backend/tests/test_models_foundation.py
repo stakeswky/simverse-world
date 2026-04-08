@@ -111,3 +111,38 @@ async def test_forge_session_creation(db_session):
     assert session.build_output == {}
     assert session.validation_report == {}
     assert session.refinement_log == {}
+
+
+from app.config import Settings
+
+
+def test_config_new_fields_have_defaults():
+    """Verify new config fields exist with sensible defaults."""
+    s = Settings(
+        _env_file=None,  # Don't read .env during test
+        llm_api_key="test-key",
+    )
+    # LinuxDo OAuth
+    assert s.linuxdo_client_id == ""
+    assert s.linuxdo_client_secret == ""
+    assert s.linuxdo_redirect_uri == ""
+    assert s.linuxdo_min_trust_level == 0
+
+    # Portrait LLM
+    assert s.portrait_llm_model == "gemini-3-pro-image-preview"
+    assert s.portrait_llm_base_url == ""
+    assert s.portrait_llm_api_key == ""
+    assert s.portrait_llm_timeout == 180
+
+    # System LLM
+    assert s.system_llm_temperature == 0.3
+    assert s.system_llm_timeout == 30
+    assert s.system_llm_max_retries == 2
+
+    # User LLM
+    assert s.user_llm_temperature_chat == 0.7
+    assert s.user_llm_temperature_forge == 0.5
+    assert s.user_llm_timeout == 120
+    assert s.user_llm_max_retries == 3
+    assert s.user_llm_concurrency == 5
+    assert s.allow_user_custom_llm is False
