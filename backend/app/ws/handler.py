@@ -9,6 +9,7 @@ from app.models.user import User
 from app.models.conversation import Conversation, Message
 from app.services.auth_service import verify_token
 from app.services.coin_service import charge, reward
+from app.services.player_chat_service import PlayerChatService, deliver_pending_messages
 from app.llm.prompt import assemble_system_prompt
 from app.llm.client import stream_chat
 from app.ws.manager import manager
@@ -65,6 +66,12 @@ async def websocket_handler(ws: WebSocket):
     online_players = manager.get_online_players(exclude=user_id)
     if online_players:
         await manager.send(user_id, {"type": "online_players", "players": online_players})
+
+    # Deliver any pending (offline-queued) messages
+    async with async_session() as db:
+        pending = await deliver_pending_messages(db, user_id)
+        for pm in pending:
+            await manager.send(user_id, pm)
 
     # Broadcast join with position and sprite so existing players can render the new player
     pos = manager.positions.get(user_id, {})
@@ -316,6 +323,87 @@ async def websocket_handler(ws: WebSocket):
                         "type": "rating_saved",
                         "conversation_id": conv_id,
                         "rating": rating_value,
+                    })
+
+                elif msg_type == "player_chat":
+                    target_id = data.get("target_id", "")
+                    text = data.get("text", "").strip()
+                    if not target_id or not text:
+                        await manager.send(user_id, {"type": "error", "message": "target_id and text required"})
+                        continue
+
+                    svc = PlayerChatService(db)
+                    target_online = target_id in manager.active
+                    result = await svc.route_message(user_id, target_id, text, target_online)
+
+                    action = result.get("action")
+
+                    if action == "error":
+                        await manager.send(user_id, {"type": "error", "message": result["message"]})
+                    elif action == "forward":
+                        # Manual mode, target online -> forward to target
+                        payload = {
+                            "type": "player_chat_msg",
+                            "from_id": user_id,
+                            "text": text,
+                            "is_auto": False,
+                        }
+                        await manager.send(target_id, payload)
+                        await manager.send(user_id, {
+                            "type": "player_chat_sent",
+                            "target_id": target_id,
+                            "text": text,
+                        })
+                    elif action == "queued":
+                        await manager.send(user_id, {
+                            "type": "player_chat_queued",
+                            "target_id": target_id,
+                            "text": text,
+                        })
+                    elif action == "auto_reply":
+                        # Send auto-reply back to the sender
+                        await manager.send(user_id, {
+                            "type": "player_chat_reply",
+                            "from_id": target_id,
+                            "text": result["text"],
+                            "is_auto": True,
+                        })
+                        # Also notify the target if they are online
+                        if target_online:
+                            await manager.send(target_id, {
+                                "type": "player_chat_auto_sent",
+                                "from_id": user_id,
+                                "reply_text": result["text"],
+                                "original_text": text,
+                                "is_auto": True,
+                            })
+
+                elif msg_type == "set_reply_mode":
+                    mode = data.get("mode", "")
+                    if mode not in ("auto", "manual"):
+                        await manager.send(user_id, {"type": "error", "message": "mode must be 'auto' or 'manual'"})
+                        continue
+
+                    # Fetch the user's player Resident and update reply_mode
+                    user_result = await db.execute(select(User).where(User.id == user_id))
+                    u = user_result.scalar_one_or_none()
+                    if not u or not u.player_resident_id:
+                        await manager.send(user_id, {"type": "error", "message": "No player resident bound"})
+                        continue
+
+                    res_result = await db.execute(
+                        select(Resident).where(Resident.id == u.player_resident_id)
+                    )
+                    resident = res_result.scalar_one_or_none()
+                    if not resident:
+                        await manager.send(user_id, {"type": "error", "message": "Player resident not found"})
+                        continue
+
+                    resident.reply_mode = mode
+                    await db.commit()
+                    await manager.send(user_id, {
+                        "type": "reply_mode_updated",
+                        "mode": mode,
                     })
 
     except WebSocketDisconnect:
