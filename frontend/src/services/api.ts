@@ -556,7 +556,7 @@ export interface AdminUserListItem {
 }
 
 export interface AdminUserListResponse {
-  users: AdminUserListItem[]
+  items: AdminUserListItem[]
   total: number
   page: number
   per_page: number
@@ -598,7 +598,7 @@ export function adminAdjustCoin(
   token: string,
   userId: string,
   data: AdminAdjustCoinData,
-): Promise<{ balance: number }> {
+): Promise<{ new_balance: number }> {
   return apiFetch(`/admin/users/${userId}/adjust-coin`, {
     method: 'POST',
     body: JSON.stringify(data),
@@ -610,7 +610,7 @@ export function adminPatchUser(
   token: string,
   userId: string,
   data: AdminPatchUserData,
-): Promise<AdminUserListItem> {
+): Promise<{ user_id: string; is_banned: boolean; is_admin: boolean }> {
   return apiFetch(`/admin/users/${userId}`, {
     method: 'PATCH',
     body: JSON.stringify(data),

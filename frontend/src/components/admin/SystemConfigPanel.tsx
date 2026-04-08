@@ -228,6 +228,12 @@ const RATING_FIELDS: FieldDef[] = [
   { key: 'star3_min_rating', label: '三星最低评分 (star3_min_rating)', type: 'float', hint: '达到 3 星所需最低平均评分' },
 ]
 
+const SEARXNG_FIELDS: FieldDef[] = [
+  { key: 'url', label: 'SearXNG 地址 (url)', type: 'text', hint: '搜索引擎的 base URL，例：http://100.93.72.102:58080' },
+  { key: 'query_delay', label: '查询延迟 (query_delay)', type: 'float', hint: '每次搜索请求之间的延迟，单位秒' },
+  { key: 'top_n', label: '返回结果数 (top_n)', type: 'number', hint: '每次搜索最多返回的结果条数' },
+]
+
 // ─── Main SystemConfigPanel ───────────────────────────────────────
 
 interface SystemConfigPanelProps {
@@ -263,8 +269,15 @@ export function SystemConfigPanel({ token }: SystemConfigPanelProps) {
         token={token}
         icon="⭐"
         title="评分规则"
-        group="rating"
+        group="scoring"
         fields={RATING_FIELDS}
+      />
+      <ConfigSection
+        token={token}
+        icon="🔍"
+        title="SearXNG 搜索配置"
+        group="searxng"
+        fields={SEARXNG_FIELDS}
       />
     </div>
   )

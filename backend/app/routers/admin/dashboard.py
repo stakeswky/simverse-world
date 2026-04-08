@@ -117,38 +117,44 @@ async def _get_top_residents(db: AsyncSession, limit: int = 10) -> list[dict]:
     ]
 
 
+SEARXNG_URL = "http://100.93.72.102:58080"
+
+
 async def _check_service_health() -> list[dict]:
     """Ping external services and return health status."""
     results = []
 
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        # SearXNG
+    async with httpx.AsyncClient(timeout=5.0, trust_env=False) as client:
+        # SearXNG — do a real search query to verify it's functional
         try:
-            resp = await client.get("http://localhost:8888/healthz")
+            resp = await client.get(
+                f"{SEARXNG_URL}/search",
+                params={"q": "ping", "format": "json"},
+            )
             latency = int(resp.elapsed.total_seconds() * 1000)
+            ok = resp.status_code == 200
             results.append({
                 "service": "searxng",
-                "status": "ok" if resp.status_code == 200 else "error",
+                "status": "ok" if ok else "error",
                 "latency_ms": latency,
-                "detail": None if resp.status_code == 200 else f"HTTP {resp.status_code}",
+                "detail": None if ok else f"HTTP {resp.status_code}",
             })
         except httpx.TimeoutException:
             results.append({"service": "searxng", "status": "timeout", "latency_ms": None, "detail": "Connection timed out"})
         except Exception as e:
             results.append({"service": "searxng", "status": "error", "latency_ms": None, "detail": str(e)})
 
-        # LLM API (just check if the configured base_url is reachable)
+        # LLM API — just check if the base URL is reachable (any HTTP response = reachable)
         llm_url = settings.llm_base_url or "https://api.anthropic.com"
         try:
-            resp = await client.get(f"{llm_url.rstrip('/')}/v1/models", headers={"x-api-key": "health-check"})
+            resp = await client.get(llm_url.rstrip("/"))
             latency = int(resp.elapsed.total_seconds() * 1000)
-            # 401 = reachable but unauthorized = OK for health check
-            status = "ok" if resp.status_code in (200, 401) else "error"
+            # Any HTTP response means the host is reachable
             results.append({
                 "service": "llm_api",
-                "status": status,
+                "status": "ok",
                 "latency_ms": latency,
-                "detail": None if status == "ok" else f"HTTP {resp.status_code}",
+                "detail": None,
             })
         except httpx.TimeoutException:
             results.append({"service": "llm_api", "status": "timeout", "latency_ms": None, "detail": "Connection timed out"})

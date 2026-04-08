@@ -31,11 +31,50 @@ from app.schemas.admin import (
 
 router = APIRouter(prefix="/system", tags=["admin-system"])
 
+# Default values for each config group (used when DB has no entries yet)
+DEFAULT_CONFIGS: dict[str, dict[str, object]] = {
+    "llm": {
+        "llm.model": "MiniMax-M2.5",
+        "llm.base_url": "https://coding.dashscope.aliyuncs.com/apps/anthropic",
+        "llm.temperature": 0.7,
+        "llm.timeout": 120,
+        "llm.max_retries": 3,
+        "llm.concurrency": 5,
+    },
+    "heat": {
+        "heat.popular_threshold": 50,
+        "heat.sleeping_days": 7,
+        "heat.cron_interval": 3600,
+    },
+    "scoring": {
+        "scoring.min_content_length": 50,
+        "scoring.star3_min_conversations": 50,
+        "scoring.star3_min_rating": 3.5,
+    },
+    "searxng": {
+        "searxng.url": "http://100.93.72.102:58080",
+        "searxng.query_delay": 1.0,
+        "searxng.top_n": 5,
+    },
+}
+
+VALID_GROUPS = set(DEFAULT_CONFIGS.keys()) | {"economy", "district", "oauth", "sprite", "user_llm"}
+
 
 async def _get_config_group(db: AsyncSession, group: str) -> dict:
-    """Get all config entries for a group."""
+    """Get all config entries for a group, merged with defaults."""
     svc = ConfigService(db)
-    return await svc.get_group(group)
+    db_values = await svc.get_group(group)
+    # Merge: start with defaults (strip group prefix for key), then overlay DB values
+    defaults = DEFAULT_CONFIGS.get(group, {})
+    merged: dict[str, object] = {}
+    # Add defaults using short keys (strip "group." prefix if present)
+    for full_key, default_val in defaults.items():
+        short_key = full_key.removeprefix(f"{group}.")
+        merged[short_key] = default_val
+    # DB values override defaults (DB may store by short key or full key)
+    merged.update(db_values)
+    return merged
 
 
 async def _set_config(
@@ -79,9 +118,10 @@ async def list_config_groups(
     admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all distinct config groups."""
-    groups = await _get_all_groups(db)
-    return {"groups": groups}
+    """List all distinct config groups (includes default groups even if DB is empty)."""
+    db_groups = await _get_all_groups(db)
+    all_groups = sorted(set(db_groups) | set(DEFAULT_CONFIGS.keys()))
+    return {"groups": all_groups}
 
 
 @router.get("/groups/{group}", response_model=ConfigGroupResponse)

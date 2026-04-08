@@ -61,7 +61,7 @@ function AdjustCoinModal({ user, onClose, onSuccess }: AdjustCoinModalProps) {
     setError(null)
     try {
       const result = await adminAdjustCoin(token, user.id, { amount: parsed, reason: reason.trim() })
-      onSuccess(result.balance)
+      onSuccess(result.new_balance)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '操作失败')
     } finally {
@@ -356,7 +356,7 @@ export function UsersPanel() {
     setError(null)
     try {
       const result = await getAdminUsers(token, { page, per_page: perPage, search: search || undefined })
-      setUsers(result.users)
+      setUsers(result.items)
       setTotal(result.total)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '加载失败')
@@ -390,7 +390,7 @@ export function UsersPanel() {
     setActionLoading(user.id)
     try {
       const updated = await adminPatchUser(token, user.id, { is_banned: !user.is_banned })
-      setUsers((prev) => prev.map((u) => (u.id === user.id ? updated : u)))
+      setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, is_banned: updated.is_banned } : u)))
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '操作失败')
     } finally {
@@ -403,7 +403,7 @@ export function UsersPanel() {
     setActionLoading(user.id)
     try {
       const updated = await adminPatchUser(token, user.id, { is_admin: !user.is_admin })
-      setUsers((prev) => prev.map((u) => (u.id === user.id ? updated : u)))
+      setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, is_admin: updated.is_admin } : u)))
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '操作失败')
     } finally {

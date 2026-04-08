@@ -19,6 +19,27 @@ from app.schemas.admin import (
 router = APIRouter(prefix="/residents", tags=["admin-residents"])
 
 
+def _resident_to_dict(r: Resident) -> dict:
+    """Serialize a resident with all fields the admin panel needs."""
+    return {
+        "id": r.id,
+        "slug": r.slug,
+        "name": r.name,
+        "district": r.district,
+        "status": r.status,
+        "heat": r.heat,
+        "star_rating": r.star_rating,
+        "sprite_key": getattr(r, "sprite_key", None),
+        # frontend uses 'type' and shows 'NPC' or 'Player'
+        "type": "NPC" if getattr(r, "resident_type", "player") in ("preset", "npc") else "Player",
+        "creator": getattr(r, "creator_id", None),
+        "ability_md": r.ability_md,
+        "persona_md": r.persona_md,
+        "soul_md": r.soul_md,
+        "meta_json": getattr(r, "meta_json", None),
+    }
+
+
 async def _list_residents(
     db: AsyncSession,
     offset: int = 0,
@@ -172,8 +193,8 @@ async def _batch_reset_status(
 
 @router.get("")
 async def list_residents(
-    offset: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=100),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
     search: str | None = None,
     district: str | None = None,
     status: str | None = None,
@@ -183,15 +204,16 @@ async def list_residents(
     db: AsyncSession = Depends(get_db),
 ):
     """List all residents with filters and pagination."""
+    offset = (page - 1) * per_page
     residents, total = await _list_residents(
-        db, offset=offset, limit=limit, search=search,
+        db, offset=offset, limit=per_page, search=search,
         district=district, status=status, sort_by=sort_by, sort_order=sort_order,
     )
     return {
-        "items": [AdminResidentListItem.model_validate(r, from_attributes=True) for r in residents],
+        "items": [_resident_to_dict(r) for r in residents],
         "total": total,
-        "offset": offset,
-        "limit": limit,
+        "page": page,
+        "per_page": per_page,
     }
 
 
@@ -228,7 +250,7 @@ async def edit_resident(
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    return AdminResidentListItem.model_validate(resident, from_attributes=True)
+    return _resident_to_dict(resident)
 
 
 @router.post("/presets")
@@ -249,7 +271,7 @@ async def create_preset(
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return AdminResidentListItem.model_validate(resident, from_attributes=True)
+    return _resident_to_dict(resident)
 
 
 @router.delete("/presets/{resident_id}")

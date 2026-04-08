@@ -4,19 +4,27 @@ from app.services.config_service import ConfigService
 
 @pytest.mark.anyio
 async def test_get_config_group(db_session):
-    """Should return all entries in a config group."""
-    from app.routers.admin.system_config import _get_config_group
+    """Should return defaults merged with DB values; DB values override defaults."""
+    from app.routers.admin.system_config import _get_config_group, DEFAULT_CONFIGS
 
     svc = ConfigService(db_session)
-    await svc.set("llm.system_model", "claude-sonnet-4-20250514", group="llm", updated_by="admin")
-    await svc.set("llm.system_temperature", 0.3, group="llm", updated_by="admin")
+    # Set a value that overrides the default for "llm.model"
+    await svc.set("model", "claude-sonnet-4-20250514", group="llm", updated_by="admin")
     await svc.set("economy.signup_bonus", 100, group="economy", updated_by="admin")
 
     result = await _get_config_group(db_session, "llm")
-    assert result == {
-        "llm.system_model": "claude-sonnet-4-20250514",
-        "llm.system_temperature": 0.3,
-    }
+
+    # DB value should override the default
+    assert result["model"] == "claude-sonnet-4-20250514"
+    # All default keys should be present
+    for full_key in DEFAULT_CONFIGS["llm"]:
+        short_key = full_key.removeprefix("llm.")
+        assert short_key in result
+
+    # SearXNG group should return defaults when DB is empty
+    searxng_result = await _get_config_group(db_session, "searxng")
+    assert "url" in searxng_result
+    assert searxng_result["url"] == "http://100.93.72.102:58080"
 
 
 @pytest.mark.anyio
