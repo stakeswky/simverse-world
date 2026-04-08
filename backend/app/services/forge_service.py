@@ -1,4 +1,13 @@
 """
+DEPRECATED: This module is superseded by app/forge/pipeline.py.
+
+New code should use app/forge/pipeline.py instead. This file is kept
+intact because legacy endpoints (/forge/start, /forge/answer, /forge/status)
+still route through these functions. Do NOT delete until those endpoints
+are migrated.
+
+----
+
 Forge Service — orchestrates the 5-step guided conversation and LLM pipeline.
 
 Flow:

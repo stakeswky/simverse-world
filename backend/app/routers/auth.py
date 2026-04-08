@@ -1,4 +1,6 @@
+import logging
 import time
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
@@ -12,8 +14,86 @@ from app.services.linuxdo_auth import LinuxDoOAuth, find_or_create_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-# State storage (MVP: in-memory dict. Production: use Redis)
-_oauth_states: dict[str, float] = {}  # state -> timestamp
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# OAuth state storage — Redis-first with in-memory fallback
+# ---------------------------------------------------------------------------
+# Redis key pattern: oauth_state:{state}  TTL: 600 s
+# Falls back to an in-memory dict when Redis is unavailable (e.g. local dev
+# without Redis running).
+
+_STATE_TTL = 600  # seconds
+_REDIS_KEY_PREFIX = "oauth_state:"
+
+# In-memory fallback: state -> expiry timestamp
+_mem_states: dict[str, float] = {}
+
+# Lazy Redis client — initialised once on first use
+_redis_client = None
+
+
+def _get_redis():
+    """Return a redis.Redis client, or None if Redis is unavailable."""
+    global _redis_client
+    if _redis_client is not None:
+        return _redis_client
+    try:
+        import redis as _redis_lib  # type: ignore
+        client = _redis_lib.from_url(settings.redis_url, socket_connect_timeout=1, socket_timeout=1)
+        client.ping()
+        _redis_client = client
+        logger.info("OAuth state storage: Redis connected (%s)", settings.redis_url)
+        return _redis_client
+    except Exception as exc:
+        logger.warning("OAuth state storage: Redis unavailable (%s) — using in-memory fallback", exc)
+        return None
+
+
+def _store_state(state: str) -> None:
+    """Persist *state* with a 600-second TTL."""
+    r = _get_redis()
+    if r is not None:
+        try:
+            r.set(f"{_REDIS_KEY_PREFIX}{state}", "1", ex=_STATE_TTL)
+            return
+        except Exception as exc:
+            logger.warning("Redis set failed: %s — falling back to memory", exc)
+
+    # Memory fallback
+    _mem_states[state] = time.time() + _STATE_TTL
+    # Prune expired entries
+    now = time.time()
+    expired = [k for k, exp in list(_mem_states.items()) if exp <= now]
+    for k in expired:
+        _mem_states.pop(k, None)
+
+
+def _validate_and_delete_state(state: str) -> bool:
+    """Return True and remove *state* if valid; return False if missing/expired."""
+    r = _get_redis()
+    if r is not None:
+        try:
+            key = f"{_REDIS_KEY_PREFIX}{state}"
+            # Atomic check-and-delete via pipeline
+            pipe = r.pipeline()
+            pipe.exists(key)
+            pipe.delete(key)
+            exists, _ = pipe.execute()
+            return bool(exists)
+        except Exception as exc:
+            logger.warning("Redis pipeline failed: %s — falling back to memory", exc)
+
+    # Memory fallback
+    exp = _mem_states.pop(state, None)
+    if exp is None:
+        return False
+    return time.time() < exp
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
 
 @router.post("/register", response_model=AuthResponse)
 async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
@@ -48,12 +128,7 @@ async def linuxdo_login():
     )
     url, state = oauth.build_authorize_url()
 
-    # Store state for CSRF validation
-    _oauth_states[state] = time.time()
-    # Cleanup old states (> 10 min)
-    cutoff = time.time() - 600
-    for k in [k for k, v in _oauth_states.items() if v < cutoff]:
-        del _oauth_states[k]
+    _store_state(state)
 
     return RedirectResponse(url, status_code=307)
 
@@ -66,9 +141,8 @@ async def linuxdo_callback(
 ):
     """LinuxDo OAuth2 callback. Exchanges code for user info, creates/finds user, returns JWT."""
     # Validate state (CSRF)
-    if state not in _oauth_states:
+    if not _validate_and_delete_state(state):
         raise HTTPException(400, "Invalid or expired state parameter")
-    del _oauth_states[state]
 
     if not settings.linuxdo_client_id:
         raise HTTPException(501, "LinuxDo OAuth not configured")
