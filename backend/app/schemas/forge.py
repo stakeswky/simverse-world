@@ -41,3 +41,25 @@ class ForgeStatusResponse(BaseModel):
     district: str
     resident_id: str | None  # set when status == "done"
     error: str | None = None
+
+
+# --- Deep forge (pipeline) schemas ---
+
+class DeepStartRequest(BaseModel):
+    character_name: str
+    raw_text: str = ""
+    user_material: str = ""
+
+
+class DeepStartResponse(BaseModel):
+    forge_id: str
+    mode: str
+    status: str
+
+
+class DeepStatusResponse(BaseModel):
+    forge_id: str
+    status: str
+    current_stage: str
+    mode: str
+    character_name: str

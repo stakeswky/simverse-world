@@ -1,10 +1,12 @@
 import pytest
 from unittest.mock import AsyncMock, patch
+from httpx import AsyncClient
 
 # Import models at module level so SQLAlchemy registers them with Base.metadata
 # before db_engine fixture runs create_all
 from app.models.user import User  # noqa: F401
 from app.models.forge_session import ForgeSession  # noqa: F401
+from app.models.resident import Resident  # noqa: F401
 
 
 @pytest.mark.anyio

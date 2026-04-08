@@ -1,6 +1,9 @@
-"""Forge API — 3 endpoints for the Skill creation pipeline."""
+"""Forge API — endpoints for the Skill creation pipeline (quick + deep)."""
+
+import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db, async_session
@@ -8,12 +11,16 @@ from app.schemas.forge import (
     ForgeStartRequest, ForgeStartResponse,
     ForgeAnswerRequest, ForgeAnswerResponse,
     ForgeStatusResponse,
+    DeepStartRequest, DeepStartResponse, DeepStatusResponse,
 )
 from app.services.auth_service import get_current_user
 from app.services.forge_service import (
     start_forge, submit_answer, get_status, run_generation_pipeline,
     run_quick_pipeline,
 )
+from app.forge.pipeline import ForgePipeline
+from app.llm.client import get_client as get_llm_client
+from app.models.forge_session import ForgeSession
 
 router = APIRouter(prefix="/forge", tags=["forge"])
 
@@ -137,3 +144,76 @@ async def forge_status(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return ForgeStatusResponse(**result)
+
+
+# ── Deep forge (pipeline) endpoints ──────────────────────────────────
+
+
+async def _run_pipeline_bg(session_id: str):
+    """Background task: run forge pipeline with its own DB session."""
+    async with async_session() as bg_db:
+        system_client = get_llm_client("system")
+        user_client = get_llm_client("user")
+        pipeline = ForgePipeline(
+            db=bg_db, system_client=system_client, user_client=user_client,
+        )
+        await pipeline.run_to_completion(session_id)
+
+
+@router.post("/deep-start", response_model=DeepStartResponse)
+async def deep_start(
+    req: DeepStartRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Start a deep-forge pipeline session (routes to quick or deep automatically)."""
+    user = await _require_auth(request, db)
+    if not req.character_name.strip():
+        raise HTTPException(status_code=400, detail="character_name is required")
+
+    system_client = get_llm_client("system")
+    user_client = get_llm_client("user")
+
+    pipeline = ForgePipeline(
+        db=db, system_client=system_client, user_client=user_client,
+    )
+    session = await pipeline.start(
+        user_id=user.id,
+        character_name=req.character_name.strip(),
+        raw_text=req.raw_text,
+        user_material=req.user_material,
+    )
+
+    # Launch the remainder of the pipeline in a background task
+    asyncio.create_task(_run_pipeline_bg(session.id))
+
+    return DeepStartResponse(
+        forge_id=session.id,
+        mode=session.mode,
+        status=session.status,
+    )
+
+
+@router.get("/deep-status/{forge_id}", response_model=DeepStatusResponse)
+async def deep_status(
+    forge_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Check the status of a deep-forge pipeline session."""
+    await _require_auth(request, db)
+
+    result = await db.execute(
+        select(ForgeSession).where(ForgeSession.id == forge_id)
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Forge session not found")
+
+    return DeepStatusResponse(
+        forge_id=session.id,
+        status=session.status,
+        current_stage=session.current_stage,
+        mode=session.mode,
+        character_name=session.character_name,
+    )
