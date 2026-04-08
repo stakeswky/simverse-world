@@ -27,7 +27,7 @@ export function ProfilePage() {
   return (
     <>
       <TopNav />
-      <div style={{ marginTop: 'var(--nav-height)', display: 'flex', minHeight: 'calc(100vh - var(--nav-height))' }}>
+      <div style={{ marginTop: 'var(--nav-height)', display: 'flex', height: 'calc(100vh - var(--nav-height))', overflow: 'hidden' }}>
         <ProfileSidebar residentCount={residentCount} />
         <div style={{ flex: 1, padding: 32, overflowY: 'auto' }}>
           {profileTab === 'residents' && (

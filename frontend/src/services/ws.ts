@@ -42,6 +42,9 @@ export function connectWS(): void {
       if (data.type === 'player_left') {
         useGameStore.getState().removeOnlinePlayer(data.player_id as string)
       }
+      if (data.type === 'spawn_position') {
+        useGameStore.getState().setSpawnPosition(data.x as number, data.y as number)
+      }
       if (data.type === 'online_players') {
         const players = data.players as Array<Record<string, unknown>>
         players.forEach((p) => useGameStore.getState().setOnlinePlayer({

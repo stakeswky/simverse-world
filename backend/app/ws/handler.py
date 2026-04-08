@@ -62,6 +62,9 @@ async def websocket_handler(ws: WebSocket):
     # Initialize position so other players can see us immediately
     manager.update_position(user_id, spawn_x, spawn_y, "down", user_name)
 
+    # Send spawn position to the connecting user so the frontend can place the player correctly
+    await manager.send(user_id, {"type": "spawn_position", "x": spawn_x, "y": spawn_y})
+
     # Send current online players and announce join
     online_players = manager.get_online_players(exclude=user_id)
     if online_players:

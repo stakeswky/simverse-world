@@ -25,6 +25,8 @@ interface GameState {
   inputFocused: boolean
   profileTab: 'residents' | 'conversations' | 'transactions' | 'settings'
   onlinePlayers: Map<string, OnlinePlayer>
+  spawnX: number
+  spawnY: number
 
   setAuth: (user: User, token: string) => void
   logout: () => void
@@ -37,6 +39,7 @@ interface GameState {
   setOnlinePlayer: (p: OnlinePlayer) => void
   removeOnlinePlayer: (id: string) => void
   clearOnlinePlayers: () => void
+  setSpawnPosition: (x: number, y: number) => void
 }
 
 export const useGameStore = create<GameState>((set) => ({
@@ -48,6 +51,8 @@ export const useGameStore = create<GameState>((set) => ({
   inputFocused: false,
   profileTab: 'residents',
   onlinePlayers: new Map(),
+  spawnX: 76 * 32,
+  spawnY: 50 * 32,
 
   setAuth: (user, token) => {
     localStorage.setItem('token', token)
@@ -76,4 +81,5 @@ export const useGameStore = create<GameState>((set) => ({
     return { onlinePlayers: next }
   }),
   clearOnlinePlayers: () => set({ onlinePlayers: new Map() }),
+  setSpawnPosition: (x, y) => set({ spawnX: x, spawnY: y }),
 }))

@@ -2,7 +2,7 @@ import Phaser from 'phaser'
 import { bridge } from './phaserBridge'
 import { applyStatusVisuals, STATUS_CONFIG } from './StatusVisuals'
 import { useGameStore } from '../stores/gameStore'
-import { sendPosition } from '../services/ws'
+import { sendPosition, onWSMessage } from '../services/ws'
 
 const TILE_SIZE = 32
 const PLAYER_SPEED = 160
@@ -70,6 +70,7 @@ class MainScene extends Phaser.Scene {
   private wasd!: { up: Phaser.Input.Keyboard.Key; down: Phaser.Input.Keyboard.Key; left: Phaser.Input.Keyboard.Key; right: Phaser.Input.Keyboard.Key }
   private eKey!: Phaser.Input.Keyboard.Key
   private npcSprites: Phaser.Physics.Arcade.Sprite[] = []
+  private npcLabels: Phaser.GameObjects.Text[] = []
   private residents: ResidentData[] = []
   private mapReady = false
   private otherPlayerSprites: Map<string, { sprite: Phaser.Physics.Arcade.Sprite; label: Phaser.GameObjects.Text }> = new Map()
@@ -150,8 +151,9 @@ class MainScene extends Phaser.Scene {
     collisionLayer?.setCollisionByExclusion([-1])
     collisionLayer?.setVisible(false)
 
-    // Player
-    this.player = this.physics.add.sprite(76 * TILE_SIZE, 50 * TILE_SIZE, 'player_atlas', 'down')
+    // Player — use spawn position from store (set by backend spawn_position message)
+    const { spawnX, spawnY } = useGameStore.getState()
+    this.player = this.physics.add.sprite(spawnX, spawnY, 'player_atlas', 'down')
       .setSize(24, 24).setOffset(4, 8).setDepth(1)
     this.player.displayWidth = 40
     this.player.scaleY = this.player.scaleX
@@ -184,14 +186,15 @@ class MainScene extends Phaser.Scene {
 
       applyStatusVisuals(this, sprite, r.status, x, y)
 
-      this.add.text(x, y - 32, r.name, {
+      const label = this.add.text(x, y - 32, r.name, {
         fontSize: '13px',
         color: '#ffffff',
         backgroundColor: '#18181bcc',
         padding: { x: 6, y: 2 },
-      }).setOrigin(0.5).setDepth(3)
+      }).setOrigin(0.5).setDepth(3).setAlpha(0.3)
 
       this.npcSprites.push(sprite)
+      this.npcLabels.push(label)
     }
 
     // Camera
@@ -207,6 +210,16 @@ class MainScene extends Phaser.Scene {
       right: Phaser.Input.Keyboard.KeyCodes.D,
     }) as { up: Phaser.Input.Keyboard.Key; down: Phaser.Input.Keyboard.Key; left: Phaser.Input.Keyboard.Key; right: Phaser.Input.Keyboard.Key }
     this.eKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.E)
+
+    // Handle late-arriving spawn_position (WS connected after scene creation)
+    onWSMessage((msg) => {
+      if (msg.type === 'spawn_position' && this.player) {
+        const x = msg.x as number
+        const y = msg.y as number
+        this.player.setPosition(x, y)
+        this.cameras.main.centerOn(x, y)
+      }
+    })
 
     // Listen for camera pan requests from React UI (search, bulletin board)
     bridge.on('camera:pan', (data: unknown) => {
@@ -326,12 +339,19 @@ class MainScene extends Phaser.Scene {
     // NPC proximity
     let nearest: ResidentData | null = null
     let nearestDist = Infinity
-    for (const npc of this.npcSprites) {
+    let nearestIndex = -1
+    for (let i = 0; i < this.npcSprites.length; i++) {
+      const npc = this.npcSprites[i]
       const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, npc.x, npc.y)
       if (dist < NPC_INTERACT_DISTANCE && dist < nearestDist) {
         nearestDist = dist
         nearest = (npc as unknown as Record<string, unknown>).__residentData as ResidentData
+        nearestIndex = i
       }
+    }
+    // Update label visibility: highlight only the nearest NPC's label
+    for (let i = 0; i < this.npcLabels.length; i++) {
+      this.npcLabels[i].setAlpha(i === nearestIndex ? 1 : 0.3)
     }
     bridge.emit('npc:nearby', nearest)
 
