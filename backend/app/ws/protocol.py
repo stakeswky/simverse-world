@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Literal
 
 
@@ -20,3 +20,31 @@ class RateChat(BaseModel):
     type: Literal["rate_chat"] = "rate_chat"
     rating: int  # 1-5
     conversation_id: str
+
+
+# --- Player-to-Player Chat (Plan 5) ---
+
+
+class PlayerChat(BaseModel):
+    type: Literal["player_chat"] = "player_chat"
+    target_id: str
+    text: str
+
+    @field_validator("text")
+    @classmethod
+    def text_must_not_be_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("text must not be empty")
+        return v.strip()
+
+
+class PlayerChatReply(BaseModel):
+    type: Literal["player_chat_reply"] = "player_chat_reply"
+    from_id: str
+    text: str
+    is_auto: bool = False
+
+
+class SetReplyMode(BaseModel):
+    type: Literal["set_reply_mode"] = "set_reply_mode"
+    mode: Literal["auto", "manual"]

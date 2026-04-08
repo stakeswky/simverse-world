@@ -25,13 +25,27 @@ async def websocket_handler(ws: WebSocket):
 
     await manager.connect(user_id, ws)
 
-    # Fetch user name from DB and cache it for the session
+    # Fetch user name, position, and sprite from DB and cache for the session
     user_name = user_id  # fallback
+    spawn_x = 76 * 32
+    spawn_y = 50 * 32
+    sprite_key = ""
     async with async_session() as db:
         result = await db.execute(select(User).where(User.id == user_id))
         user_row = result.scalar_one_or_none()
         if user_row:
             user_name = user_row.name
+            # Use persisted position if user has a player resident
+            if user_row.player_resident_id:
+                spawn_x = user_row.last_x
+                spawn_y = user_row.last_y
+                # Fetch sprite_key from the player's Resident
+                res_result = await db.execute(
+                    select(Resident.sprite_key).where(Resident.id == user_row.player_resident_id)
+                )
+                sk = res_result.scalar_one_or_none()
+                if sk:
+                    sprite_key = sk
 
     # Attempt daily login reward
     async with async_session() as db:
@@ -45,14 +59,14 @@ async def websocket_handler(ws: WebSocket):
             })
 
     # Initialize position so other players can see us immediately
-    manager.update_position(user_id, 76 * 32, 50 * 32, "down", user_name)
+    manager.update_position(user_id, spawn_x, spawn_y, "down", user_name)
 
     # Send current online players and announce join
     online_players = manager.get_online_players(exclude=user_id)
     if online_players:
         await manager.send(user_id, {"type": "online_players", "players": online_players})
 
-    # Broadcast join with position so existing players can render the new player
+    # Broadcast join with position and sprite so existing players can render the new player
     pos = manager.positions.get(user_id, {})
     await manager.broadcast(
         {
@@ -62,6 +76,7 @@ async def websocket_handler(ws: WebSocket):
             "x": pos.get("x", 0),
             "y": pos.get("y", 0),
             "direction": pos.get("direction", "down"),
+            "sprite_key": sprite_key,
         },
         exclude=user_id,
     )
@@ -312,5 +327,17 @@ async def websocket_handler(ws: WebSocket):
                 if r and r.status == "chatting":
                     r.status = "popular" if r.heat >= 50 else "idle"
                     await db.commit()
+
+        # Save current position to User.last_x / last_y for next session
+        pos = manager.positions.get(user_id)
+        if pos:
+            async with async_session() as db:
+                result = await db.execute(select(User).where(User.id == user_id))
+                u = result.scalar_one_or_none()
+                if u and u.player_resident_id:
+                    u.last_x = int(pos.get("x", u.last_x))
+                    u.last_y = int(pos.get("y", u.last_y))
+                    await db.commit()
+
         await manager.broadcast({"type": "player_left", "player_id": user_id}, exclude=user_id)
         manager.disconnect(user_id)
