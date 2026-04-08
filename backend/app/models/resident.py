@@ -30,3 +30,8 @@ class Resident(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     last_conversation_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     search_vector: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # --- New fields (Plan 1: Foundation) ---
+    resident_type: Mapped[str] = mapped_column(String(20), default="npc")
+    reply_mode: Mapped[str] = mapped_column(String(20), default="manual")
+    portrait_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
