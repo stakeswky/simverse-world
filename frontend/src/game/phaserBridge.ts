@@ -21,3 +21,6 @@ export const bridge = new PhaserBridge()
 // "npc:interact"    -> ResidentData                                   (when player presses E on NPC)
 // "player:nearby"   -> { userId: string; name: string; x: number; y: number } | null  (when player walks near/away from online player)
 // "player:interact" -> { userId: string; name: string; x: number; y: number }         (when player presses E near online player)
+// Phaser → React  minimap:texture    { dataUrl: string }
+// React → Phaser  minimap:teleport   { tileX: number, tileY: number, residentSlug?: string }
+// Phaser → React  teleport:complete  { tileX: number, tileY: number }

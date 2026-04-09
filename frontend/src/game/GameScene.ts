@@ -74,6 +74,7 @@ class MainScene extends Phaser.Scene {
   private npcLabels: Phaser.GameObjects.Text[] = []
   private residents: ResidentData[] = []
   private mapReady = false
+  private isTeleporting = false
   private otherPlayerSprites: Map<string, { sprite: Phaser.Physics.Arcade.Sprite; label: Phaser.GameObjects.Text }> = new Map()
 
   preload() {
@@ -119,6 +120,44 @@ class MainScene extends Phaser.Scene {
     }
 
     this.setupWorld()
+  }
+
+  private generateMinimapTexture(): void {
+    const cam = this.cameras.main
+    const origScrollX = cam.scrollX
+    const origScrollY = cam.scrollY
+    const origZoom = cam.zoom
+
+    // Temporarily zoom out to capture entire map
+    const mapW = cam.getBounds().width
+    const mapH = cam.getBounds().height
+    const zoom = Math.min(cam.width / mapW, cam.height / mapH)
+
+    cam.setZoom(zoom)
+    cam.setScroll(0, 0)
+    cam.stopFollow()
+
+    // Wait one frame for the camera to render, then snapshot
+    this.time.delayedCall(50, () => {
+      this.game.renderer.snapshotArea(
+        0, 0,
+        Math.ceil(mapW * zoom),
+        Math.ceil(mapH * zoom),
+        (image) => {
+          // Restore camera
+          cam.setZoom(origZoom)
+          cam.setScroll(origScrollX, origScrollY)
+          if (this.player) {
+            cam.startFollow(this.player, true, 0.1, 0.1)
+          }
+
+          const img = image as HTMLImageElement
+          if (img.src) {
+            useGameStore.getState().setMinimapTexture(img.src)
+          }
+        }
+      )
+    })
   }
 
   private setupWorld() {
@@ -232,11 +271,46 @@ class MainScene extends Phaser.Scene {
       this.player.setPosition(targetX, targetY)
     })
 
+    bridge.on('minimap:teleport', (data: unknown) => {
+      const { tileX, tileY } = data as { tileX: number; tileY: number; residentSlug?: string }
+      this.teleportTo(tileX, tileY)
+    })
+
     this.mapReady = true
+
+    // Generate minimap texture after world is set up
+    this.time.delayedCall(500, () => this.generateMinimapTexture())
+  }
+
+  private teleportTo(tileX: number, tileY: number): void {
+    if (this.isTeleporting) return
+    this.isTeleporting = true
+
+    const cam = this.cameras.main
+    const targetX = tileX * TILE_SIZE + TILE_SIZE / 2
+    const targetY = tileY * TILE_SIZE + TILE_SIZE
+
+    // Phase 1: Fade out (300ms)
+    cam.fadeOut(300, 0, 0, 0)
+
+    cam.once('camerafadeoutcomplete', () => {
+      // Phase 2: Instant teleport
+      this.player.setPosition(targetX, targetY)
+      cam.centerOn(targetX, targetY)
+
+      // Phase 3: Fade in (500ms)
+      cam.fadeIn(500, 0, 0, 0)
+
+      cam.once('camerafadeincomplete', () => {
+        this.isTeleporting = false
+        bridge.emit('teleport:complete', { tileX, tileY })
+      })
+    })
   }
 
   update() {
     if (!this.mapReady || !this.player?.body) return
+    if (this.isTeleporting) return
 
     // Pause movement when chat input is focused
     if (useGameStore.getState().inputFocused) {
@@ -284,6 +358,23 @@ class MainScene extends Phaser.Scene {
       const dir = left ? 'left' : right ? 'right' : up ? 'up' : 'down'
       sendPosition(this.player.x, this.player.y, dir)
     }
+
+    // Broadcast player tile position for minimap
+    const tileX = Math.floor(this.player.x / TILE_SIZE)
+    const tileY = Math.floor(this.player.y / TILE_SIZE)
+    const store = useGameStore.getState()
+    if (tileX !== store.playerTileX || tileY !== store.playerTileY) {
+      store.setPlayerTile(tileX, tileY)
+    }
+
+    // Broadcast camera viewport for minimap
+    const cam = this.cameras.main
+    store.setCameraViewport({
+      x: cam.scrollX / TILE_SIZE,
+      y: cam.scrollY / TILE_SIZE,
+      w: cam.width / cam.zoom / TILE_SIZE,
+      h: cam.height / cam.zoom / TILE_SIZE,
+    })
 
     // Render/update other players as sprites with name labels
     const onlinePlayers = useGameStore.getState().onlinePlayers
