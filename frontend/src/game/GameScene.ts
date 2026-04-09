@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
 import { bridge } from './phaserBridge'
-import { applyStatusVisuals, STATUS_CONFIG } from './StatusVisuals'
+import { applyStatusVisuals, clearStatusVisuals, STATUS_CONFIG } from './StatusVisuals'
 import { useGameStore } from '../stores/gameStore'
 import { sendPosition, sendWS, onWSMessage } from '../services/ws'
 
@@ -267,10 +267,7 @@ class MainScene extends Phaser.Scene {
           if (this.residents[i].slug === slug) {
             this.residents[i].status = newStatus
             const sprite = this.npcSprites[i]
-            // Reset visual state
-            sprite.setAlpha(1).clearTint()
-            this.tweens.killTweensOf(sprite)
-            // Apply new status visuals
+            clearStatusVisuals(this, sprite)
             applyStatusVisuals(this, sprite, newStatus, sprite.x, sprite.y)
             break
           }

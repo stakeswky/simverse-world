@@ -17,6 +17,33 @@ export const STATUS_CONFIG: Record<string, StatusConfig> = {
 
 const IDLE_THOUGHTS = ['💭', '☕', '🤔', '📖', '✨', '🎵']
 
+/** Tracks all game objects created by applyStatusVisuals so they can be cleaned up */
+const visualRegistry = new Map<Phaser.Physics.Arcade.Sprite, {
+  objects: Phaser.GameObjects.GameObject[]
+  timers: Phaser.Time.TimerEvent[]
+}>()
+
+/** Remove all visual effects previously applied to a sprite */
+export function clearStatusVisuals(
+  scene: Phaser.Scene,
+  sprite: Phaser.Physics.Arcade.Sprite,
+): void {
+  scene.tweens.killTweensOf(sprite)
+  sprite.setAlpha(1).clearTint().setAngle(0)
+
+  const entry = visualRegistry.get(sprite)
+  if (entry) {
+    for (const obj of entry.objects) {
+      scene.tweens.killTweensOf(obj)
+      obj.destroy()
+    }
+    for (const timer of entry.timers) {
+      timer.destroy()
+    }
+    visualRegistry.delete(sprite)
+  }
+}
+
 export function applyStatusVisuals(
   scene: Phaser.Scene,
   sprite: Phaser.Physics.Arcade.Sprite,
@@ -27,6 +54,9 @@ export function applyStatusVisuals(
   const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.idle
   sprite.setAlpha(cfg.alpha)
   if (cfg.tint) sprite.setTint(cfg.tint)
+
+  const objects: Phaser.GameObjects.GameObject[] = []
+  const timers: Phaser.Time.TimerEvent[] = []
 
   if (status === 'idle') {
     scene.tweens.add({
@@ -50,6 +80,7 @@ export function applyStatusVisuals(
     glow.fillStyle(0xf59e0b, 0.05)
     glow.fillCircle(x, y, 50)
     scene.tweens.add({ targets: glow, alpha: 0.3, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' })
+    objects.push(glow)
   }
 
   const bubbleText = scene.add.text(x + 20, y - 48, cfg.bubble, {
@@ -62,21 +93,24 @@ export function applyStatusVisuals(
     targets: bubbleText, y: bubbleText.y - 4,
     duration: 2000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
   })
+  objects.push(bubbleText)
 
   if (status === 'idle') {
     let idx = 0
-    scene.time.addEvent({
+    timers.push(scene.time.addEvent({
       delay: 3000, loop: true,
       callback: () => { idx = (idx + 1) % IDLE_THOUGHTS.length; bubbleText.setText(IDLE_THOUGHTS[idx]) },
-    })
+    }))
   } else if (status === 'sleeping') {
     const zzz = ['💤', '💤💤', '💤💤💤', '💤💤', '💤']
     let idx = 0
-    scene.time.addEvent({
+    timers.push(scene.time.addEvent({
       delay: 1500, loop: true,
       callback: () => { idx = (idx + 1) % zzz.length; bubbleText.setText(zzz[idx]) },
-    })
+    }))
   }
+
+  visualRegistry.set(sprite, { objects, timers })
 
   return bubbleText
 }
