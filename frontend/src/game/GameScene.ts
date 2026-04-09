@@ -2,7 +2,7 @@ import Phaser from 'phaser'
 import { bridge } from './phaserBridge'
 import { applyStatusVisuals, STATUS_CONFIG } from './StatusVisuals'
 import { useGameStore } from '../stores/gameStore'
-import { sendPosition, onWSMessage } from '../services/ws'
+import { sendPosition, sendWS, onWSMessage } from '../services/ws'
 
 const TILE_SIZE = 32
 const PLAYER_SPEED = 160
@@ -304,6 +304,8 @@ class MainScene extends Phaser.Scene {
 
       cam.once('camerafadeincomplete', () => {
         this.isTeleporting = false
+        // Persist teleported position to backend (bypass 4px dead-zone)
+        sendWS({ type: 'move', x: Math.round(targetX), y: Math.round(targetY), direction: 'down' })
         bridge.emit('teleport:complete', { tileX, tileY })
       })
     })
