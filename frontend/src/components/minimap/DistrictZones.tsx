@@ -1,7 +1,5 @@
 const MAP_TILES_W = 140
 const MAP_TILES_H = 100
-const MINIMAP_W = 180
-const MINIMAP_H = 130
 
 export type DistrictKey = 'engineering' | 'product' | 'academy' | 'free'
 
@@ -38,25 +36,28 @@ export const DISTRICTS: DistrictConfig[] = [
   },
 ]
 
-function tileToMinimap(tileX: number, tileY: number, tileW: number, tileH: number) {
+function tileToMinimap(tileX: number, tileY: number, tileW: number, tileH: number, mapW: number, mapH: number) {
   return {
-    left: (tileX / MAP_TILES_W) * MINIMAP_W,
-    top: (tileY / MAP_TILES_H) * MINIMAP_H,
-    width: (tileW / MAP_TILES_W) * MINIMAP_W,
-    height: (tileH / MAP_TILES_H) * MINIMAP_H,
+    left: (tileX / MAP_TILES_W) * mapW,
+    top: (tileY / MAP_TILES_H) * mapH,
+    width: (tileW / MAP_TILES_W) * mapW,
+    height: (tileH / MAP_TILES_H) * mapH,
   }
 }
 
 interface Props {
   selected: DistrictKey | null
   onSelect: (key: DistrictKey) => void
+  mapWidth?: number
+  mapHeight?: number
 }
 
-export function DistrictZones({ selected, onSelect }: Props) {
+export function DistrictZones({ selected, onSelect, mapWidth = 180, mapHeight = 130 }: Props) {
+  const expanded = mapWidth > 200
   return (
     <>
       {DISTRICTS.map((d) => {
-        const pos = tileToMinimap(d.tileRect.x, d.tileRect.y, d.tileRect.w, d.tileRect.h)
+        const pos = tileToMinimap(d.tileRect.x, d.tileRect.y, d.tileRect.w, d.tileRect.h, mapWidth, mapHeight)
         const isSelected = selected === d.key
         const isDimmed = selected !== null && !isSelected
 
@@ -78,7 +79,7 @@ export function DistrictZones({ selected, onSelect }: Props) {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: 8,
+              fontSize: expanded ? 16 : 8,
               transition: 'all 0.15s ease',
               boxShadow: isSelected ? `0 0 8px ${d.color}` : 'none',
             }}

@@ -9,9 +9,10 @@ const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 interface Props {
   district: DistrictKey
   onClose: () => void
+  panelLeft?: number
 }
 
-export function ResidentPanel({ district, onClose }: Props) {
+export function ResidentPanel({ district, onClose, panelLeft = 188 }: Props) {
   const [residents, setResidents] = useState<ResidentData[]>([])
   const config = DISTRICTS.find((d) => d.key === district)!
 
@@ -38,7 +39,7 @@ export function ResidentPanel({ district, onClose }: Props) {
     <div style={{
       position: 'absolute',
       top: 0,
-      left: 188, // 180px minimap + 8px gap
+      left: panelLeft,
       width: 220,
       background: 'rgba(15,23,42,0.95)',
       border: `1px solid ${config.color.replace('0.8', '0.4')}`,
