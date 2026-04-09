@@ -312,37 +312,3 @@ async def batch_status_reset(
     """Batch reset status for multiple residents."""
     count = await _batch_reset_status(db, req.resident_ids, req.status)
     return {"updated": count}
-
-
-@router.post("/fix-tiles")
-async def fix_tile_positions(
-    admin: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """Reassign tile positions for residents stuck at the default (76, 50)."""
-    from app.services.forge_service import DISTRICT_TILE_SLOTS
-
-    result = await db.execute(select(Resident))
-    all_residents = list(result.scalars().all())
-
-    # Build occupied set per district (only correctly placed residents)
-    occupied: dict[str, set[tuple[int, int]]] = {d: set() for d in DISTRICT_TILE_SLOTS}
-    for r in all_residents:
-        if r.district in DISTRICT_TILE_SLOTS and (r.tile_x, r.tile_y) != (76, 50):
-            occupied.setdefault(r.district, set()).add((r.tile_x, r.tile_y))
-
-    fixed = 0
-    for r in all_residents:
-        if (r.tile_x, r.tile_y) == (76, 50) and r.district in DISTRICT_TILE_SLOTS:
-            slots = DISTRICT_TILE_SLOTS[r.district]
-            occ = occupied.get(r.district, set())
-            for x, y in slots:
-                if (x, y) not in occ:
-                    r.tile_x = x
-                    r.tile_y = y
-                    occ.add((x, y))
-                    fixed += 1
-                    break
-
-    await db.commit()
-    return {"fixed": fixed, "total": len(all_residents)}
