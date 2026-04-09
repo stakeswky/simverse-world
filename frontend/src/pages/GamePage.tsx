@@ -4,6 +4,7 @@ import { ChatDrawer } from '../components/ChatDrawer'
 import { NpcTooltip } from '../components/NpcTooltip'
 import { BulletinBoard } from '../components/BulletinBoard'
 import { CoinNotification } from '../components/CoinNotification'
+import { MinimapOverlay } from '../components/minimap/MinimapOverlay'
 import { useGameStore } from '../stores/gameStore'
 import { connectWS, disconnectWS } from '../services/ws'
 import { getSettings } from '../services/api'
@@ -54,6 +55,7 @@ export function GamePage() {
   return (
     <>
       <TopNav />
+      <MinimapOverlay />
       <div
         ref={containerRef}
         id="game-container"
