@@ -4,6 +4,8 @@ import type { ResidentData } from '../../game/GameScene'
 import { STATUS_CONFIG } from '../../game/StatusVisuals'
 import { DISTRICTS, type DistrictKey } from './DistrictZones'
 
+const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+
 interface Props {
   district: DistrictKey
   onClose: () => void
@@ -14,17 +16,13 @@ export function ResidentPanel({ district, onClose }: Props) {
   const config = DISTRICTS.find((d) => d.key === district)!
 
   useEffect(() => {
-    fetch('/residents')
+    fetch(`${API}/residents`)
       .then((r) => r.json())
       .then((all: ResidentData[]) => {
-        setResidents(all.filter((r) => {
-          // Match resident to district by checking if their tile is within the district bounds
-          const rect = config.tileRect
-          return r.tile_x >= rect.x && r.tile_x <= rect.x + rect.w
-            && r.tile_y >= rect.y && r.tile_y <= rect.y + rect.h
-        }))
+        setResidents(all.filter((r) => r.district === district))
       })
-  }, [district, config.tileRect])
+      .catch(() => setResidents([]))
+  }, [district])
 
   const handleTeleport = (r: ResidentData) => {
     // Teleport to 1 tile left of the resident to avoid overlap

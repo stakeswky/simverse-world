@@ -35,6 +35,7 @@ export interface ResidentData {
   sprite_key: string
   tile_x: number
   tile_y: number
+  district: string
   meta_json: { role?: string }
   token_cost_per_turn: number
   star_rating: number
