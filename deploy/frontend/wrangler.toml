@@ -1,0 +1,6 @@
+#:schema node_modules/wrangler/config-schema.json
+name = "skills-world"
+compatibility_date = "2025-04-01"
+
+# Serve the Vite build output as static assets
+assets = { directory = "./dist" }
