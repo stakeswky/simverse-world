@@ -174,6 +174,10 @@ async def websocket_handler(ws: WebSocket):
                             "delta": -wake_cost,
                             "reason": f"wake:{slug}",
                         })
+                        # Keep NPC awake: bump heat and update last_conversation_at
+                        # so heat_cron won't put them back to sleep for at least 7 days
+                        resident.heat = max(resident.heat, 10)
+                        resident.last_conversation_at = datetime.now(UTC)
 
                     conv = Conversation(user_id=user_id, resident_id=resident.id)
                     db.add(conv)
