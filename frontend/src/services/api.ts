@@ -299,6 +299,7 @@ export interface AdminDashboardStats {
 export interface AdminDashboardHealth {
   searxng: 'ok' | 'error'
   llm_api: 'ok' | 'error'
+  details: Record<string, string | null>
 }
 
 export interface AdminDashboardTrend {
@@ -314,10 +315,20 @@ export function getAdminDashboardStats(token: string): Promise<AdminDashboardSta
   })
 }
 
-export function getAdminDashboardHealth(token: string): Promise<AdminDashboardHealth> {
-  return apiFetch('/admin/dashboard/health', {
+export async function getAdminDashboardHealth(token: string): Promise<AdminDashboardHealth> {
+  const arr: { service: string; status: string; detail?: string | null }[] = await apiFetch('/admin/dashboard/health', {
     headers: { Authorization: `Bearer ${token}` },
   })
+  // Transform array to keyed object
+  const result: AdminDashboardHealth = { searxng: 'error', llm_api: 'error', details: {} }
+  for (const item of arr) {
+    const key = item.service as keyof Omit<AdminDashboardHealth, 'details'>
+    if (key in result) {
+      result[key] = item.status as 'ok' | 'error'
+    }
+    result.details[item.service] = item.detail ?? null
+  }
+  return result
 }
 
 export function getAdminDashboardTrends(token: string): Promise<AdminDashboardTrend[]> {

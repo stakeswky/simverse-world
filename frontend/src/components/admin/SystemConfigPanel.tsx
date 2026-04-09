@@ -91,10 +91,11 @@ function ConfigSection({ token, icon, title, group, fields, defaultOpen = false 
       setLoading(true)
       setError(null)
       try {
-        const data = await getAdminSystemConfig(token, group)
+        const resp = await getAdminSystemConfig(token, group)
+        const data = (resp as { entries?: Record<string, unknown> }).entries ?? resp
         const initial: Record<string, string> = {}
         for (const field of fields) {
-          const raw = data[field.key]
+          const raw = (data as Record<string, unknown>)[field.key]
           initial[field.key] = raw !== undefined && raw !== null ? String(raw) : ''
         }
         setValues(initial)

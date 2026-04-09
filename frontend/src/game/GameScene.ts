@@ -295,9 +295,13 @@ class MainScene extends Phaser.Scene {
     cam.fadeOut(300, 0, 0, 0)
 
     cam.once('camerafadeoutcomplete', () => {
-      // Phase 2: Instant teleport
+      // Phase 2: Instant teleport — stop follow to prevent camera snap-back
+      cam.stopFollow()
       this.player.setPosition(targetX, targetY)
+      ;(this.player.body as Phaser.Physics.Arcade.Body).reset(targetX, targetY)
       cam.centerOn(targetX, targetY)
+      // Restore follow after position is set
+      cam.startFollow(this.player, true, 0.1, 0.1)
 
       // Phase 3: Fade in (500ms)
       cam.fadeIn(500, 0, 0, 0)

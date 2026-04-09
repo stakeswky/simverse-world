@@ -159,7 +159,7 @@ async def _check_service_health() -> list[dict]:
         except httpx.TimeoutException:
             results.append({"service": "llm_api", "status": "timeout", "latency_ms": None, "detail": "Connection timed out"})
         except Exception as e:
-            results.append({"service": "llm_api", "status": "error", "latency_ms": None, "detail": str(e)})
+            results.append({"service": "llm_api", "status": "error", "latency_ms": None, "detail": str(e) or f"{type(e).__name__}"})
 
     return results
 

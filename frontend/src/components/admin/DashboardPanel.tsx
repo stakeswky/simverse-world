@@ -203,6 +203,12 @@ export function DashboardPanel() {
                   }}>
                     {status === 'loading' ? '检查中…' : status === 'ok' ? '正常' : '异常'}
                   </span>
+                  {status === 'error' && health?.details?.[key] && (
+                    <span style={{ fontSize: 11, color: '#ef4444', opacity: 0.8, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      title={health.details[key] ?? ''}>
+                      {health.details[key]}
+                    </span>
+                  )}
                 </div>
               </div>
             )
