@@ -41,6 +41,13 @@ interface GameState {
   onlinePlayers: Map<string, OnlinePlayer>
   spawnX: number
   spawnY: number
+  minimapTextureUrl: string | null
+  playerTileX: number
+  playerTileY: number
+  cameraViewport: { x: number; y: number; w: number; h: number } | null
+  setMinimapTexture: (url: string) => void
+  setPlayerTile: (x: number, y: number) => void
+  setCameraViewport: (vp: { x: number; y: number; w: number; h: number }) => void
 
   setAuth: (user: User, token: string) => void
   logout: () => void
@@ -72,6 +79,13 @@ export const useGameStore = create<GameState>((set) => ({
   onlinePlayers: new Map(),
   spawnX: 76 * 32,
   spawnY: 50 * 32,
+  minimapTextureUrl: null,
+  playerTileX: 76,
+  playerTileY: 50,
+  cameraViewport: null,
+  setMinimapTexture: (url) => set({ minimapTextureUrl: url }),
+  setPlayerTile: (x, y) => set({ playerTileX: x, playerTileY: y }),
+  setCameraViewport: (vp) => set({ cameraViewport: vp }),
 
   setAuth: (user, token) => {
     localStorage.setItem('token', token)
