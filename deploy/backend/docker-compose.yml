@@ -18,11 +18,11 @@ services:
 
   api:
     build:
-      context: ../../.worktrees/mvp-implementation/backend
-      dockerfile: ../../deploy/backend/Dockerfile
+      context: ../backend
+      dockerfile: ../deploy/Dockerfile
     restart: unless-stopped
     ports:
-      - "0.0.0.0:8000:8000"
+      - "0.0.0.0:8100:8000"
     depends_on:
       db:
         condition: service_healthy
