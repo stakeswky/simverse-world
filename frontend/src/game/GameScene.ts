@@ -252,13 +252,29 @@ class MainScene extends Phaser.Scene {
     }) as { up: Phaser.Input.Keyboard.Key; down: Phaser.Input.Keyboard.Key; left: Phaser.Input.Keyboard.Key; right: Phaser.Input.Keyboard.Key }
     this.eKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.E)
 
-    // Handle late-arriving spawn_position (WS connected after scene creation)
+    // Handle late-arriving spawn_position and resident status updates
     onWSMessage((msg) => {
       if (msg.type === 'spawn_position' && this.player) {
         const x = msg.x as number
         const y = msg.y as number
         this.player.setPosition(x, y)
         this.cameras.main.centerOn(x, y)
+      }
+      if (msg.type === 'resident_status') {
+        const slug = msg.resident_slug as string
+        const newStatus = msg.status as string
+        for (let i = 0; i < this.residents.length; i++) {
+          if (this.residents[i].slug === slug) {
+            this.residents[i].status = newStatus
+            const sprite = this.npcSprites[i]
+            // Reset visual state
+            sprite.setAlpha(1).clearTint()
+            this.tweens.killTweensOf(sprite)
+            // Apply new status visuals
+            applyStatusVisuals(this, sprite, newStatus, sprite.x, sprite.y)
+            break
+          }
+        }
       }
     })
 

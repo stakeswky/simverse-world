@@ -178,6 +178,10 @@ async def websocket_handler(ws: WebSocket):
                         # so heat_cron won't put them back to sleep for at least 7 days
                         resident.heat = max(resident.heat, 10)
                         resident.last_conversation_at = datetime.now(UTC)
+                        # Broadcast wake-up to all players (including self)
+                        await manager.broadcast(
+                            {"type": "resident_status", "resident_slug": slug, "status": "chatting"},
+                        )
 
                     conv = Conversation(user_id=user_id, resident_id=resident.id)
                     db.add(conv)
