@@ -5,6 +5,7 @@ from typing import Literal
 class StartChat(BaseModel):
     type: Literal["start_chat"] = "start_chat"
     resident_slug: str
+    wake: bool = False  # spend extra coins to wake a sleeping NPC
 
 
 class ChatMsg(BaseModel):

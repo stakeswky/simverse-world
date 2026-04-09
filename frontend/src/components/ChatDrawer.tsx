@@ -33,6 +33,9 @@ export function ChatDrawer() {
 
   // Player chat local input state
   const [playerInput, setPlayerInput] = useState('')
+  // Wake/queue state
+  const [wakePrompt, setWakePrompt] = useState<{ slug: string; name: string; cost: number } | null>(null)
+  const [queueInfo, setQueueInfo] = useState<{ slug: string; name: string; position: number } | null>(null)
 
   const isPlayerChat = chatTarget?.type === 'player'
 
@@ -40,11 +43,23 @@ export function ChatDrawer() {
   useEffect(() => {
     return bridge.on('npc:interact', (data: unknown) => {
       const npc = data as ResidentData
-      openChat({ slug: npc.slug, name: npc.name, role: npc.meta_json?.role ?? '' })
-      sendWS({ type: 'start_chat', resident_slug: npc.slug })
-      setMessages([])
-      setStreamingText('')
-      streamingRef.current = ''
+      if (npc.status === 'sleeping') {
+        // Send start_chat without wake flag — backend will reply with wake_required
+        openChat({ slug: npc.slug, name: npc.name, role: npc.meta_json?.role ?? '' })
+        sendWS({ type: 'start_chat', resident_slug: npc.slug })
+        setMessages([])
+        setStreamingText('')
+        streamingRef.current = ''
+      } else if (npc.status === 'chatting') {
+        // Send start_chat — backend will reply with chat_queued
+        sendWS({ type: 'start_chat', resident_slug: npc.slug })
+      } else {
+        openChat({ slug: npc.slug, name: npc.name, role: npc.meta_json?.role ?? '' })
+        sendWS({ type: 'start_chat', resident_slug: npc.slug })
+        setMessages([])
+        setStreamingText('')
+        streamingRef.current = ''
+      }
     })
   }, [openChat])
 
@@ -53,7 +68,6 @@ export function ChatDrawer() {
     return onWSMessage((data) => {
       if (data.type === 'chat_reply') {
         if (data.done === true) {
-          // Streaming complete — commit streamed text as a message
           const finalText = streamingRef.current
           if (finalText) {
             setMessages((prev) => [
@@ -73,6 +87,27 @@ export function ChatDrawer() {
         if (convId && resident) {
           setPendingRating({ conversationId: convId, residentName: resident.name })
         }
+      } else if (data.type === 'wake_required') {
+        setWakePrompt({
+          slug: data.resident_slug as string,
+          name: data.resident_name as string,
+          cost: data.cost as number,
+        })
+      } else if (data.type === 'chat_queued') {
+        setQueueInfo({
+          slug: data.resident_slug as string,
+          name: data.resident_name as string,
+          position: data.position as number,
+        })
+      } else if (data.type === 'queue_ready') {
+        setQueueInfo(null)
+        const slug = data.resident_slug as string
+        const name = data.resident_name as string
+        openChat({ slug, name, role: '' })
+        sendWS({ type: 'start_chat', resident_slug: slug })
+        setMessages([])
+        setStreamingText('')
+        streamingRef.current = ''
       }
     })
   }, [])
@@ -265,6 +300,72 @@ export function ChatDrawer() {
             />
           )}
         </>
+      )}
+
+      {/* Wake confirmation popup */}
+      {wakePrompt && (
+        <div style={{
+          position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 30,
+        }}>
+          <div style={{
+            background: 'var(--bg-card)', border: '1px solid var(--border)',
+            borderRadius: 12, padding: 24, maxWidth: 280, textAlign: 'center',
+          }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>💤</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>{wakePrompt.name} 正在沉睡</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 16 }}>
+              花费 <span style={{ color: '#fbbf24', fontWeight: 700 }}>{wakePrompt.cost} 🪙</span> 唤醒并开始对话？
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+              <button
+                onClick={() => {
+                  sendWS({ type: 'start_chat', resident_slug: wakePrompt.slug, wake: true })
+                  setWakePrompt(null)
+                }}
+                style={{
+                  background: '#fbbf24', color: '#18181b', border: 'none',
+                  padding: '8px 20px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                }}
+              >唤醒</button>
+              <button
+                onClick={() => { setWakePrompt(null); closeChat() }}
+                style={{
+                  background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)',
+                  padding: '8px 20px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
+                }}
+              >取消</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Queue status popup */}
+      {queueInfo && (
+        <div style={{
+          position: 'fixed', bottom: 20, right: 20, zIndex: 50,
+          background: 'var(--bg-card)', border: '1px solid var(--border)',
+          borderRadius: 12, padding: '14px 20px', boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+          display: 'flex', alignItems: 'center', gap: 12, minWidth: 240,
+        }}>
+          <div style={{ fontSize: 24 }}>⏳</div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 13 }}>排队等候 {queueInfo.name}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+              当前排位：第 {queueInfo.position} 位
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              sendWS({ type: 'cancel_queue', resident_slug: queueInfo.slug })
+              setQueueInfo(null)
+            }}
+            style={{
+              background: 'none', border: 'none', color: 'var(--text-muted)',
+              fontSize: 16, cursor: 'pointer', marginLeft: 'auto', padding: '4px 8px',
+            }}
+          >✕</button>
+        </div>
       )}
     </div>
   )

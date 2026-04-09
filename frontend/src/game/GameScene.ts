@@ -454,6 +454,10 @@ class MainScene extends Phaser.Scene {
       const cfg = STATUS_CONFIG[nearest.status]
       if (cfg?.canChat) {
         bridge.emit('npc:interact', nearest)
+      } else if (nearest.status === 'sleeping') {
+        bridge.emit('npc:interact', nearest) // ChatDrawer handles wake confirmation
+      } else if (nearest.status === 'chatting') {
+        bridge.emit('npc:interact', nearest) // ChatDrawer handles queueing
       }
     }
 

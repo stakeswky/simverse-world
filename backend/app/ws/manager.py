@@ -7,6 +7,7 @@ class ConnectionManager:
         self.active: dict[str, WebSocket] = {}  # user_id -> ws
         self.positions: dict[str, dict] = {}    # user_id -> {x, y, direction, name}
         self.chatting: dict[str, str] = {}       # resident_id -> user_id (lock)
+        self.chat_queue: dict[str, list[str]] = {}  # resident_id -> [user_ids waiting]
 
     async def connect(self, user_id: str, ws: WebSocket):
         await ws.accept()
@@ -18,6 +19,10 @@ class ConnectionManager:
         to_remove = [rid for rid, uid in self.chatting.items() if uid == user_id]
         for rid in to_remove:
             del self.chatting[rid]
+        # Remove from any queues
+        for queue in self.chat_queue.values():
+            if user_id in queue:
+                queue.remove(user_id)
 
     async def send(self, user_id: str, data: dict):
         ws = self.active.get(user_id)
@@ -51,6 +56,29 @@ class ConnectionManager:
 
     def unlock_resident(self, resident_id: str) -> None:
         self.chatting.pop(resident_id, None)
+
+    def enqueue(self, resident_id: str, user_id: str) -> int:
+        """Add user to the chat queue for a resident. Returns queue position (1-based)."""
+        if resident_id not in self.chat_queue:
+            self.chat_queue[resident_id] = []
+        queue = self.chat_queue[resident_id]
+        if user_id not in queue:
+            queue.append(user_id)
+        return queue.index(user_id) + 1
+
+    def dequeue(self, resident_id: str) -> str | None:
+        """Pop the next waiting user from the queue. Returns user_id or None."""
+        queue = self.chat_queue.get(resident_id, [])
+        while queue:
+            user_id = queue.pop(0)
+            if user_id in self.active:  # still connected
+                return user_id
+        return None
+
+    def remove_from_queue(self, resident_id: str, user_id: str) -> None:
+        queue = self.chat_queue.get(resident_id, [])
+        if user_id in queue:
+            queue.remove(user_id)
 
 
 manager = ConnectionManager()

@@ -34,8 +34,8 @@ export function NpcTooltip() {
       <div style={{ color: '#52525b', fontSize: 11, marginTop: 6, textAlign: 'center' }}>
         {cfg.canChat
           ? <span>按 <kbd style={{ background: '#27272a', padding: '1px 5px', borderRadius: 3, color: '#fafafa', fontSize: 10 }}>E</kbd> 开始对话</span>
-          : npc.status === 'sleeping' ? '💤 正在沉睡，无法对话'
-          : npc.status === 'chatting' ? '💬 正在和其他人聊天'
+          : npc.status === 'sleeping' ? <span>💤 沉睡中 · 按 <kbd style={{ background: '#27272a', padding: '1px 5px', borderRadius: 3, color: '#fafafa', fontSize: 10 }}>E</kbd> 花费金币唤醒</span>
+          : npc.status === 'chatting' ? <span>💬 对话中 · 按 <kbd style={{ background: '#27272a', padding: '1px 5px', borderRadius: 3, color: '#fafafa', fontSize: 10 }}>E</kbd> 排队等候</span>
           : '暂时无法对话'}
       </div>
     </div>

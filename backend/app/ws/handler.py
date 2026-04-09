@@ -101,6 +101,15 @@ async def websocket_handler(ws: WebSocket):
             data = json.loads(raw)
             msg_type = data.get("type")
 
+            # Cancel queue (fast path — no DB needed)
+            if msg_type == "cancel_queue":
+                slug = data.get("resident_slug", "")
+                # Find resident_id by slug from any active lock
+                for rid, queue in list(manager.chat_queue.items()):
+                    if user_id in queue:
+                        queue.remove(user_id)
+                continue
+
             # Handle move without DB (position only — fast path)
             if msg_type == "move":
                 x = float(data.get("x", 0))
@@ -128,14 +137,43 @@ async def websocket_handler(ws: WebSocket):
                     if not resident:
                         await manager.send(user_id, {"type": "error", "message": "Resident not found"})
                         continue
-                    if resident.status == "chatting":
-                        await manager.send(user_id, {"type": "error", "message": "Resident is busy"})
+                    # Queue if NPC is chatting or locked by another player
+                    if resident.status == "chatting" or (not manager.lock_resident(resident.id, user_id)):
+                        pos = manager.enqueue(resident.id, user_id)
+                        await manager.send(user_id, {
+                            "type": "chat_queued",
+                            "resident_slug": slug,
+                            "resident_name": resident.name,
+                            "position": pos,
+                        })
                         continue
-                    if not manager.lock_resident(resident.id, user_id):
-                        await manager.send(user_id, {"type": "error", "message": "Resident is busy with another player"})
-                        continue
+
+                    # Wake sleeping NPC — costs 3x token_cost_per_turn
                     if resident.status == "sleeping":
-                        resident.status = "idle"
+                        if not msg.wake:
+                            wake_cost = resident.token_cost_per_turn * 3
+                            await manager.send(user_id, {
+                                "type": "wake_required",
+                                "resident_slug": slug,
+                                "resident_name": resident.name,
+                                "cost": wake_cost,
+                            })
+                            manager.unlock_resident(resident.id)
+                            continue
+                        wake_cost = resident.token_cost_per_turn * 3
+                        from app.services.coin_service import charge, get_balance
+                        ok = await charge(db, user_id, wake_cost, f"wake:{slug}")
+                        if not ok:
+                            await manager.send(user_id, {"type": "error", "message": "Insufficient Soul Coins"})
+                            manager.unlock_resident(resident.id)
+                            continue
+                        balance = await get_balance(db, user_id)
+                        await manager.send(user_id, {
+                            "type": "coin_update",
+                            "balance": balance,
+                            "delta": -wake_cost,
+                            "reason": f"wake:{slug}",
+                        })
 
                     conv = Conversation(user_id=user_id, resident_id=resident.id)
                     db.add(conv)
@@ -262,6 +300,16 @@ async def websocket_handler(ws: WebSocket):
                         "type": "chat_ended",
                         "conversation_id": fresh_conv.id if fresh_conv else "",
                     })
+
+                    # Notify next queued user
+                    next_user = manager.dequeue(resident_id)
+                    if next_user:
+                        await manager.send(next_user, {
+                            "type": "queue_ready",
+                            "resident_slug": resident_slug,
+                            "resident_name": fresh_resident.name if fresh_resident else "",
+                        })
+
                     await manager.broadcast(
                         {"type": "resident_status", "resident_slug": resident_slug, "status": prev_status},
                         exclude=user_id,
