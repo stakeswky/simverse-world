@@ -1,0 +1,29 @@
+:root {
+  --bg-page: #0f0f17;
+  --bg-card: #18181b;
+  --bg-input: #27272a;
+  --border: #27272a;
+  --text-primary: #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --accent-red: #e94560;
+  --accent-green: #53d769;
+  --accent-blue: #0ea5e9;
+  --radius: 8px;
+  --nav-height: 48px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg-page);
+  color: var(--text-primary);
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+}
+
+@keyframes coinFloatUp {
+  0%   { opacity: 0; transform: translateY(20px) scale(0.8); }
+  15%  { opacity: 1; transform: translateY(0) scale(1); }
+  70%  { opacity: 1; transform: translateY(-10px) scale(1); }
+  100% { opacity: 0; transform: translateY(-30px) scale(0.9); }
+}
