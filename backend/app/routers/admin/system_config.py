@@ -79,8 +79,10 @@ async def _get_config_group(db: AsyncSession, group: str) -> dict:
     for full_key, default_val in defaults.items():
         short_key = full_key.removeprefix(f"{group}.")
         merged[short_key] = default_val
-    # DB values override defaults (DB may store by short key or full key)
-    merged.update(db_values)
+    # DB values override defaults — strip group prefix for consistent short keys
+    for db_key, db_val in db_values.items():
+        short_key = db_key.removeprefix(f"{group}.")
+        merged[short_key] = db_val
     return merged
 
 
@@ -162,8 +164,10 @@ async def update_config_entry(
     db: AsyncSession = Depends(get_db),
 ):
     """Update a single config entry."""
-    await _set_config(db, key=req.key, value=req.value, group=req.group, admin_id=admin.id)
-    return {"key": req.key, "value": req.value, "group": req.group}
+    # Always store with group prefix so runtime svc.get("llm.model") finds it
+    full_key = req.key if "." in req.key else f"{req.group}.{req.key}"
+    await _set_config(db, key=full_key, value=req.value, group=req.group, admin_id=admin.id)
+    return {"key": full_key, "value": req.value, "group": req.group}
 
 
 @router.put("/batch")
@@ -173,7 +177,10 @@ async def update_config_batch(
     db: AsyncSession = Depends(get_db),
 ):
     """Update multiple config entries at once."""
-    updates = [{"key": u.key, "value": u.value, "group": u.group} for u in req.updates]
+    updates = [
+        {"key": u.key if "." in u.key else f"{u.group}.{u.key}", "value": u.value, "group": u.group}
+        for u in req.updates
+    ]
     await _set_config_batch(db, updates, admin_id=admin.id)
     return {"updated": len(updates)}
 
