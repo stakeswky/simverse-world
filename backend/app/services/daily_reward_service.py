@@ -21,12 +21,16 @@ async def claim_daily_reward(db: AsyncSession, user_id: str) -> dict:
     if not user:
         return {"claimed": False, "reason": "user_not_found"}
 
-    today = date.today()
+    now = datetime.now(UTC)
+    today = now.date()
 
-    # Check if already claimed today
+    # Check if already claimed today (compare in UTC to avoid timezone mismatch)
     if user.last_daily_reward_at is not None:
-        last_claim_date = user.last_daily_reward_at.date()
-        if last_claim_date == today:
+        last_dt = user.last_daily_reward_at
+        # SQLite may strip timezone info — treat naive as UTC
+        if last_dt.tzinfo is None:
+            last_dt = last_dt.replace(tzinfo=UTC)
+        if last_dt.date() == today:
             return {"claimed": False, "reason": "already_claimed_today"}
 
     # Grant reward

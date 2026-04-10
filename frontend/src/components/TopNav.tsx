@@ -5,6 +5,17 @@ import { SearchDropdown } from './SearchDropdown'
 import { bridge } from '../game/phaserBridge'
 import { disconnectWS } from '../services/ws'
 
+function useClock() {
+  const [time, setTime] = useState(() => new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }))
+  useEffect(() => {
+    const id = setInterval(() => {
+      setTime(new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }))
+    }, 30_000)
+    return () => clearInterval(id)
+  }, [])
+  return time
+}
+
 export function TopNav() {
   const user = useGameStore((s) => s.user)
   const logout = useGameStore((s) => s.logout)
@@ -12,6 +23,7 @@ export function TopNav() {
   const navigate = useNavigate()
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const avatarRef = useRef<HTMLDivElement>(null)
+  const clock = useClock()
 
   useEffect(() => {
     if (!dropdownOpen) return
@@ -60,6 +72,11 @@ export function TopNav() {
       </div>
       <SearchDropdown />
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <span style={{
+          color: 'var(--text-muted)', fontSize: 12,
+          background: 'var(--bg-input)', padding: '4px 10px', borderRadius: 16,
+          fontVariantNumeric: 'tabular-nums',
+        }}>🕐 {clock}</span>
         <span style={{
           color: 'var(--accent-green)', fontSize: 13,
           background: '#53d76915', padding: '4px 12px', borderRadius: 16,
