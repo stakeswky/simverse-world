@@ -66,6 +66,15 @@ class Settings(BaseSettings):
     ollama_embed_model: str = "qwen3-embedding:4b"
     ollama_embed_dimensions: int = 1024
 
+    # --- Agent Loop ---
+    agent_tick_interval: int = 60          # seconds between tick rounds
+    agent_max_concurrent: int = 5          # max residents ticking in parallel
+    agent_max_daily_actions: int = 20      # per-resident action cap per in-game day
+    agent_chat_max_turns: int = 8          # max dialog turns in a resident-resident chat
+    agent_chat_cooldown: int = 1800        # seconds before same pair can chat again
+    agent_time_scale: float = 1.0          # world time multiplier (1.0 = realtime)
+    agent_enabled: bool = True             # master switch (set False to pause loop)
+
     model_config = {"env_file": ".env"}
 
 
