@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.routers import auth, users, residents, forge, profile, search, bulletin, onboarding, sprites, avatar, settings as settings_router
+from app.routers import auth, users, residents, forge, profile, search, bulletin, onboarding, sprites, avatar, settings as settings_router, media as media_router
 from app.routers.admin import router as admin_router
 from app.ws.handler import websocket_handler
 from app.tasks.heat_cron import heat_cron_loop
@@ -52,6 +52,7 @@ app.include_router(onboarding.router)
 app.include_router(sprites.router)
 app.include_router(avatar.router)
 app.include_router(settings_router.router)
+app.include_router(media_router.router)
 app.include_router(admin_router)
 
 
