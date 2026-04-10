@@ -1,8 +1,21 @@
+import json
 import logging
 from datetime import datetime, UTC
 from sqlalchemy import select, func, delete, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.memory import Memory
+from app.llm.client import get_client
+from app.memory.embedding import generate_embedding
+from app.memory.prompts import (
+    EXTRACT_EVENTS_SYSTEM,
+    EXTRACT_EVENTS_USER,
+    UPDATE_RELATIONSHIP_SYSTEM,
+    UPDATE_RELATIONSHIP_USER,
+    REFLECT_SYSTEM,
+    REFLECT_USER,
+    sbti_coloring_block,
+)
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -270,3 +283,159 @@ class MemoryService:
         except Exception as e:
             logger.debug("pgvector search unavailable, falling back: %s", e)
             return await self._search_events(resident_id, "", limit)
+
+    async def extract_events(
+        self,
+        resident: "Resident",
+        other_name: str,
+        conversation_text: str,
+        *,
+        source: str = "chat_player",
+    ) -> list[Memory]:
+        """Extract event memories from a conversation using LLM."""
+        sbti_data = (resident.meta_json or {}).get("sbti")
+        coloring = sbti_coloring_block(sbti_data)
+
+        system = EXTRACT_EVENTS_SYSTEM.format(sbti_coloring=coloring)
+        user_msg = EXTRACT_EVENTS_USER.format(
+            resident_name=resident.name,
+            other_name=other_name,
+            conversation_text=conversation_text,
+        )
+
+        try:
+            client = get_client("system")
+            resp = await client.messages.create(
+                model=settings.effective_model,
+                max_tokens=500,
+                system=system,
+                messages=[{"role": "user", "content": user_msg}],
+            )
+            raw = resp.content[0].text
+            data = json.loads(raw)
+        except Exception as e:
+            logger.warning("Event extraction failed: %s", e)
+            return []
+
+        memories = []
+        for item in data.get("memories", []):
+            content = item.get("content", "")
+            importance = float(item.get("importance", 0.5))
+            if not content:
+                continue
+
+            emb = await generate_embedding(content)
+            mem = await self.add_memory(
+                resident_id=resident.id,
+                type="event",
+                content=content,
+                importance=importance,
+                source=source,
+                embedding=emb,
+            )
+            memories.append(mem)
+
+        return memories
+
+    async def update_relationship_via_llm(
+        self,
+        resident: "Resident",
+        other_name: str,
+        event_summaries: list[str],
+        *,
+        user_id: str | None = None,
+        resident_id_target: str | None = None,
+    ) -> Memory:
+        """Update relationship memory using LLM analysis."""
+        existing = await self.get_relationship(
+            resident.id, user_id=user_id, resident_id_target=resident_id_target,
+        )
+        current_rel = existing.content if existing else "（首次接触，尚无关系记忆）"
+
+        sbti_data = (resident.meta_json or {}).get("sbti")
+        coloring = sbti_coloring_block(sbti_data)
+
+        system = UPDATE_RELATIONSHIP_SYSTEM.format(sbti_coloring=coloring)
+        user_msg = UPDATE_RELATIONSHIP_USER.format(
+            resident_name=resident.name,
+            other_name=other_name,
+            current_relationship=current_rel,
+            event_summaries="\n".join(f"- {s}" for s in event_summaries),
+        )
+
+        try:
+            client = get_client("system")
+            resp = await client.messages.create(
+                model=settings.effective_model,
+                max_tokens=300,
+                system=system,
+                messages=[{"role": "user", "content": user_msg}],
+            )
+            raw = resp.content[0].text
+            data = json.loads(raw)
+        except Exception as e:
+            logger.warning("Relationship update failed: %s", e)
+            if existing:
+                return existing
+            return await self.add_memory(
+                resident.id, "relationship", f"Met {other_name}",
+                0.3, "chat_player" if user_id else "chat_resident",
+                related_user_id=user_id, related_resident_id=resident_id_target,
+            )
+
+        return await self.update_relationship(
+            resident.id,
+            user_id=user_id,
+            resident_id_target=resident_id_target,
+            content=data.get("content", f"Met {other_name}"),
+            importance=float(data.get("importance", 0.5)),
+            metadata_json=data.get("metadata"),
+        )
+
+    async def generate_reflections(self, resident: "Resident") -> list[Memory]:
+        """Generate reflection memories from recent events and relationships."""
+        recent_events = await self.get_memories(resident.id, type="event", limit=20)
+        relationships = await self.get_memories(resident.id, type="relationship", limit=10)
+
+        if not recent_events:
+            return []
+
+        sbti_data = (resident.meta_json or {}).get("sbti")
+        coloring = sbti_coloring_block(sbti_data)
+
+        events_text = "\n".join(f"- [{e.source}] {e.content}" for e in recent_events)
+        rels_text = "\n".join(f"- {r.content}" for r in relationships) if relationships else "（尚无关系记忆）"
+
+        system = REFLECT_SYSTEM.format(sbti_coloring=coloring)
+        user_msg = REFLECT_USER.format(
+            resident_name=resident.name,
+            recent_events=events_text,
+            relationships=rels_text,
+        )
+
+        try:
+            client = get_client("system")
+            resp = await client.messages.create(
+                model=settings.effective_model,
+                max_tokens=400,
+                system=system,
+                messages=[{"role": "user", "content": user_msg}],
+            )
+            raw = resp.content[0].text
+            data = json.loads(raw)
+        except Exception as e:
+            logger.warning("Reflection generation failed: %s", e)
+            return []
+
+        reflections = []
+        for item in data.get("reflections", []):
+            content = item.get("content", "")
+            importance = float(item.get("importance", 0.6))
+            if not content:
+                continue
+            mem = await self.add_memory(
+                resident.id, "reflection", content, importance, "reflection",
+            )
+            reflections.append(mem)
+
+        return reflections
