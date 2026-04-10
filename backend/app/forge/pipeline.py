@@ -1,6 +1,10 @@
+import random
+import re
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.forge_session import ForgeSession
+from app.models.resident import Resident
 from app.forge.router_stage import InputRouter
 from app.forge.research_stage import ResearchStage
 from app.forge.extraction_stage import ExtractionStage
@@ -74,16 +78,71 @@ class ForgePipeline:
             else:
                 await self._run_quick(session)
 
+            # Create Resident from completed session
+            await self._create_resident(session)
             session.status = "done"
         except Exception as e:
             session.status = "error"
             session.refinement_log = {
-                **session.refinement_log,
+                **(session.refinement_log or {}),
                 "error": str(e),
             }
 
         await self._db.commit()
         return session
+
+    async def _create_resident(self, session: ForgeSession):
+        """Create a Resident from a completed forge session."""
+        from app.services.forge_service import DISTRICT_TILE_SLOTS, SPRITE_KEYS
+        from app.services.coin_service import reward
+        from app.services.scoring_service import compute_star_rating
+
+        build = session.build_output or {}
+        ability_md = build.get("ability_md", "")
+        persona_md = build.get("persona_md", "")
+        soul_md = build.get("soul_md", "")
+        name = session.character_name
+
+        # Generate slug
+        slug = name.lower().strip()
+        slug = re.sub(r'[^\w\u4e00-\u9fff-]', '-', slug)
+        slug = re.sub(r'-+', '-', slug).strip('-') or f"resident-{session.id[:8]}"
+
+        # Determine district from ability text
+        district = "free"
+        text = (ability_md + persona_md).lower()
+        if any(k in text for k in ("工程", "代码", "编程", "engineer", "code", "dev")):
+            district = "engineering"
+        elif any(k in text for k in ("产品", "设计", "product", "design", "创业")):
+            district = "product"
+        elif any(k in text for k in ("学术", "研究", "教育", "academy", "research", "教授")):
+            district = "academy"
+
+        # Find available tile
+        slots = DISTRICT_TILE_SLOTS.get(district, DISTRICT_TILE_SLOTS["free"])
+        result = await self._db.execute(
+            select(Resident.tile_x, Resident.tile_y).where(Resident.district == district)
+        )
+        occupied = {(r.tile_x, r.tile_y) for r in result.all()}
+        tile_x, tile_y = slots[0]
+        for x, y in slots:
+            if (x, y) not in occupied:
+                tile_x, tile_y = x, y
+                break
+
+        resident = Resident(
+            slug=slug, name=name, district=district, status="idle", heat=10,
+            model_tier="standard", token_cost_per_turn=1, creator_id=session.user_id,
+            ability_md=ability_md, persona_md=persona_md, soul_md=soul_md,
+            meta_json={"origin": "forge"},
+            sprite_key=random.choice(SPRITE_KEYS),
+            tile_x=tile_x, tile_y=tile_y, star_rating=2,
+        )
+        self._db.add(resident)
+        await self._db.flush()
+
+        # Reward creator
+        await reward(self._db, session.user_id, 50, "forge_creation")
 
     async def _run_quick(self, session: ForgeSession):
         """Quick mode: BuildStage only."""
