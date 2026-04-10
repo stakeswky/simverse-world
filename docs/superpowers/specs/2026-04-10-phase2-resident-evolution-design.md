@@ -35,7 +35,7 @@ memories
   resident_id     INT FK → residents
   type            ENUM("event", "relationship", "reflection")
   content         TEXT              -- 自然语言描述
-  embedding       VECTOR(1024)      -- 仅 event 类型必填
+  embedding       VECTOR(1024)      -- 仅 event 类型必填，Ollama qwen3-embedding:4b (MRL 降维到 1024)
   importance      FLOAT             -- 0-1, LLM 评估
   related_resident_id  INT?         -- 关系记忆指向的居民
   related_user_id      INT?         -- 与玩家的关系记忆
@@ -91,7 +91,7 @@ memories
 ### 技术选型
 
 - **pgvector**：PostgreSQL 扩展，不需要额外基础设施。SQLite 开发时退化为关键词匹配
-- **Embedding 模型**：DashScope text-embedding-v3
+- **Embedding 模型**：本地部署 Ollama qwen3-embedding:4b（2.5GB），通过 MRL 降维到 1024 维。本地部署零边际成本，适合高频记忆生成场景。Ollama API: `POST http://localhost:11434/api/embed`
 - **记忆上限**：每个居民事件记忆 soft cap 500 条，超出后按 importance × recency 淘汰最旧的
 
 ---
@@ -473,7 +473,7 @@ backend/app/
   ├── memory/
   │   ├── __init__.py
   │   ├── service.py           # 记忆 CRUD + 检索
-  │   ├── embedding.py         # embedding 生成（DashScope）
+  │   ├── embedding.py         # embedding 生成（本地 Ollama qwen3-embedding:4b, 1024维）
   │   └── reflection.py        # 反思生成逻辑
   ├── personality/
   │   ├── __init__.py
