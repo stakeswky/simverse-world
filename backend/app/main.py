@@ -23,6 +23,7 @@ async def lifespan(app):
     import app.models.forge_session  # noqa: F401
     import app.models.pending_message  # noqa: F401
     import app.models.memory  # noqa: F401
+    import app.models.personality_history  # noqa: F401
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
