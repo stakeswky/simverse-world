@@ -41,18 +41,21 @@ async def recalculate_heat(db: AsyncSession) -> list[dict]:
     for resident in all_residents:
         new_heat = heat_map.get(resident.id, 0)
         old_status = resident.status
-        resident.heat = new_heat
+        # Don't overwrite manually set heat with a lower value
+        resident.heat = max(new_heat, resident.heat) if new_heat > 0 else resident.heat
 
         # Never change status of residents currently chatting
         if resident.status == "chatting":
             continue
 
-        # Determine new status
+        # Determine new status based on conversation-derived heat
         if new_heat >= POPULAR_THRESHOLD:
             new_status = "popular"
         elif new_heat == 0:
             last = resident.last_conversation_at
-            if last is None or last < seven_days_ago:
+            # Only put to sleep if they had conversations before but none recently
+            # Never sleep residents that have never been talked to (new/preset NPCs)
+            if last is not None and last < seven_days_ago:
                 new_status = "sleeping"
             else:
                 new_status = "idle"
