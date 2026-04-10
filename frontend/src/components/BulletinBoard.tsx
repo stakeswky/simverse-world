@@ -98,6 +98,9 @@ export function BulletinBoard() {
           {/* Hot Residents */}
           <div style={{ marginBottom: 20 }}>
             <div style={{ fontWeight: 700, fontSize: 13, color: '#f59e0b', marginBottom: 10 }}>🔥 热门居民</div>
+            {data.hot_residents.length === 0 && (
+              <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '8px 10px' }}>暂无数据</div>
+            )}
             {data.hot_residents.map((r, i) => (
               <div
                 key={r.id}
@@ -129,6 +132,9 @@ export function BulletinBoard() {
           {/* New Residents */}
           <div>
             <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--accent-blue)', marginBottom: 10 }}>✨ 最新入住</div>
+            {data.new_residents.length === 0 && (
+              <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '8px 10px' }}>暂无数据</div>
+            )}
             {data.new_residents.map((r) => (
               <div
                 key={r.id}
