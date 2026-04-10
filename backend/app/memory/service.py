@@ -4,7 +4,7 @@ from datetime import datetime, UTC
 from sqlalchemy import select, func, delete, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.memory import Memory
-from app.llm.client import get_client
+from app.llm.client import chat as llm_chat
 from app.memory.embedding import generate_embedding
 from app.memory.prompts import (
     EXTRACT_EVENTS_SYSTEM,
@@ -15,7 +15,6 @@ from app.memory.prompts import (
     REFLECT_USER,
     sbti_coloring_block,
 )
-from app.config import settings
 from app.personality.evolution import EvolutionService
 
 logger = logging.getLogger(__name__)
@@ -305,14 +304,7 @@ class MemoryService:
         )
 
         try:
-            client = get_client("system")
-            resp = await client.messages.create(
-                model=settings.effective_model,
-                max_tokens=500,
-                system=system,
-                messages=[{"role": "user", "content": user_msg}],
-            )
-            raw = resp.content[0].text
+            raw = await llm_chat(system, [{"role": "user", "content": user_msg}], max_tokens=500)
             data = json.loads(raw)
         except Exception as e:
             logger.warning("Event extraction failed: %s", e)
@@ -385,14 +377,7 @@ class MemoryService:
         )
 
         try:
-            client = get_client("system")
-            resp = await client.messages.create(
-                model=settings.effective_model,
-                max_tokens=300,
-                system=system,
-                messages=[{"role": "user", "content": user_msg}],
-            )
-            raw = resp.content[0].text
+            raw = await llm_chat(system, [{"role": "user", "content": user_msg}], max_tokens=300)
             data = json.loads(raw)
         except Exception as e:
             logger.warning("Relationship update failed: %s", e)
@@ -435,14 +420,7 @@ class MemoryService:
         )
 
         try:
-            client = get_client("system")
-            resp = await client.messages.create(
-                model=settings.effective_model,
-                max_tokens=400,
-                system=system,
-                messages=[{"role": "user", "content": user_msg}],
-            )
-            raw = resp.content[0].text
+            raw = await llm_chat(system, [{"role": "user", "content": user_msg}], max_tokens=400)
             data = json.loads(raw)
         except Exception as e:
             logger.warning("Reflection generation failed: %s", e)

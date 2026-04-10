@@ -1,7 +1,7 @@
 import pytest
 import json
 from datetime import datetime, UTC, timedelta
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 from sqlalchemy import select
 from app.models.resident import Resident
 from app.models.memory import Memory
@@ -38,12 +38,8 @@ async def evo_resident(db_session):
     return r
 
 
-def _mock_llm_response(text: str):
-    block = MagicMock()
-    block.text = text
-    msg = MagicMock()
-    msg.content = [block]
-    return msg
+def _mock_llm_response(text: str) -> str:
+    return text
 
 
 @pytest.mark.anyio
@@ -81,14 +77,10 @@ async def test_evaluate_drift_applies_valid_changes(db_session, evo_resident):
     })
     persona_response = "Updated persona with high social warmth. Friendly engineer who now actively starts conversations."
 
-    with patch("app.personality.evolution.get_client") as mock_client_fn:
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(side_effect=[
-            _mock_llm_response(drift_response),   # drift eval
-            _mock_llm_response(persona_response),  # text sync
-        ])
-        mock_client_fn.return_value = mock_client
-
+    with patch("app.personality.evolution.llm_chat", new=AsyncMock(side_effect=[
+        _mock_llm_response(drift_response),   # drift eval
+        _mock_llm_response(persona_response),  # text sync
+    ])):
         svc = EvolutionService(db_session)
         history = await svc.evaluate_drift(evo_resident)
 
@@ -163,15 +155,11 @@ async def test_evaluate_shift_applies_dramatic_changes(db_session, evo_resident)
     persona_response = "Cold and withdrawn. No longer initiates social contact."
     soul_response = "Believes relationships are transactional. Trust must be earned through years of proof."
 
-    with patch("app.personality.evolution.get_client") as mock_client_fn:
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(side_effect=[
-            _mock_llm_response(shift_response),  # shift eval
-            _mock_llm_response(persona_response),  # persona sync
-            _mock_llm_response(soul_response),     # soul sync (shift triggers soul update)
-        ])
-        mock_client_fn.return_value = mock_client
-
+    with patch("app.personality.evolution.llm_chat", new=AsyncMock(side_effect=[
+        _mock_llm_response(shift_response),    # shift eval
+        _mock_llm_response(persona_response),  # persona sync
+        _mock_llm_response(soul_response),     # soul sync (shift triggers soul update)
+    ])):
         svc = EvolutionService(db_session)
         history = await svc.evaluate_shift(evo_resident, trigger_mem)
 
@@ -242,15 +230,11 @@ async def test_type_migration_recorded_on_shift(db_session, evo_resident):
     persona_response = "Withdrawn thinker."
     soul_response = "Values intellectual purity above social connection."
 
-    with patch("app.personality.evolution.get_client") as mock_client_fn:
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(side_effect=[
-            _mock_llm_response(shift_response),
-            _mock_llm_response(persona_response),
-            _mock_llm_response(soul_response),
-        ])
-        mock_client_fn.return_value = mock_client
-
+    with patch("app.personality.evolution.llm_chat", new=AsyncMock(side_effect=[
+        _mock_llm_response(shift_response),
+        _mock_llm_response(persona_response),
+        _mock_llm_response(soul_response),
+    ])):
         svc = EvolutionService(db_session)
         history = await svc.evaluate_shift(evo_resident, trigger_mem)
 
@@ -287,11 +271,7 @@ async def test_evaluate_drift_llm_failure_returns_none(db_session, evo_resident)
         db_session.add(mem)
     await db_session.commit()
 
-    with patch("app.personality.evolution.get_client") as mock_client_fn:
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(side_effect=Exception("LLM down"))
-        mock_client_fn.return_value = mock_client
-
+    with patch("app.personality.evolution.llm_chat", new=AsyncMock(side_effect=Exception("LLM down"))):
         svc = EvolutionService(db_session)
         result = await svc.evaluate_drift(evo_resident)
 

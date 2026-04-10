@@ -1,6 +1,6 @@
 import pytest
 import json
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 from sqlalchemy import select
 from app.models.resident import Resident
 from app.models.memory import Memory
@@ -51,12 +51,8 @@ async def chat_pair(db_session):
     return initiator, target
 
 
-def _mock_llm_text(text: str):
-    mock_msg = MagicMock()
-    mock_block = MagicMock()
-    mock_block.text = text
-    mock_msg.content = [mock_block]
-    return mock_msg
+def _mock_llm_text(text: str) -> str:
+    return text
 
 
 @pytest.mark.anyio
@@ -87,20 +83,17 @@ async def test_resident_chat_creates_memories(db_session, chat_pair):
     })
 
     call_idx = 0
-    def side_effect(*args, **kwargs):
+    # Order: 3 dialog turns, initiator extract, target extract, initiator rel update, target rel update, summary
+    all_responses = dialog_responses + [extract_response, tgt_extract_response, rel_response, rel_response, summary_response]
+
+    async def side_effect(*args, **kwargs):
         nonlocal call_idx
-        # Order: 3 dialog turns, initiator extract, target extract, initiator rel update, target rel update, summary
-        responses = dialog_responses + [extract_response, tgt_extract_response, rel_response, rel_response, summary_response]
-        resp = _mock_llm_text(responses[min(call_idx, len(responses) - 1)])
+        resp = all_responses[min(call_idx, len(all_responses) - 1)]
         call_idx += 1
         return resp
 
-    with patch("app.agent.chat.get_client") as mock_get_client, \
-         patch("app.memory.service.get_client") as mock_mem_client:
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(side_effect=side_effect)
-        mock_get_client.return_value = mock_client
-        mock_mem_client.return_value = mock_client
+    with patch("app.agent.chat.llm_chat", side_effect=side_effect), \
+         patch("app.memory.service.llm_chat", side_effect=side_effect):
 
         result = await resident_chat(db_session, initiator, target, max_turns=3)
 
@@ -135,8 +128,7 @@ async def test_resident_chat_cooldown(db_session, chat_pair):
     import time
     _chat_cooldowns[pair_key] = time.time()  # just set, not expired
 
-    with patch("app.agent.chat.get_client"):
-        result = await resident_chat(db_session, initiator, target)
+    result = await resident_chat(db_session, initiator, target)
 
     # Should return None/empty dict if on cooldown
     assert result is None or result.get("skipped") is True
@@ -149,7 +141,6 @@ async def test_resident_chat_busy_target_skipped(db_session, chat_pair):
     target.status = "chatting"
     await db_session.commit()
 
-    with patch("app.agent.chat.get_client"):
-        result = await resident_chat(db_session, initiator, target)
+    result = await resident_chat(db_session, initiator, target)
 
     assert result is None or result.get("skipped") is True

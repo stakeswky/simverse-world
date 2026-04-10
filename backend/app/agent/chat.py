@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.prompts import CHAT_INITIATE_SYSTEM, CHAT_REPLY_SYSTEM, CHAT_SUMMARY_SYSTEM, CHAT_SUMMARY_USER
 from app.config import settings
-from app.llm.client import get_client
+from app.llm.client import chat as llm_chat
 from app.memory.service import MemoryService
 from app.models.resident import Resident
 
@@ -108,7 +108,6 @@ async def resident_chat(
     target.status = "socializing"
     await db.commit()
 
-    client = get_client("system")
     svc = MemoryService(db)
 
     # Fetch relationship memories for context
@@ -136,13 +135,7 @@ async def resident_chat(
                 # Append previous line as context
                 messages = [{"role": "user", "content": history}]
 
-            resp = await client.messages.create(
-                model=settings.effective_model,
-                max_tokens=100,
-                system=system_prompt,
-                messages=messages,
-            )
-            reply = resp.content[0].text.strip()[:200]
+            reply = (await llm_chat(system_prompt, messages, max_tokens=100)).strip()[:200]
             dialog_lines.append(f"{speaker.name}: {reply}")
 
         dialog_text = "\n".join(dialog_lines)
@@ -179,11 +172,9 @@ async def resident_chat(
 
         # Generate summary for broadcast
         try:
-            summary_resp = await client.messages.create(
-                model=settings.effective_model,
-                max_tokens=150,
-                system=CHAT_SUMMARY_SYSTEM,
-                messages=[{
+            raw_summary = await llm_chat(
+                CHAT_SUMMARY_SYSTEM,
+                [{
                     "role": "user",
                     "content": CHAT_SUMMARY_USER.format(
                         initiator_name=initiator.name,
@@ -191,8 +182,8 @@ async def resident_chat(
                         dialog_text=dialog_text,
                     ),
                 }],
+                max_tokens=150,
             )
-            raw_summary = summary_resp.content[0].text
             match = re.search(r'\{[^{}]+\}', raw_summary, re.DOTALL)
             if match:
                 summary_data = json.loads(match.group())

@@ -2,8 +2,7 @@ import json
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from app.llm.client import get_client
-from app.config import settings
+from app.llm.client import chat as llm_chat
 from app.models.resident import Resident
 from app.models.memory import Memory
 from app.models.personality_history import PersonalityHistory
@@ -71,12 +70,9 @@ class EvolutionService:
                 f"- [{m.importance:.1f}] {m.content}" for m in recent_mems
             )
 
-            client = get_client("system")
-            resp = await client.messages.create(
-                model=settings.effective_model,
-                max_tokens=400,
-                system=DRIFT_EVAL_SYSTEM,
-                messages=[{
+            raw = await llm_chat(
+                DRIFT_EVAL_SYSTEM,
+                [{
                     "role": "user",
                     "content": DRIFT_EVAL_USER.format(
                         resident_name=resident.name,
@@ -85,8 +81,8 @@ class EvolutionService:
                         recent_memories=mem_text,
                     ),
                 }],
+                max_tokens=400,
             )
-            raw = self._extract_text(resp)
             data = json.loads(raw)
             changes_list = data.get("changes", [])
 
@@ -149,12 +145,9 @@ class EvolutionService:
             dimensions = sbti.get("dimensions", {})
             sbti_type = sbti.get("type", "UNKNOWN")
 
-            client = get_client("system")
-            resp = await client.messages.create(
-                model=settings.effective_model,
-                max_tokens=500,
-                system=SHIFT_EVAL_SYSTEM,
-                messages=[{
+            raw = await llm_chat(
+                SHIFT_EVAL_SYSTEM,
+                [{
                     "role": "user",
                     "content": SHIFT_EVAL_USER.format(
                         resident_name=resident.name,
@@ -164,8 +157,8 @@ class EvolutionService:
                         event_content=trigger_memory.content,
                     ),
                 }],
+                max_tokens=500,
             )
-            raw = self._extract_text(resp)
             data = json.loads(raw)
             changes_list = data.get("changes", [])
             shift_reason = data.get("shift_reason", "")
@@ -271,14 +264,10 @@ class EvolutionService:
         changes_summary = format_changes_summary(changes)
 
         try:
-            client = get_client("system")
-
             # Always sync persona_md
-            resp = await client.messages.create(
-                model=settings.effective_model,
-                max_tokens=800,
-                system=TEXT_SYNC_SYSTEM,
-                messages=[{
+            new_persona = (await llm_chat(
+                TEXT_SYNC_SYSTEM,
+                [{
                     "role": "user",
                     "content": TEXT_SYNC_USER.format(
                         resident_name=resident.name,
@@ -288,8 +277,8 @@ class EvolutionService:
                         original_text=resident.persona_md or "",
                     ),
                 }],
-            )
-            new_persona = self._extract_text(resp).strip()
+                max_tokens=800,
+            )).strip()
             if new_persona:
                 resident.persona_md = new_persona
 
@@ -301,12 +290,9 @@ class EvolutionService:
             soul_dims_changed = set(changes.keys()) & _SOUL_DIMENSIONS
             if soul_dims_changed:
                 try:
-                    client = get_client("system")
-                    resp = await client.messages.create(
-                        model=settings.effective_model,
-                        max_tokens=500,
-                        system=TEXT_SYNC_SOUL_SYSTEM,
-                        messages=[{
+                    new_soul = (await llm_chat(
+                        TEXT_SYNC_SOUL_SYSTEM,
+                        [{
                             "role": "user",
                             "content": TEXT_SYNC_SOUL_USER.format(
                                 resident_name=resident.name,
@@ -315,18 +301,11 @@ class EvolutionService:
                                 original_text=resident.soul_md or "",
                             ),
                         }],
-                    )
-                    new_soul = self._extract_text(resp).strip()
+                        max_tokens=500,
+                    )).strip()
                     if new_soul:
                         resident.soul_md = new_soul
 
                 except Exception as e:
                     logger.warning("soul_md sync failed for %s: %s", resident.id, e)
 
-    @staticmethod
-    def _extract_text(response) -> str:
-        """Extract text from LLM response, skipping ThinkingBlocks."""
-        for block in response.content:
-            if hasattr(block, "text"):
-                return block.text
-        return ""

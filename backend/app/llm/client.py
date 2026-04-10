@@ -62,6 +62,44 @@ def get_client(owner: str = "system", *, user_config: dict | None = None) -> ant
     raise ValueError("owner must be 'system' or 'user'")
 
 
+def extract_text(response) -> str:
+    """Extract text from an LLM response, skipping ThinkingBlocks.
+
+    Use this instead of resp.content[0].text to safely handle
+    responses that may contain ThinkingBlock objects.
+    """
+    for block in response.content:
+        if hasattr(block, "text"):
+            return block.text
+    return ""
+
+
+async def chat(
+    system_prompt: str,
+    messages: list[dict],
+    model: str | None = None,
+    max_tokens: int | None = None,
+    *,
+    owner: str = "system",
+) -> str:
+    """Non-streaming LLM call. Returns text string.
+
+    Handles thinking mode and ThinkingBlock extraction automatically.
+    Use this instead of client.messages.create() directly.
+    """
+    client = get_client(owner)
+    kwargs: dict = {
+        "model": model or settings.effective_model,
+        "max_tokens": max_tokens or settings.llm_max_tokens,
+        "system": system_prompt,
+        "messages": messages,
+    }
+    if not settings.llm_thinking:
+        kwargs["thinking"] = {"type": "disabled"}
+    resp = await client.messages.create(**kwargs)
+    return extract_text(resp)
+
+
 async def stream_chat(
     system_prompt: str,
     messages: list[dict],

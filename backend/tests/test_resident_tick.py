@@ -1,6 +1,6 @@
 import pytest
 import json
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 from sqlalchemy import select
 from app.models.resident import Resident
 from app.models.memory import Memory
@@ -40,17 +40,12 @@ async def tick_resident(db_session):
 
 
 def _mock_decision_response(action: str, target_slug=None, target_tile=None, reason="test"):
-    raw = json.dumps({
+    return json.dumps({
         "action": action,
         "target_slug": target_slug,
         "target_tile": target_tile,
         "reason": reason,
     })
-    mock_msg = MagicMock()
-    mock_block = MagicMock()
-    mock_block.text = raw
-    mock_msg.content = [mock_block]
-    return mock_msg
 
 
 def test_parse_action_result_wander():
@@ -104,13 +99,9 @@ async def test_resident_tick_wander(db_session, tick_resident):
     """Tick should update tile position and create a memory for WANDER."""
     _daily_counts.clear()
 
-    with patch("app.agent.tick.get_client") as mock_get_client:
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(
-            return_value=_mock_decision_response("WANDER", target_tile=[80, 55])
-        )
-        mock_get_client.return_value = mock_client
-
+    with patch("app.agent.tick.llm_chat", new=AsyncMock(
+        return_value=_mock_decision_response("WANDER", target_tile=[80, 55])
+    )):
         with patch("app.agent.tick.get_walkable_tiles", return_value=frozenset(
             (x, y) for x in range(60, 100) for y in range(40, 70)
         )):
@@ -147,11 +138,7 @@ async def test_resident_tick_llm_failure_returns_none(db_session, tick_resident)
     """If LLM fails, tick should return None gracefully without crashing."""
     _daily_counts.clear()
 
-    with patch("app.agent.tick.get_client") as mock_get_client:
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(side_effect=Exception("LLM down"))
-        mock_get_client.return_value = mock_client
-
+    with patch("app.agent.tick.llm_chat", new=AsyncMock(side_effect=Exception("LLM down"))):
         result = await resident_tick(db_session, tick_resident)
 
     assert result is None

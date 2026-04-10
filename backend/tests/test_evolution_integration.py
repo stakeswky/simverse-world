@@ -1,6 +1,6 @@
 import pytest
 import json
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 from sqlalchemy import select
 from app.models.resident import Resident
 from app.models.memory import Memory
@@ -37,12 +37,8 @@ async def int_resident(db_session):
     return r
 
 
-def _llm_resp(text: str):
-    block = MagicMock()
-    block.text = text
-    msg = MagicMock()
-    msg.content = [block]
-    return msg
+def _llm_resp(text: str) -> str:
+    return text
 
 
 @pytest.mark.anyio
@@ -57,22 +53,14 @@ async def test_high_importance_memory_triggers_shift_check(db_session, int_resid
     })
     persona_response = "Now deeply emotionally engaged with others."
 
-    with patch("app.memory.service.get_client") as mock_extract_client, \
-         patch("app.personality.evolution.get_client") as mock_evo_client:
-
-        mock_extract = AsyncMock()
-        mock_extract.messages.create = AsyncMock(return_value=_llm_resp(json.dumps({
+    with patch("app.memory.service.llm_chat", new=AsyncMock(
+        return_value=_llm_resp(json.dumps({
             "memories": [{"content": "Profound connection", "importance": 0.92}]
-        })))
-        mock_extract_client.return_value = mock_extract
-
-        mock_evo = AsyncMock()
-        mock_evo.messages.create = AsyncMock(side_effect=[
-            _llm_resp(shift_response),
-            _llm_resp(persona_response),
-        ])
-        mock_evo_client.return_value = mock_evo
-
+        }))
+    )), patch("app.personality.evolution.llm_chat", new=AsyncMock(side_effect=[
+        _llm_resp(shift_response),
+        _llm_resp(persona_response),
+    ])):
         with patch("app.memory.service.generate_embedding", return_value=[0.1] * 1024):
             memories = await svc.extract_events(
                 resident=int_resident,
@@ -118,19 +106,12 @@ async def test_drift_check_triggered_after_15_memories(db_session, int_resident)
 
     drift_response = json.dumps({"changes": []})  # No changes — just checks the call
 
-    with patch("app.memory.service.get_client") as mock_extract_client, \
-         patch("app.personality.evolution.get_client") as mock_evo_client:
-
-        mock_extract = AsyncMock()
-        mock_extract.messages.create = AsyncMock(return_value=_llm_resp(json.dumps({
+    mock_evo_llm_chat = AsyncMock(return_value=_llm_resp(drift_response))
+    with patch("app.memory.service.llm_chat", new=AsyncMock(
+        return_value=_llm_resp(json.dumps({
             "memories": [{"content": "The 15th event", "importance": 0.5}]
-        })))
-        mock_extract_client.return_value = mock_extract
-
-        mock_evo = AsyncMock()
-        mock_evo.messages.create = AsyncMock(return_value=_llm_resp(drift_response))
-        mock_evo_client.return_value = mock_evo
-
+        }))
+    )), patch("app.personality.evolution.llm_chat", mock_evo_llm_chat):
         with patch("app.memory.service.generate_embedding", return_value=[0.1] * 1024):
             await svc.extract_events(
                 resident=int_resident,
@@ -139,7 +120,7 @@ async def test_drift_check_triggered_after_15_memories(db_session, int_resident)
             )
 
     # Drift LLM should have been called
-    mock_evo.messages.create.assert_called_once()
+    mock_evo_llm_chat.assert_called_once()
 
 
 @pytest.mark.anyio
@@ -147,16 +128,12 @@ async def test_evolution_failure_does_not_crash_memory_extraction(db_session, in
     """Evolution errors must not propagate to memory extraction callers."""
     svc = MemoryService(db_session)
 
-    with patch("app.memory.service.get_client") as mock_extract_client, \
-         patch("app.personality.evolution.EvolutionService.evaluate_shift",
-               new_callable=AsyncMock, side_effect=Exception("Evolution crashed")):
-
-        mock_extract = AsyncMock()
-        mock_extract.messages.create = AsyncMock(return_value=_llm_resp(json.dumps({
+    with patch("app.memory.service.llm_chat", new=AsyncMock(
+        return_value=_llm_resp(json.dumps({
             "memories": [{"content": "Critical event", "importance": 0.95}]
-        })))
-        mock_extract_client.return_value = mock_extract
-
+        }))
+    )), patch("app.personality.evolution.EvolutionService.evaluate_shift",
+              new_callable=AsyncMock, side_effect=Exception("Evolution crashed")):
         with patch("app.memory.service.generate_embedding", return_value=[0.1] * 1024):
             # Should NOT raise even if evolution crashes
             memories = await svc.extract_events(

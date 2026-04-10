@@ -9,7 +9,7 @@ import logging
 from typing import AsyncGenerator
 
 from app.config import settings
-from app.llm.client import get_client
+from app.llm.client import get_client, extract_text
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +141,7 @@ class ModelRouter:
                     }
                 ],
             )
-            return resp.content[0].text
+            return extract_text(resp)
         except Exception as exc:
             logger.warning("Video understanding failed for %s: %s", video_url, exc)
             return f"（视频理解失败，原始链接：{video_url}）"

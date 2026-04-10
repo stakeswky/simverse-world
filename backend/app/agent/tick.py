@@ -11,7 +11,7 @@ from app.agent.actions import ActionType, ActionResult, get_available_actions
 from app.agent.pathfinder import get_walkable_tiles, find_path
 from app.agent.prompts import build_decision_prompt
 from app.config import settings
-from app.llm.client import get_client
+from app.llm.client import chat as llm_chat
 from app.memory.service import MemoryService
 from app.models.resident import Resident
 
@@ -198,14 +198,7 @@ async def resident_tick(
             available_actions=available_actions,
             max_daily_actions=settings.agent_max_daily_actions,
         )
-        client = get_client("system")
-        resp = await client.messages.create(
-            model=settings.effective_model,
-            max_tokens=200,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}],
-        )
-        raw = resp.content[0].text
+        raw = await llm_chat(system_prompt, [{"role": "user", "content": user_prompt}], max_tokens=200)
         action_result = parse_action_result(raw)
     except Exception as e:
         logger.warning("Tick decide failed for %s: %s", resident.slug, e)

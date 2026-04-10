@@ -1,6 +1,6 @@
 import pytest
 import json
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 from app.models.resident import Resident
 from app.models.memory import Memory
 from app.memory.service import MemoryService
@@ -31,13 +31,9 @@ async def resident(db_session):
     return r
 
 
-def _mock_llm_response(content: str):
-    """Create a mock that simulates anthropic client.messages.create()."""
-    mock_msg = MagicMock()
-    mock_block = MagicMock()
-    mock_block.text = content
-    mock_msg.content = [mock_block]
-    return mock_msg
+def _mock_llm_response(content: str) -> str:
+    """Return text string as llm_chat() now returns text directly."""
+    return content
 
 
 @pytest.mark.anyio
@@ -51,11 +47,7 @@ async def test_extract_events_from_conversation(db_session, resident):
         ]
     })
 
-    with patch("app.memory.service.get_client") as mock_get_client:
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=_mock_llm_response(llm_response))
-        mock_get_client.return_value = mock_client
-
+    with patch("app.memory.service.llm_chat", new=AsyncMock(return_value=_mock_llm_response(llm_response))):
         with patch("app.memory.service.generate_embedding", return_value=[0.1] * 1024):
             memories = await svc.extract_events(
                 resident=resident,
@@ -73,11 +65,7 @@ async def test_extract_events_from_conversation(db_session, resident):
 async def test_extract_events_handles_llm_failure(db_session, resident):
     svc = MemoryService(db_session)
 
-    with patch("app.memory.service.get_client") as mock_get_client:
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(side_effect=Exception("LLM down"))
-        mock_get_client.return_value = mock_client
-
+    with patch("app.memory.service.llm_chat", new=AsyncMock(side_effect=Exception("LLM down"))):
         memories = await svc.extract_events(
             resident=resident,
             other_name="Player1",
@@ -97,11 +85,7 @@ async def test_update_relationship_via_llm(db_session, resident):
         "metadata": {"affinity": 0.4, "trust": 0.5, "tags": ["beginner", "curious"]},
     })
 
-    with patch("app.memory.service.get_client") as mock_get_client:
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=_mock_llm_response(llm_response))
-        mock_get_client.return_value = mock_client
-
+    with patch("app.memory.service.llm_chat", new=AsyncMock(return_value=_mock_llm_response(llm_response))):
         rel = await svc.update_relationship_via_llm(
             resident=resident,
             other_name="Player1",
@@ -132,11 +116,7 @@ async def test_trigger_reflection(db_session, resident):
         ]
     })
 
-    with patch("app.memory.service.get_client") as mock_get_client:
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=_mock_llm_response(llm_response))
-        mock_get_client.return_value = mock_client
-
+    with patch("app.memory.service.llm_chat", new=AsyncMock(return_value=_mock_llm_response(llm_response))):
         reflections = await svc.generate_reflections(resident=resident)
 
     assert len(reflections) == 2

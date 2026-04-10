@@ -1,6 +1,6 @@
 import pytest
 import json
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 from sqlalchemy import select
 from app.models.memory import Memory
 from app.models.resident import Resident
@@ -41,12 +41,8 @@ async def chat_user(db_session):
     return u
 
 
-def _mock_llm_response(content: str):
-    mock_msg = MagicMock()
-    mock_block = MagicMock()
-    mock_block.text = content
-    mock_msg.content = [mock_block]
-    return mock_msg
+def _mock_llm_response(content: str) -> str:
+    return content
 
 
 @pytest.mark.anyio
@@ -65,16 +61,10 @@ async def test_process_chat_end_creates_memories(db_session, chat_resident, chat
         "metadata": {"affinity": 0.3, "trust": 0.4, "tags": ["python-learner"]},
     })
 
-    with patch("app.memory.service.get_client") as mock_get_client:
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(
-            side_effect=[
-                _mock_llm_response(llm_extract_response),
-                _mock_llm_response(llm_relationship_response),
-            ]
-        )
-        mock_get_client.return_value = mock_client
-
+    with patch("app.memory.service.llm_chat", new=AsyncMock(side_effect=[
+        _mock_llm_response(llm_extract_response),
+        _mock_llm_response(llm_relationship_response),
+    ])):
         with patch("app.memory.service.generate_embedding", return_value=[0.1] * 1024):
             events = await svc.extract_events(
                 resident=chat_resident,
