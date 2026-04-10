@@ -8,6 +8,7 @@ from app.models.user import User
 from app.models.resident import Resident
 from app.routers.admin.middleware import require_admin
 from app.services.scoring_service import compute_star_rating
+from app.services.sbti_service import compute_sbti, update_meta_with_sbti
 from app.schemas.admin import (
     AdminResidentListItem,
     ResidentPersonaEditRequest,
@@ -139,6 +140,11 @@ async def _create_preset(
     creator_id: str,
 ) -> Resident:
     """Create a preset resident (admin-managed NPC)."""
+    preset_meta = meta_json or {"origin": "preset"}
+    sbti = await compute_sbti(name, ability_md, persona_md, soul_md)
+    if sbti:
+        preset_meta = update_meta_with_sbti(preset_meta, sbti)
+
     resident = Resident(
         slug=slug,
         name=name,
@@ -151,7 +157,7 @@ async def _create_preset(
         tile_y=tile_y,
         resident_type=resident_type,
         reply_mode=reply_mode,
-        meta_json=meta_json or {"origin": "preset"},
+        meta_json=preset_meta,
         creator_id=creator_id,
     )
     resident.star_rating = compute_star_rating(resident)

@@ -1,0 +1,154 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - link "SBTI 人格测试" [ref=e4] [cursor=pointer]:
+        - /url: /
+        - img [ref=e6]
+        - generic [ref=e17]:
+          - generic [ref=e18]: SBTI
+          - generic [ref=e19]: 人格测试
+      - navigation [ref=e20]:
+        - link "人格类型" [ref=e21] [cursor=pointer]:
+          - /url: /types
+        - link "人格排行榜" [ref=e22] [cursor=pointer]:
+          - /url: /rankings
+        - link "关于测试" [ref=e23] [cursor=pointer]:
+          - /url: /about
+        - link "开始测试" [ref=e24] [cursor=pointer]:
+          - /url: /test
+      - generic [ref=e25]:
+        - generic [ref=e26]:
+          - generic [ref=e27]: 中文
+          - generic [ref=e28]: EN
+        - link "开始测试" [ref=e29] [cursor=pointer]:
+          - /url: /test
+  - main [ref=e30]:
+    - generic [ref=e31]:
+      - generic [ref=e32]:
+        - generic [ref=e33]: Silly Behavioral Type Indicator
+        - generic [ref=e34]:
+          - heading "SBTI 人格测试在线测试，测测你到底是哪一种抽象人格。" [level=1] [ref=e35]
+          - paragraph [ref=e36]: SBTI 现已支持在线测试。现在就可以开始答题，测出自己的 SBTI 人格类型；测完之后，还能继续查看十五维落点和每一种人格的详细解读。
+        - generic [ref=e37]:
+          - link "开始测试" [ref=e38] [cursor=pointer]:
+            - /url: /test
+          - link "浏览 27 种人格" [ref=e39] [cursor=pointer]:
+            - /url: /types
+          - link "了解测试说明" [ref=e40] [cursor=pointer]:
+            - /url: /about
+        - generic [ref=e41]:
+          - generic [ref=e42]:
+            - paragraph [ref=e43]: 15 维模型
+            - paragraph [ref=e44]: 5 套人格切面
+          - generic [ref=e45]:
+            - paragraph [ref=e46]: 27 种结果
+            - paragraph [ref=e47]: 25 常规 + 2 特殊
+          - generic [ref=e48]:
+            - paragraph [ref=e49]: 32 道题
+            - paragraph [ref=e50]: 含隐藏饮酒分支
+      - generic [ref=e53]:
+        - article [ref=e54]:
+          - generic [ref=e55]:
+            - img "CTRL（拿捏者）" [ref=e57]
+            - generic [ref=e58]:
+              - paragraph [ref=e59]: CTRL
+              - heading "拿捏者" [level=2] [ref=e60]
+              - paragraph [ref=e61]: 怎么样，被我拿捏了吧？
+        - article [ref=e62]:
+          - generic [ref=e63]:
+            - img "MUM（妈妈）" [ref=e65]
+            - generic [ref=e66]:
+              - paragraph [ref=e67]: MUM
+              - heading "妈妈" [level=2] [ref=e68]
+              - paragraph [ref=e69]: 或许...我可以叫你妈妈吗....?
+        - article [ref=e70]:
+          - generic [ref=e71]:
+            - img "OH-NO（哦不人）" [ref=e73]
+            - generic [ref=e74]:
+              - paragraph [ref=e75]: OH-NO
+              - heading "哦不人" [level=2] [ref=e76]
+              - paragraph [ref=e77]: 哦不！我怎么会是这个人格？！
+    - generic [ref=e78]:
+      - generic [ref=e79]:
+        - paragraph [ref=e80]: 测试看点
+        - heading "SBTI 采用 5 组人格切面。" [level=2] [ref=e81]
+        - paragraph [ref=e82]: 整套测试不只给出一个结果名，还会把状态落到十五个维度上，更适合用来看待一个人平时怎么想、怎么爱、怎么做决定、怎么和人相处。
+      - generic [ref=e83]:
+        - article [ref=e84]:
+          - paragraph [ref=e85]: S1 · S2 · S3
+          - heading "自我模型" [level=3] [ref=e86]
+          - paragraph [ref=e87]: 看你对自己的评价是否稳定，认不认识自己，以及内心到底有没有特别要紧的东西。
+        - article [ref=e88]:
+          - paragraph [ref=e89]: E1 · E2 · E3
+          - heading "情感模型" [level=3] [ref=e90]
+          - paragraph [ref=e91]: 看你在关系里容易焦虑还是安心，投入到什么程度，以及是否需要独立空间。
+        - article [ref=e92]:
+          - paragraph [ref=e93]: A1 · A2 · A3
+          - heading "态度模型" [level=3] [ref=e94]
+          - paragraph [ref=e95]: 看你怎么看世界、规则和人生意义，是谨慎守序还是灵活冲动。
+        - article [ref=e96]:
+          - paragraph [ref=e97]: Ac1 · Ac2 · Ac3
+          - heading "行动驱力模型" [level=3] [ref=e98]
+          - paragraph [ref=e99]: 看你做事更偏进攻还是规避，做决定果不果断，计划能不能落下来。
+        - article [ref=e100]:
+          - paragraph [ref=e101]: So1 · So2 · So3
+          - heading "社交模型" [level=3] [ref=e102]
+          - paragraph [ref=e103]: 看你会不会主动靠近人、边界感强不强，以及在不同关系里有多真实。
+    - generic [ref=e104]:
+      - generic [ref=e105]:
+        - paragraph [ref=e106]: 常见问题
+        - heading "如果你是第一次测 SBTI，可以先看这几件事。" [level=2] [ref=e107]
+        - paragraph [ref=e108]: 首页整理了几个最常见的问题，适合先快速了解，再开始测试。
+      - generic [ref=e109]:
+        - article [ref=e110]:
+          - paragraph [ref=e111]: FAQ
+          - heading "SBTI 是什么？" [level=3] [ref=e112]
+          - paragraph [ref=e113]: SBTI 是一个轻松向的人格测试。它不用一堆术语去定义你，而是从自我认知、感情投入、行动方式和社交边界这些日常状态出发，帮你看见自己更像哪一种人格。
+        - article [ref=e114]:
+          - paragraph [ref=e115]: FAQ
+          - heading "SBTI 和 MBTI 有什么区别？" [level=3] [ref=e116]
+          - paragraph [ref=e117]: MBTI 更像一套经典人格分类工具，SBTI 则更贴近中文互联网语境里的表达方式。你在这里测到的，不是一本正经的标签，而是更接近日常行为和真实反应的一面。
+        - article [ref=e118]:
+          - paragraph [ref=e119]: FAQ
+          - heading "SBTI 人格测试会测什么？" [level=3] [ref=e120]
+          - paragraph [ref=e121]: 整套测试分成五组切面：自我模型、情感模型、态度模型、行动驱力模型和社交模型。测完之后，可以看到十五维落点和最终人格结果。
+        - article [ref=e122]:
+          - paragraph [ref=e123]: FAQ
+          - heading "测完 SBTI 之后能看到什么？" [level=3] [ref=e124]
+          - paragraph [ref=e125]: 你会拿到一个专属结果页，里面有人格名称、人格解读、十五维落点，以及其他人格类型的详情页入口，方便继续对照和分享。
+      - generic [ref=e126]:
+        - link "查看所有人格类型" [ref=e127] [cursor=pointer]:
+          - /url: /types
+        - link "查看关于页面" [ref=e128] [cursor=pointer]:
+          - /url: /about
+        - link "查看人格排行榜" [ref=e129] [cursor=pointer]:
+          - /url: /rankings
+    - generic [ref=e130]:
+      - generic [ref=e131]:
+        - paragraph [ref=e132]: 真实提交排行榜
+        - heading "做完测试后，可以把结果手动提交进站内人格榜。" [level=2] [ref=e133]
+        - paragraph [ref=e134]: 当前排行榜只统计用户在结果页主动提交的真实测试结果。数据大约每 5 分钟刷新一次，用来展示 27 种人格在站内的最新分布。
+      - article [ref=e135]:
+        - paragraph [ref=e136]: 最近榜单会显示在这里。
+        - paragraph [ref=e137]: 这个版块首屏保持静态，滚动到可见区域后才会请求最新榜单数据。
+        - link "去贡献第一条提交" [ref=e139] [cursor=pointer]:
+          - /url: /test
+  - contentinfo [ref=e140]:
+    - generic [ref=e141]:
+      - generic [ref=e142]:
+        - paragraph [ref=e143]: SBTI
+        - paragraph [ref=e144]: 这里是 SBTI 人格测试网站。如果最近正好刷到 SBTI，想知道自己到底属于哪一种人格，直接从首页开始测试即可。
+        - generic [ref=e145]:
+          - link "首页" [ref=e146] [cursor=pointer]:
+            - /url: /
+          - link "开始测试" [ref=e147] [cursor=pointer]:
+            - /url: /test
+          - link "人格类型" [ref=e148] [cursor=pointer]:
+            - /url: /types
+          - link "人格排行榜" [ref=e149] [cursor=pointer]:
+            - /url: /rankings
+          - link "关于测试" [ref=e150] [cursor=pointer]:
+            - /url: /about
+      - generic [ref=e151]:
+        - paragraph [ref=e152]: 友情提示
+        - paragraph [ref=e153]: SBTI 更适合拿来娱乐、对照和自我观察，不适合作为严肃的心理诊断结果。你可以把它当成一个更好玩、更接近日常状态的人格测试。

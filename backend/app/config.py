@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     agent_chat_cooldown: int = 1800        # seconds before same pair can chat again
     agent_time_scale: float = 1.0          # world time multiplier (1.0 = realtime)
     agent_enabled: bool = True             # master switch (set False to pause loop)
+    agent_debug_always_active: bool = False  # bypass schedule, all residents always active
 
     model_config = {"env_file": ".env"}
 

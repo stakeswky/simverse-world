@@ -109,7 +109,10 @@ def get_activity_probability(schedule: DailySchedule, hour: int) -> float:
     - Has a baseline of (1 - rest_ratio) * 0.5 during awake hours
     - Adds +0.2 boost at social_slots
     """
-    # Outside awake window → no activity
+    # Outside awake window → no activity (unless debug override)
+    from app.config import settings
+    if getattr(settings, 'agent_debug_always_active', False):
+        return 0.8  # Debug mode: always active
     if hour < schedule.wake_hour or hour >= schedule.sleep_hour:
         return 0.0
 

@@ -14,6 +14,7 @@ from app.services.resident_service import list_residents, get_resident_by_slug
 from app.services.version_service import create_version_snapshot, get_versions
 from app.services.auth_service import get_current_user
 from app.services.scoring_service import compute_star_rating
+from app.services.sbti_service import compute_sbti, update_meta_with_sbti
 from app.services.forge_service import DISTRICT_TILE_SLOTS, _find_available_tile, _generate_slug, SPRITE_KEYS
 
 router = APIRouter(prefix="/residents", tags=["residents"])
@@ -142,6 +143,12 @@ async def import_resident(
 
     tile_x, tile_y = await _find_available_tile(db, district)
 
+    # Compute SBTI personality (non-blocking: skip if fails)
+    final_meta = {**meta_json, "origin": "import"}
+    sbti = await compute_sbti(name, ability_md, persona_md, soul_md)
+    if sbti:
+        final_meta = update_meta_with_sbti(final_meta, sbti)
+
     resident = Resident(
         slug=slug,
         name=name,
@@ -154,7 +161,7 @@ async def import_resident(
         ability_md=ability_md,
         persona_md=persona_md,
         soul_md=soul_md,
-        meta_json={**meta_json, "origin": "import"},
+        meta_json=final_meta,
         sprite_key=random.choice(SPRITE_KEYS),
         tile_x=tile_x,
         tile_y=tile_y,
@@ -217,6 +224,12 @@ async def edit_resident(
 
     # Recalculate star rating
     r.star_rating = compute_star_rating(r)
+
+    # Recalculate SBTI when personality layers change
+    if req.ability_md is not None or req.persona_md is not None or req.soul_md is not None:
+        sbti = await compute_sbti(r.name, r.ability_md, r.persona_md, r.soul_md)
+        if sbti:
+            r.meta_json = update_meta_with_sbti(r.meta_json, sbti)
 
     await db.commit()
     await db.refresh(r)

@@ -30,6 +30,9 @@ build/
 *.db
 *.sqlite3
 
+# Local seed data
+seed_local.py
+
 # IDE
 .idea/
 .vscode/

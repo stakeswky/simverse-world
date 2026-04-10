@@ -227,17 +227,24 @@ async def run_generation_pipeline(forge_id: str, db: AsyncSession) -> None:
         if existing.scalar_one_or_none():
             slug = f"{slug}-{uuid.uuid4().hex[:6]}"
 
+        # Compute SBTI personality
+        from app.services.sbti_service import compute_sbti, update_meta_with_sbti
+        forge_meta: dict = {
+            "role": _extract_role(session["ability_md"]),
+            "impression": _extract_impression(session["persona_md"]),
+            "origin": "forge",
+        }
+        sbti = await compute_sbti(name, session["ability_md"], session["persona_md"], session["soul_md"])
+        if sbti:
+            forge_meta = update_meta_with_sbti(forge_meta, sbti)
+
         # Create resident
         resident = Resident(
             slug=slug, name=name, district=district, status="idle", heat=0,
             model_tier="standard", token_cost_per_turn=1, creator_id=session["user_id"],
             ability_md=session["ability_md"], persona_md=session["persona_md"],
             soul_md=session["soul_md"],
-            meta_json={
-                "role": _extract_role(session["ability_md"]),
-                "impression": _extract_impression(session["persona_md"]),
-                "origin": "forge",
-            },
+            meta_json=forge_meta,
             sprite_key=random.choice(SPRITE_KEYS),
             tile_x=tile_x, tile_y=tile_y, star_rating=star_rating,
         )
@@ -373,16 +380,23 @@ asyncio.run(call_llm())
         if existing.scalar_one_or_none():
             slug = f"{slug}-{uuid.uuid4().hex[:6]}"
 
+        # Compute SBTI personality
+        from app.services.sbti_service import compute_sbti, update_meta_with_sbti
+        quick_meta: dict = {
+            "role": _extract_role(session["ability_md"]),
+            "impression": _extract_impression(session["persona_md"]),
+            "origin": "quick_forge",
+        }
+        sbti = await compute_sbti(name, session["ability_md"], session["persona_md"], session["soul_md"])
+        if sbti:
+            quick_meta = update_meta_with_sbti(quick_meta, sbti)
+
         resident = Resident(
             slug=slug, name=name, district=district, status="idle", heat=0,
             model_tier="standard", token_cost_per_turn=1, creator_id=session["user_id"],
             ability_md=session["ability_md"], persona_md=session["persona_md"],
             soul_md=session["soul_md"],
-            meta_json={
-                "role": _extract_role(session["ability_md"]),
-                "impression": _extract_impression(session["persona_md"]),
-                "origin": "quick_forge",
-            },
+            meta_json=quick_meta,
             sprite_key=random.choice(SPRITE_KEYS),
             tile_x=tile_x, tile_y=tile_y, star_rating=session["star_rating"],
         )
