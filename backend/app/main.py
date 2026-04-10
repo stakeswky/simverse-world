@@ -35,7 +35,7 @@ async def lifespan(app):
     agent_task.cancel()
 
 
-app = FastAPI(title="Skills World API", lifespan=lifespan)
+app = FastAPI(title="Simverse World API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

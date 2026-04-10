@@ -157,7 +157,7 @@ export function OnboardingPage() {
       <div style={{ textAlign: 'center', marginBottom: 36, maxWidth: 600 }}>
         <div style={{ fontSize: 36, marginBottom: 8 }}>🏙️</div>
         <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 8 }}>
-          欢迎来到 Skills World
+          欢迎来到 Simverse World
         </h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1.6 }}>
           选择一个预设角色开始你的城市生活，或跳过使用默认角色

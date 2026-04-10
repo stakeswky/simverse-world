@@ -79,7 +79,7 @@ export function ForgeChat({ onStateUpdate, onComplete }: ForgeChatProps) {
             }
             setMessages(prev => [...prev, {
               role: 'bot',
-              text: `炼化完成！${status.name} 已成功入住 Skills World！\n\n` +
+              text: `炼化完成！${status.name} 已成功入住 Simverse World！\n\n` +
                     `评级：${stars}\n` +
                     `街区：${districtMap[status.district] ?? status.district}\n\n` +
                     `你获得了 50 🪙 Soul Coin 奖励！`,

@@ -16,7 +16,7 @@ FORGE_QUESTIONS: dict[int, str] = {
 }
 
 ABILITY_SYSTEM_PROMPT = """\
-你是 Skills World 的居民炼化师。你的任务是根据用户提供的原始描述，生成一份结构化的「能力层」文档。
+你是 Simverse World 的居民炼化师。你的任务是根据用户提供的原始描述，生成一份结构化的「能力层」文档。
 
 输出格式必须是 Markdown，包含以下章节：
 
@@ -61,7 +61,7 @@ ABILITY_USER_TEMPLATE = """\
 """
 
 PERSONA_SYSTEM_PROMPT = """\
-你是 Skills World 的居民炼化师。你的任务是根据用户提供的原始描述，生成一份结构化的「人格层」文档。
+你是 Simverse World 的居民炼化师。你的任务是根据用户提供的原始描述，生成一份结构化的「人格层」文档。
 
 输出格式必须是 Markdown：
 
@@ -119,7 +119,7 @@ PERSONA_USER_TEMPLATE = """\
 """
 
 SOUL_SYSTEM_PROMPT = """\
-你是 Skills World 的居民炼化师。你的任务是根据用户提供的原始描述，生成一份结构化的「灵魂层」文档。
+你是 Simverse World 的居民炼化师。你的任务是根据用户提供的原始描述，生成一份结构化的「灵魂层」文档。
 
 输出格式必须是 Markdown：
 
@@ -174,7 +174,7 @@ SOUL_USER_TEMPLATE = """\
 """
 
 SCORING_SYSTEM_PROMPT = """\
-你是 Skills World 的质量评审官。根据一个居民的三层 Skill 文档，给出 1-3 星的质量评分。
+你是 Simverse World 的质量评审官。根据一个居民的三层 Skill 文档，给出 1-3 星的质量评分。
 
 评分标准：
 - 1 星（临时居民）：格式合法但内容空洞，大量「暂无」或「待补充」，行为规则不可执行
@@ -199,7 +199,7 @@ SCORING_USER_TEMPLATE = """\
 """
 
 DISTRICT_SYSTEM_PROMPT = """\
-你是 Skills World 的街区分配官。根据居民的角色描述和标签，分配到最合适的街区。
+你是 Simverse World 的街区分配官。根据居民的角色描述和标签，分配到最合适的街区。
 
 可用街区：
 - engineering：工程街区 — 后端、前端、算法、运维、DevOps 等技术类
@@ -220,7 +220,7 @@ DISTRICT_USER_TEMPLATE = """\
 # -- Quick extraction: single-call prompt that outputs all three layers at once --
 
 QUICK_EXTRACT_SYSTEM_PROMPT = """\
-你是 Skills World 的居民炼化师。你的任务是从一段关于某个人/角色的原始文字中，**一次性**提取出三层结构化 Skill 文档。
+你是 Simverse World 的居民炼化师。你的任务是从一段关于某个人/角色的原始文字中，**一次性**提取出三层结构化 Skill 文档。
 
 你必须输出一个包含三个部分的文档，用 `===SPLIT===` 分隔：
 

@@ -39,7 +39,7 @@ export function TopNav() {
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
         <span style={{ fontWeight: 700, fontSize: 15, cursor: 'pointer' }}
-              onClick={() => navigate('/')}>🏙️ Skills World</span>
+              onClick={() => navigate('/')}>🏙️ Simverse World</span>
         <button onClick={() => navigate('/forge')} style={{
           background: 'var(--accent-red)', color: 'white', border: 'none',
           padding: '5px 12px', borderRadius: 'var(--radius)', fontSize: 12,

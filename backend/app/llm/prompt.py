@@ -43,7 +43,7 @@ def assemble_system_prompt(resident: Resident, memory_context: dict | None = Non
     Optionally includes memory context if provided.
     """
     parts = [
-        f"你是 {resident.name}，住在 Skills World 的{resident.district}街区。",
+        f"你是 {resident.name}，住在 Simverse World 的{resident.district}街区。",
         "",
     ]
     if resident.soul_md:

@@ -52,7 +52,7 @@ export function LoginPage() {
       }}>
         <div style={{ textAlign: 'center', marginBottom: 20 }}>
           <div style={{ fontSize: 28 }}>🏙️</div>
-          <div style={{ fontWeight: 800, fontSize: 18, marginTop: 4 }}>Skills World</div>
+          <div style={{ fontWeight: 800, fontSize: 18, marginTop: 4 }}>Simverse World</div>
           <div style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 4 }}>
             一座永不关闭的赛博城市
           </div>

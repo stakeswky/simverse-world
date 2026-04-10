@@ -47,7 +47,7 @@ export function ForgePage() {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ cursor: 'pointer', color: 'var(--accent-blue)' }} onClick={() => navigate('/')}>
-            Skills World
+            Simverse World
           </span>
           <span>/</span>
           <span style={{ color: 'var(--text-primary)' }}>炼化新居民</span>

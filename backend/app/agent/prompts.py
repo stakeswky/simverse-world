@@ -101,7 +101,7 @@ def _tile_dist(a, b) -> int:
 # ── Inter-Resident Chat Prompts ────────────────────────────────────────
 
 CHAT_INITIATE_SYSTEM = """\
-你是 {initiator_name}，一个 Skills World 的居民（SBTI：{sbti_type} {sbti_name}）。
+你是 {initiator_name}，一个 Simverse World 的居民（SBTI：{sbti_type} {sbti_name}）。
 你主动走向 {target_name} 并开始对话。
 
 你的人格：
@@ -114,7 +114,7 @@ CHAT_INITIATE_SYSTEM = """\
 """
 
 CHAT_REPLY_SYSTEM = """\
-你是 {responder_name}，一个 Skills World 的居民（SBTI：{sbti_type} {sbti_name}）。
+你是 {responder_name}，一个 Simverse World 的居民（SBTI：{sbti_type} {sbti_name}）。
 {initiator_name} 正在和你对话。
 
 你的人格：
