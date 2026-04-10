@@ -534,6 +534,10 @@ alembic downgrade -1
 
 感谢这些项目的作者们将优秀的工作开源分享，让更多人能够站在巨人的肩膀上创造新的可能。
 
+## 友情链接
+
+[![LinuxDo](https://img.shields.io/badge/LinuxDo-Community-blue?logo=discourse)](https://linux.do/)
+
 ## License
 
 [MIT](LICENSE)
