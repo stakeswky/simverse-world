@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime, UTC
 from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy import select
@@ -16,6 +17,8 @@ from app.ws.manager import manager
 from app.ws.protocol import StartChat, ChatMsg, EndChat
 from app.memory.service import MemoryService
 from app.media.model_router import ModelRouter
+
+logger = logging.getLogger(__name__)
 
 
 async def websocket_handler(ws: WebSocket):
@@ -263,19 +266,29 @@ async def websocket_handler(ws: WebSocket):
                     system_prompt = assemble_system_prompt(current_resident, memory_context=memory_context)
 
                     full_reply = ""
-                    model_router = ModelRouter()
-                    async for chunk in model_router.chat_with_media(
-                        system_prompt=system_prompt,
-                        messages=chat_messages,
-                        media_url=media_url,
-                        media_type=media_type,
-                    ):
-                        full_reply += chunk
-                        await manager.send(user_id, {
-                            "type": "chat_reply",
-                            "text": chunk,
-                            "done": False,
-                        })
+                    try:
+                        model_router = ModelRouter()
+                        async for chunk in model_router.chat_with_media(
+                            system_prompt=system_prompt,
+                            messages=chat_messages,
+                            media_url=media_url,
+                            media_type=media_type,
+                        ):
+                            full_reply += chunk
+                            await manager.send(user_id, {
+                                "type": "chat_reply",
+                                "text": chunk,
+                                "done": False,
+                            })
+                    except Exception as e:
+                        logger.error("LLM streaming error for %s: %s", current_resident.slug, e)
+                        if not full_reply:
+                            full_reply = f"（对话出错了：{str(e)[:100]}）"
+                            await manager.send(user_id, {
+                                "type": "chat_reply",
+                                "text": full_reply,
+                                "done": False,
+                            })
                     await manager.send(user_id, {"type": "chat_reply", "text": "", "done": True})
 
                     chat_messages.append({"role": "assistant", "content": full_reply})
