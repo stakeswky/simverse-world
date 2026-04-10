@@ -14,6 +14,7 @@ from app.llm.prompt import assemble_system_prompt
 from app.llm.client import stream_chat
 from app.ws.manager import manager
 from app.ws.protocol import StartChat, ChatMsg, EndChat
+from app.memory.service import MemoryService
 
 
 async def websocket_handler(ws: WebSocket):
@@ -94,6 +95,7 @@ async def websocket_handler(ws: WebSocket):
     current_conversation: Conversation | None = None
     current_resident: Resident | None = None
     chat_messages: list[dict] = []
+    memory_context = None
 
     try:
         while True:
@@ -193,6 +195,13 @@ async def websocket_handler(ws: WebSocket):
                     current_resident = resident
                     chat_messages = []
 
+                    # Retrieve memory context for this resident+user pair
+                    memory_svc = MemoryService(db)
+                    memory_context = await memory_svc.retrieve_context(
+                        resident_id=resident.id,
+                        user_id=user_id,
+                    )
+
                     await manager.send(user_id, {"type": "chat_started", "resident_slug": slug})
                     await manager.broadcast(
                         {"type": "resident_status", "resident_slug": slug, "status": "chatting"},
@@ -247,7 +256,7 @@ async def websocket_handler(ws: WebSocket):
                     })
 
                     chat_messages.append({"role": "user", "content": text})
-                    system_prompt = assemble_system_prompt(current_resident)
+                    system_prompt = assemble_system_prompt(current_resident, memory_context=memory_context)
 
                     full_reply = ""
                     async for chunk in stream_chat(system_prompt, chat_messages):
@@ -324,7 +333,17 @@ async def websocket_handler(ws: WebSocket):
                     )
                     current_conversation = None
                     current_resident = None
+                    saved_chat_messages = list(chat_messages)
                     chat_messages = []
+
+                    # Extract memories from the conversation (non-blocking)
+                    import asyncio
+                    asyncio.create_task(_extract_chat_memories(
+                        resident_id=resident_id,
+                        user_id=user_id,
+                        user_name=user_name,
+                        chat_messages=list(saved_chat_messages),
+                    ))
 
                 elif msg_type == "rate_chat":
                     from sqlalchemy import func
@@ -488,3 +507,55 @@ async def websocket_handler(ws: WebSocket):
 
         await manager.broadcast({"type": "player_left", "player_id": user_id}, exclude=user_id)
         manager.disconnect(user_id)
+
+
+async def _extract_chat_memories(
+    resident_id: str,
+    user_id: str,
+    user_name: str,
+    chat_messages: list[dict],
+):
+    """Background task: extract event memories and update relationship after chat ends."""
+    if len(chat_messages) < 2:
+        return  # Too short to extract meaningful memories
+
+    try:
+        async with async_session() as db:
+            result = await db.execute(select(Resident).where(Resident.id == resident_id))
+            resident = result.scalar_one_or_none()
+            if not resident:
+                return
+
+            # Format conversation text
+            conv_text = "\n".join(
+                f"{'玩家' if m['role'] == 'user' else resident.name}: {m['content']}"
+                for m in chat_messages
+            )
+
+            svc = MemoryService(db)
+
+            # 1. Extract event memories
+            events = await svc.extract_events(
+                resident=resident,
+                other_name=user_name,
+                conversation_text=conv_text,
+                source="chat_player",
+            )
+
+            # 2. Update relationship memory
+            if events:
+                await svc.update_relationship_via_llm(
+                    resident=resident,
+                    other_name=user_name,
+                    user_id=user_id,
+                    event_summaries=[e.content for e in events],
+                )
+
+            # 3. Check if reflection is needed
+            event_count = await svc.count_events_since_last_reflection(resident.id)
+            if event_count >= 15:
+                await svc.generate_reflections(resident=resident)
+
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("Memory extraction failed: %s", e)
