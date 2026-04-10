@@ -15,6 +15,7 @@ from app.llm.client import stream_chat
 from app.ws.manager import manager
 from app.ws.protocol import StartChat, ChatMsg, EndChat
 from app.memory.service import MemoryService
+from app.media.model_router import ModelRouter
 
 
 async def websocket_handler(ws: WebSocket):
@@ -255,11 +256,20 @@ async def websocket_handler(ws: WebSocket):
                         "reason": "chat",
                     })
 
+                    media_url = data.get("media_url") or None
+                    media_type = data.get("media_type") or None
+
                     chat_messages.append({"role": "user", "content": text})
                     system_prompt = assemble_system_prompt(current_resident, memory_context=memory_context)
 
                     full_reply = ""
-                    async for chunk in stream_chat(system_prompt, chat_messages):
+                    model_router = ModelRouter()
+                    async for chunk in model_router.chat_with_media(
+                        system_prompt=system_prompt,
+                        messages=chat_messages,
+                        media_url=media_url,
+                        media_type=media_type,
+                    ):
                         full_reply += chunk
                         await manager.send(user_id, {
                             "type": "chat_reply",
@@ -276,6 +286,21 @@ async def websocket_handler(ws: WebSocket):
                     ))
                     fresh_conv.tokens_used += len(full_reply)  # character count proxy
                     await db.commit()
+
+                    # If media was sent, store media_summary in event memory
+                    if media_url and media_type:
+                        # full_reply IS the media summary from the model's perspective
+                        memory_svc = MemoryService(db)
+                        await memory_svc.add_memory(
+                            resident_id=current_resident.id,
+                            type="event",
+                            content=f"玩家分享了一个{media_type}：{text or '(无文字描述)'}",
+                            importance=0.6,
+                            source="chat_player",
+                            related_user_id=user_id,
+                            media_url=media_url,
+                            media_summary=full_reply[:500],  # cap summary length
+                        )
 
                     # Reward creator (1 SC per turn) and send notification if they're online
                     from app.services.coin_service import reward_creator_passive
