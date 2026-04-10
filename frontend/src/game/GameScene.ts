@@ -36,7 +36,7 @@ export interface ResidentData {
   tile_x: number
   tile_y: number
   district: string
-  meta_json: { role?: string }
+  meta_json: { role?: string; sbti?: { type: string; type_name: string } }
   token_cost_per_turn: number
   star_rating: number
   heat: number
@@ -261,17 +261,16 @@ class MainScene extends Phaser.Scene {
         this.cameras.main.centerOn(x, y)
       }
       if (msg.type === 'resident_status') {
-        const slug = msg.resident_slug as string
-        const newStatus = msg.status as string
-        for (let i = 0; i < this.residents.length; i++) {
-          if (this.residents[i].slug === slug) {
-            this.residents[i].status = newStatus
-            const sprite = this.npcSprites[i]
-            clearStatusVisuals(this, sprite)
-            applyStatusVisuals(this, sprite, newStatus, sprite.x, sprite.y)
-            break
-          }
-        }
+        this._handleResidentStatusUpdate(msg as { resident_slug: string; status: string })
+      }
+      if (msg.type === 'resident_move') {
+        this._handleResidentMove(msg as { resident_slug: string; tile_x: number; tile_y: number; status: string })
+      }
+      if (msg.type === 'resident_chat') {
+        this._handleResidentChatStart(msg as { initiator_slug: string; target_slug: string; summary: string | null })
+      }
+      if (msg.type === 'resident_chat_end') {
+        this._handleResidentChatEnd(msg as { initiator_slug: string; target_slug: string; summary: string; mood?: string })
       }
     })
 
@@ -496,5 +495,126 @@ class MainScene extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(this.eKey) && nearestPlayer && !nearest) {
       bridge.emit('player:interact', nearestPlayer)
     }
+  }
+
+  private _handleResidentMove(msg: {
+    resident_slug: string
+    tile_x: number
+    tile_y: number
+    status: string
+  }): void {
+    const idx = this.residents.findIndex(r => r.slug === msg.resident_slug)
+    if (idx < 0) return
+
+    const sprite = this.npcSprites[idx]
+    if (!sprite) return
+
+    const targetX = msg.tile_x * TILE_SIZE + TILE_SIZE / 2
+    const targetY = msg.tile_y * TILE_SIZE + TILE_SIZE / 2
+
+    // Update logical position
+    this.residents[idx].tile_x = msg.tile_x
+    this.residents[idx].tile_y = msg.tile_y
+    this.residents[idx].status = msg.status
+
+    // Animate sprite to new position
+    clearStatusVisuals(this, sprite)
+    applyStatusVisuals(this, sprite, 'walking', sprite.x, sprite.y)
+
+    this.tweens.add({
+      targets: sprite,
+      x: targetX,
+      y: targetY,
+      duration: 800,
+      ease: 'Linear',
+      onComplete: () => {
+        clearStatusVisuals(this, sprite)
+        applyStatusVisuals(this, sprite, 'idle', targetX, targetY)
+        this.residents[idx].status = 'idle'
+      },
+    })
+  }
+
+  private _chatBubbles: Map<string, Phaser.GameObjects.Text> = new Map()
+
+  private _handleResidentChatStart(msg: {
+    initiator_slug: string
+    target_slug: string
+    summary: string | null
+  }): void {
+    for (const slug of [msg.initiator_slug, msg.target_slug]) {
+      const idx = this.residents.findIndex(r => r.slug === slug)
+      if (idx < 0) continue
+      const sprite = this.npcSprites[idx]
+      if (!sprite) continue
+
+      clearStatusVisuals(this, sprite)
+      applyStatusVisuals(this, sprite, 'socializing', sprite.x, sprite.y)
+      this.residents[idx].status = 'socializing'
+
+      // Add chat bubble
+      const bubble = this.add.text(sprite.x, sprite.y - 60, '💬 ...', {
+        fontSize: '12px',
+        backgroundColor: '#1e293bdd',
+        padding: { x: 6, y: 3 },
+        color: '#e2e8f0',
+        wordWrap: { width: 120 },
+      }).setOrigin(0.5).setDepth(10)
+      this._chatBubbles.set(slug, bubble)
+    }
+  }
+
+  private _handleResidentChatEnd(msg: {
+    initiator_slug: string
+    target_slug: string
+    summary: string
+    mood?: string
+  }): void {
+    for (const slug of [msg.initiator_slug, msg.target_slug]) {
+      const idx = this.residents.findIndex(r => r.slug === slug)
+      if (idx < 0) continue
+      const sprite = this.npcSprites[idx]
+      if (!sprite) continue
+
+      clearStatusVisuals(this, sprite)
+      applyStatusVisuals(this, sprite, 'idle', sprite.x, sprite.y)
+      this.residents[idx].status = 'idle'
+
+      // Remove old bubble
+      const oldBubble = this._chatBubbles.get(slug)
+      oldBubble?.destroy()
+      this._chatBubbles.delete(slug)
+    }
+
+    // Show summary bubble on initiator for 5 seconds
+    const initIdx = this.residents.findIndex(r => r.slug === msg.initiator_slug)
+    if (initIdx >= 0 && msg.summary) {
+      const sprite = this.npcSprites[initIdx]
+      if (sprite) {
+        const summaryBubble = this.add.text(sprite.x, sprite.y - 80, msg.summary, {
+          fontSize: '11px',
+          backgroundColor: '#0f172add',
+          padding: { x: 8, y: 4 },
+          color: '#f1f5f9',
+          wordWrap: { width: 150 },
+        }).setOrigin(0.5).setDepth(10)
+
+        this.time.delayedCall(5000, () => summaryBubble.destroy())
+      }
+    }
+  }
+
+  private _handleResidentStatusUpdate(msg: {
+    resident_slug: string
+    status: string
+  }): void {
+    const idx = this.residents.findIndex(r => r.slug === msg.resident_slug)
+    if (idx < 0) return
+    const sprite = this.npcSprites[idx]
+    if (!sprite) return
+
+    this.residents[idx].status = msg.status
+    clearStatusVisuals(this, sprite)
+    applyStatusVisuals(this, sprite, msg.status, sprite.x, sprite.y)
   }
 }

@@ -9,10 +9,12 @@ export interface StatusConfig {
 }
 
 export const STATUS_CONFIG: Record<string, StatusConfig> = {
-  idle:     { label: '🟢 空闲',  canChat: true,  bubble: '💭', alpha: 1.0, tint: null },
-  sleeping: { label: '💤 沉睡',  canChat: false, bubble: '💤', alpha: 0.5, tint: 0x8888cc },
-  chatting: { label: '💬 对话中', canChat: false, bubble: '💬', alpha: 1.0, tint: null },
-  popular:  { label: '🔥 热门',  canChat: true,  bubble: '🔥', alpha: 1.0, tint: null },
+  idle:        { label: '🟢 空闲',  canChat: true,  bubble: '💭', alpha: 1.0, tint: null },
+  sleeping:    { label: '💤 沉睡',  canChat: false, bubble: '💤', alpha: 0.5, tint: 0x8888cc },
+  chatting:    { label: '💬 对话中', canChat: false, bubble: '💬', alpha: 1.0, tint: null },
+  popular:     { label: '🔥 热门',  canChat: true,  bubble: '🔥', alpha: 1.0, tint: null },
+  walking:     { label: '🚶 移动中', canChat: false, bubble: '🚶', alpha: 1.0, tint: null },
+  socializing: { label: '🗣️ 交谈中', canChat: false, bubble: '🗣️', alpha: 1.0, tint: 0x22c55e },
 }
 
 const IDLE_THOUGHTS = ['💭', '☕', '🤔', '📖', '✨', '🎵']
@@ -80,6 +82,23 @@ export function applyStatusVisuals(
     glow.fillStyle(0xf59e0b, 0.05)
     glow.fillCircle(x, y, 50)
     scene.tweens.add({ targets: glow, alpha: 0.3, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' })
+    objects.push(glow)
+  } else if (status === 'walking') {
+    // Subtle horizontal bob while walking
+    scene.tweens.add({
+      targets: sprite, x: x + 2, duration: 200, yoyo: true, repeat: -1, ease: 'Linear',
+    })
+  } else if (status === 'socializing') {
+    // Gentle bounce and green tint
+    scene.tweens.add({
+      targets: sprite,
+      scaleY: sprite.scaleY * 1.05,
+      duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+    })
+    const glow = scene.add.graphics().setDepth(0)
+    glow.fillStyle(0x22c55e, 0.06)
+    glow.fillCircle(x, y, 30)
+    scene.tweens.add({ targets: glow, alpha: 0.2, duration: 1000, yoyo: true, repeat: -1 })
     objects.push(glow)
   }
 
