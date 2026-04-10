@@ -8,6 +8,7 @@ class ConnectionManager:
         self.positions: dict[str, dict] = {}    # user_id -> {x, y, direction, name}
         self.chatting: dict[str, str] = {}       # resident_id -> user_id (lock)
         self.chat_queue: dict[str, list[str]] = {}  # resident_id -> [user_ids waiting]
+        self.socializing: dict[str, str] = {}  # resident_id -> partner_resident_id
 
     async def connect(self, user_id: str, ws: WebSocket):
         await ws.accept()
@@ -79,6 +80,24 @@ class ConnectionManager:
         queue = self.chat_queue.get(resident_id, [])
         if user_id in queue:
             queue.remove(user_id)
+
+    def lock_socializing(self, res_a_id: str, res_b_id: str) -> bool:
+        """Mark two residents as socializing with each other.
+
+        Returns False if either is already locked.
+        """
+        if res_a_id in self.socializing or res_b_id in self.socializing:
+            return False
+        self.socializing[res_a_id] = res_b_id
+        self.socializing[res_b_id] = res_a_id
+        return True
+
+    def unlock_socializing(self, res_a_id: str, res_b_id: str) -> None:
+        self.socializing.pop(res_a_id, None)
+        self.socializing.pop(res_b_id, None)
+
+    def is_socializing(self, resident_id: str) -> bool:
+        return resident_id in self.socializing
 
 
 manager = ConnectionManager()
