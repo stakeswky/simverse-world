@@ -4,6 +4,25 @@
 
 Skills World 是一个赛博朋克风格的开放世界多人游戏/模拟平台。玩家在像素风的虚拟村落中控制角色（"居民"），与 AI 驱动的 NPC 对话、锻造物品、交易和互动。每个 NPC 拥有独立的灵魂档案，由 LLM 驱动的对话系统赋予其独特的个性和记忆。
 
+## 演示截图
+
+### 游戏世界
+
+| 主界面 & 公告栏 | 小地图 & 工坊区 |
+|:---:|:---:|
+| ![游戏主界面](docs/screenshots/game-overview.jpg) | ![小地图与工坊](docs/screenshots/game-minimap.jpg) |
+
+### 角色锻造（Forge）
+
+| 引导式炼化 | 深度蒸馏模式 |
+|:---:|:---:|
+| ![炼化主界面](docs/screenshots/forge-main.png) | ![深度蒸馏](docs/screenshots/forge-deep.png) |
+
+### 视频演示
+
+- [对话演示](docs/screenshots/chat-demo.webm) — 与 AI 角色实时对话
+- [传送演示](docs/screenshots/teleport-demo.webm) — 在游戏世界中传送到不同区域
+
 ## 核心功能
 
 - **AI 驱动的角色对话** — 基于 LLM 的 NPC 系统，每个角色拥有独立的灵魂（persona / soul / ability）
@@ -92,8 +111,7 @@ Skills-World/
 ├── deploy/                   # 部署配置
 │   ├── backend/              #   Docker + deploy 脚本
 │   └── frontend/             #   Cloudflare Workers 配置
-├── demo/                     # 独立演示脚本
-├── docs/                     # 设计文档
+├── docs/screenshots/         # 演示截图 & 视频
 ├── docker-compose.yml        # 本地开发基础设施
 └── LICENSE                   # MIT License
 ```
@@ -465,6 +483,16 @@ alembic downgrade -1
 - 其他兼容 OpenAI / Anthropic 格式的代理
 
 只需在 `.env` 中设置 `LLM_BASE_URL` 和 `LLM_API_KEY` 即可切换。
+
+## 致谢
+
+本项目的诞生离不开以下开源项目的启发与贡献，在此致以诚挚的感谢：
+
+- **[Nuwa Skill](https://github.com/alchaincyf/nuwa-skill)** — AI 角色锻造的核心灵感来源。Nuwa 的 Skill 概念和 LLM 驱动的角色构建思路深刻影响了本项目的 Forge pipeline 设计。
+- **[Generative Agents CN](https://github.com/x-glacier/GenerativeAgentsCN)** — 斯坦福「生成式智能体」论文的中文复现。本项目的 AI 居民行为系统（记忆、反思、对话）从中汲取了大量灵感和架构思路。
+- **[Star Office UI](https://github.com/ringhyacinth/Star-Office-UI)** — 精美的像素风 UI 资源包。本项目的游戏界面视觉风格和部分精灵素材源自此项目。
+
+感谢这些项目的作者们将优秀的工作开源分享，让更多人能够站在巨人的肩膀上创造新的可能。
 
 ## License
 
