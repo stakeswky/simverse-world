@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     user_llm_timeout: int = 120
     user_llm_max_retries: int = 3
     user_llm_concurrency: int = 5
+
+    # --- Media Upload (P2) ---
+    media_upload_dir: str = "backend/static/uploads"
+    media_max_image_size: int = 5 * 1024 * 1024   # 5 MB
+    media_max_video_size: int = 50 * 1024 * 1024  # 50 MB
+    video_llm_model: str = "kimi-k2.5"
+
     # --- SearXNG (research) ---
     searxng_url: str = "http://localhost:58080"
 
