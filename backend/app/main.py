@@ -7,6 +7,7 @@ from app.routers import auth, users, residents, forge, profile, search, bulletin
 from app.routers.admin import router as admin_router
 from app.ws.handler import websocket_handler
 from app.tasks.heat_cron import heat_cron_loop
+from app.agent.loop import agent_loop
 
 
 @asynccontextmanager
@@ -27,8 +28,10 @@ async def lifespan(app):
 
     # Start heat cron on startup
     task = asyncio.create_task(heat_cron_loop())
+    agent_task = asyncio.create_task(agent_loop.run())
     yield
     task.cancel()
+    agent_task.cancel()
 
 
 app = FastAPI(title="Skills World API", lifespan=lifespan)
