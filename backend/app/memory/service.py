@@ -16,6 +16,7 @@ from app.memory.prompts import (
     sbti_coloring_block,
 )
 from app.config import settings
+from app.personality.evolution import EvolutionService
 
 logger = logging.getLogger(__name__)
 
@@ -334,6 +335,26 @@ class MemoryService:
                 embedding=emb,
             )
             memories.append(mem)
+
+        # Evolution hooks (non-blocking)
+        if memories and resident is not None:
+            evo = EvolutionService(self.db)
+
+            # Check for shift on any high-importance memory
+            high_importance = [m for m in memories if m.importance >= 0.9]
+            if high_importance:
+                try:
+                    await evo.evaluate_shift(resident, high_importance[0])
+                except Exception as e:
+                    logger.warning("Shift evaluation error (non-fatal): %s", e)
+
+            # Check drift trigger: count total events since last drift
+            total_events = await self.count_events_since_last_reflection(resident.id)
+            if total_events >= 15:
+                try:
+                    await evo.evaluate_drift(resident)
+                except Exception as e:
+                    logger.warning("Drift evaluation error (non-fatal): %s", e)
 
         return memories
 

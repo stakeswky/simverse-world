@@ -551,6 +551,9 @@ async def _extract_chat_memories(
             if not resident:
                 return
 
+            # Capture original SBTI type before memory extraction (which may trigger evolution)
+            original_sbti_type = (resident.meta_json or {}).get("sbti", {}).get("type")
+
             # Format conversation text
             conv_text = "\n".join(
                 f"{'玩家' if m['role'] == 'user' else resident.name}: {m['content']}"
@@ -580,6 +583,23 @@ async def _extract_chat_memories(
             event_count = await svc.count_events_since_last_reflection(resident.id)
             if event_count >= 15:
                 await svc.generate_reflections(resident=resident)
+
+            # 4. Check for personality type change and broadcast
+            await db.refresh(resident)
+            new_sbti = (resident.meta_json or {}).get("sbti", {})
+            new_type = new_sbti.get("type")
+            old_type = original_sbti_type
+
+            if new_type and old_type and new_type != old_type:
+                await manager.broadcast(
+                    {
+                        "type": "resident_type_changed",
+                        "resident_id": resident_id,
+                        "old_type": old_type,
+                        "new_type": new_type,
+                        "type_name": new_sbti.get("type_name", ""),
+                    },
+                )
 
     except Exception as e:
         import logging
