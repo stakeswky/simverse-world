@@ -40,26 +40,25 @@ export function ChatDrawer() {
 
   const isPlayerChat = chatTarget?.type === 'player'
 
+  // Track whether we have an active conversation (for close logic)
+  const [hasActiveConv, setHasActiveConv] = useState(false)
+
   // Listen for NPC interact events from Phaser
   useEffect(() => {
     return bridge.on('npc:interact', (data: unknown) => {
       const npc = data as ResidentData
-      if (npc.status === 'sleeping') {
-        // Send start_chat without wake flag — backend will reply with wake_required
-        openChat({ slug: npc.slug, name: npc.name, role: npc.meta_json?.role ?? '' })
-        sendWS({ type: 'start_chat', resident_slug: npc.slug })
-        setMessages([])
-        setStreamingText('')
-        streamingRef.current = ''
-      } else if (npc.status === 'chatting') {
-        // Send start_chat — backend will reply with chat_queued
+      if (npc.status === 'sleeping' || npc.status === 'chatting') {
+        // Don't open chat yet — send start_chat and wait for backend response
+        // Backend will reply with wake_required or chat_queued
         sendWS({ type: 'start_chat', resident_slug: npc.slug })
       } else {
+        // Normal idle/popular NPC — open chat immediately
         openChat({ slug: npc.slug, name: npc.name, role: npc.meta_json?.role ?? '' })
         sendWS({ type: 'start_chat', resident_slug: npc.slug })
         setMessages([])
         setStreamingText('')
         streamingRef.current = ''
+        setHasActiveConv(true)
       }
     })
   }, [openChat])
@@ -67,7 +66,17 @@ export function ChatDrawer() {
   // Listen for WebSocket messages
   useEffect(() => {
     return onWSMessage((data) => {
-      if (data.type === 'chat_reply') {
+      if (data.type === 'chat_started') {
+        // Backend confirmed chat — open drawer if not already open (wake/queue flow)
+        const slug = data.resident_slug as string
+        if (!useGameStore.getState().chatOpen) {
+          openChat({ slug, name: slug, role: '' })
+          setMessages([])
+          setStreamingText('')
+          streamingRef.current = ''
+        }
+        setHasActiveConv(true)
+      } else if (data.type === 'chat_reply') {
         setIsThinking(false)
         if (data.done === true) {
           const finalText = streamingRef.current
@@ -85,6 +94,7 @@ export function ChatDrawer() {
         }
       } else if (data.type === 'chat_ended') {
         setIsThinking(false)
+        setHasActiveConv(false)
         const convId = data.conversation_id as string | undefined
         const resident = useGameStore.getState().chatResident
         if (convId && resident) {
@@ -111,6 +121,7 @@ export function ChatDrawer() {
         setMessages([])
         setStreamingText('')
         streamingRef.current = ''
+        setHasActiveConv(true)
       }
     })
   }, [])
@@ -140,7 +151,7 @@ export function ChatDrawer() {
   const close = () => {
     if (isPlayerChat) {
       clearChatTarget()
-    } else {
+    } else if (hasActiveConv) {
       sendWS({ type: 'end_chat' })
       // Fallback: close drawer after 2 seconds if chat_ended never arrives
       setTimeout(() => {
@@ -148,6 +159,9 @@ export function ChatDrawer() {
           closeChat()
         }
       }, 2000)
+    } else {
+      // No active conversation (wake cancelled, etc.) — close immediately
+      closeChat()
     }
   }
 
@@ -185,7 +199,7 @@ export function ChatDrawer() {
     : (chatResident?.role ?? '')
   const headerIcon = isPlayerChat ? '🧑‍🤝‍🧑' : '🧑‍💻'
 
-  return (
+  return (<>
     <div style={{
       position: 'fixed', top: 48, right: 0, bottom: 0, width: 380,
       background: 'var(--bg-card)', borderLeft: '1px solid var(--border)',
@@ -317,71 +331,73 @@ export function ChatDrawer() {
         </>
       )}
 
-      {/* Wake confirmation popup */}
-      {wakePrompt && (
-        <div style={{
-          position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 30,
-        }}>
-          <div style={{
-            background: 'var(--bg-card)', border: '1px solid var(--border)',
-            borderRadius: 12, padding: 24, maxWidth: 280, textAlign: 'center',
-          }}>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>💤</div>
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>{wakePrompt.name} 正在沉睡</div>
-            <div style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 16 }}>
-              花费 <span style={{ color: '#fbbf24', fontWeight: 700 }}>{wakePrompt.cost} 🪙</span> 唤醒并开始对话？
-            </div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-              <button
-                onClick={() => {
-                  sendWS({ type: 'start_chat', resident_slug: wakePrompt.slug, wake: true })
-                  setWakePrompt(null)
-                }}
-                style={{
-                  background: '#fbbf24', color: '#18181b', border: 'none',
-                  padding: '8px 20px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                }}
-              >唤醒</button>
-              <button
-                onClick={() => { setWakePrompt(null); closeChat() }}
-                style={{
-                  background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)',
-                  padding: '8px 20px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
-                }}
-              >取消</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Queue status popup */}
-      {queueInfo && (
-        <div style={{
-          position: 'fixed', bottom: 20, right: 20, zIndex: 50,
-          background: 'var(--bg-card)', border: '1px solid var(--border)',
-          borderRadius: 12, padding: '14px 20px', boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-          display: 'flex', alignItems: 'center', gap: 12, minWidth: 240,
-        }}>
-          <div style={{ fontSize: 24 }}>⏳</div>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 13 }}>排队等候 {queueInfo.name}</div>
-            <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-              当前排位：第 {queueInfo.position} 位
-            </div>
-          </div>
-          <button
-            onClick={() => {
-              sendWS({ type: 'cancel_queue', resident_slug: queueInfo.slug })
-              setQueueInfo(null)
-            }}
-            style={{
-              background: 'none', border: 'none', color: 'var(--text-muted)',
-              fontSize: 16, cursor: 'pointer', marginLeft: 'auto', padding: '4px 8px',
-            }}
-          >✕</button>
-        </div>
-      )}
     </div>
+
+    {/* Wake confirmation popup — rendered outside sliding drawer */}
+    {wakePrompt && (
+      <div style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
+      }}>
+        <div style={{
+          background: 'var(--bg-card)', border: '1px solid var(--border)',
+          borderRadius: 12, padding: 24, maxWidth: 280, textAlign: 'center',
+        }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>💤</div>
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>{wakePrompt.name} 正在沉睡</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 16 }}>
+            花费 <span style={{ color: '#fbbf24', fontWeight: 700 }}>{wakePrompt.cost} 🪙</span> 唤醒并开始对话？
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+            <button
+              onClick={() => {
+                sendWS({ type: 'start_chat', resident_slug: wakePrompt.slug, wake: true })
+                setWakePrompt(null)
+              }}
+              style={{
+                background: '#fbbf24', color: '#18181b', border: 'none',
+                padding: '8px 20px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+              }}
+            >唤醒</button>
+            <button
+              onClick={() => { setWakePrompt(null) }}
+              style={{
+                background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)',
+                padding: '8px 20px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
+              }}
+            >取消</button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Queue status toast — rendered outside sliding drawer */}
+    {queueInfo && (
+      <div style={{
+        position: 'fixed', bottom: 20, right: 20, zIndex: 50,
+        background: 'var(--bg-card)', border: '1px solid var(--border)',
+        borderRadius: 12, padding: '14px 20px', boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+        display: 'flex', alignItems: 'center', gap: 12, minWidth: 240,
+      }}>
+        <div style={{ fontSize: 24 }}>⏳</div>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>排队等候 {queueInfo.name}</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+            当前排位：第 {queueInfo.position} 位
+          </div>
+        </div>
+        <button
+          onClick={() => {
+            sendWS({ type: 'cancel_queue', resident_slug: queueInfo.slug })
+            setQueueInfo(null)
+          }}
+          style={{
+            background: 'none', border: 'none', color: 'var(--text-muted)',
+            fontSize: 16, cursor: 'pointer', marginLeft: 'auto', padding: '4px 8px',
+          }}
+        >✕</button>
+      </div>
+    )}
+  </>
   )
 }
