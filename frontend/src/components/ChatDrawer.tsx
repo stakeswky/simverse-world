@@ -138,7 +138,12 @@ export function ChatDrawer() {
       clearChatTarget()
     } else {
       sendWS({ type: 'end_chat' })
-      // Don't call closeChat() here — wait for chat_ended WS event + rating popup
+      // Fallback: close drawer after 2 seconds if chat_ended never arrives
+      setTimeout(() => {
+        if (useGameStore.getState().chatOpen && !pendingRating) {
+          closeChat()
+        }
+      }, 2000)
     }
   }
 
