@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { deepForgeStart, deepForgeStatus } from '../../services/api'
+import { deepForgeStart, deepForgeStatus, apiFetch } from '../../services/api'
 import type { DeepForgeStage, DeepForgeStatusResponse } from '../../services/api'
+import { useGameStore } from '../../stores/gameStore'
 
 interface DeepForgeProps {
   onStateUpdate?: (state: DeepForgeStatusResponse) => void
@@ -58,6 +59,13 @@ export function DeepForge({ onStateUpdate, onComplete }: DeepForgeProps) {
             clearInterval(pollRef.current!)
             setUiStatus('done')
             setResult(status)
+            // Refresh balance (forge reward was added server-side)
+            const token = useGameStore.getState().token
+            if (token) {
+              apiFetch<{ soul_coin_balance: number }>('/users/me', {
+                headers: { Authorization: `Bearer ${token}` },
+              }).then((u) => useGameStore.getState().updateBalance(u.soul_coin_balance)).catch(() => {})
+            }
             if (status.resident_id) {
               setTimeout(() => onComplete?.(status.resident_id!), 300)
             }

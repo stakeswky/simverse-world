@@ -20,6 +20,9 @@ export function connectWS(): void {
       if (data.type === 'coin_update' && typeof data.balance === 'number') {
         useGameStore.getState().updateBalance(data.balance)
       }
+      if (data.type === 'daily_reward' && typeof data.new_balance === 'number') {
+        useGameStore.getState().updateBalance(data.new_balance)
+      }
       // Handle online players
       if (data.type === 'player_moved') {
         useGameStore.getState().setOnlinePlayer({
