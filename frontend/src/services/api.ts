@@ -293,7 +293,7 @@ export interface AdminDashboardStats {
   online_users: number
   today_registrations: number
   active_chats: number
-  sc_net_flow: number
+  soul_coin_net_flow: number
 }
 
 export interface AdminDashboardHealth {

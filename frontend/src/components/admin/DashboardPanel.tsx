@@ -153,11 +153,11 @@ export function DashboardPanel() {
           <MetricCard
             icon="🪙"
             label="SC 净流量"
-            value={stats?.sc_net_flow != null
-              ? (stats.sc_net_flow >= 0 ? `+${stats.sc_net_flow}` : `${stats.sc_net_flow}`)
+            value={stats?.soul_coin_net_flow != null
+              ? (stats.soul_coin_net_flow >= 0 ? `+${stats.soul_coin_net_flow}` : `${stats.soul_coin_net_flow}`)
               : '—'}
-            color={stats?.sc_net_flow != null
-              ? (stats.sc_net_flow >= 0 ? 'var(--accent-green)' : '#ef4444')
+            color={stats?.soul_coin_net_flow != null
+              ? (stats.soul_coin_net_flow >= 0 ? 'var(--accent-green)' : '#ef4444')
               : 'var(--text-primary)'}
           />
         </div>
