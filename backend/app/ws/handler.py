@@ -521,8 +521,11 @@ async def websocket_handler(ws: WebSocket):
                         "mode": mode,
                     })
 
-    except (WebSocketDisconnect, Exception):
+    except WebSocketDisconnect:
         pass
+    except Exception as e:
+        import logging
+        logging.error(f"WS handler error for user {user_id}: {type(e).__name__}: {e}", exc_info=True)
     finally:
         # Always clean up on disconnect/error
         if current_conversation and current_resident:

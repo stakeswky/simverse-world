@@ -27,8 +27,8 @@ export function ChatDrawer() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [streamingText, setStreamingText] = useState('')
-  const [pendingRating, setPendingRating] = useState<{ conversationId: string; residentName: string } | null>(null)
   const [isThinking, setIsThinking] = useState(false)
+  const [pendingRating, setPendingRating] = useState<{ conversationId: string; residentName: string } | null>(null)
   const streamingRef = useRef('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -89,6 +89,7 @@ export function ChatDrawer() {
           setStreamingText('')
           streamingRef.current = ''
         } else if (typeof data.text === 'string') {
+          if (isThinking) setIsThinking(false)
           streamingRef.current += data.text
           setStreamingText(streamingRef.current)
         }
@@ -286,7 +287,7 @@ export function ChatDrawer() {
             {isThinking && !streamingText && (
               <div style={{ maxWidth: '85%', padding: '10px 14px', borderRadius: 12, fontSize: 13, lineHeight: 1.6, background: 'var(--bg-input)', color: '#d4d4d8', alignSelf: 'flex-start', borderBottomLeftRadius: 4 }}>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{chatResident?.name ?? ''}</div>
-                <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>思考中...</span>
+                <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>思考中<span className="thinking-dots">...</span></span>
               </div>
             )}
             {streamingText && (
