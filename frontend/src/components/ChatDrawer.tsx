@@ -160,7 +160,6 @@ export function ChatDrawer() {
         }
       }, 2000)
     } else {
-      // No active conversation (wake cancelled, etc.) — close immediately
       closeChat()
     }
   }

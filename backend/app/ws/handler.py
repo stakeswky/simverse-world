@@ -521,28 +521,44 @@ async def websocket_handler(ws: WebSocket):
                         "mode": mode,
                     })
 
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, Exception):
+        pass
+    finally:
+        # Always clean up on disconnect/error
         if current_conversation and current_resident:
             manager.unlock_resident(current_resident.id)
-            async with async_session() as db:
-                result = await db.execute(select(Resident).where(Resident.id == current_resident.id))
-                r = result.scalar_one_or_none()
-                if r and r.status == "chatting":
-                    r.status = "popular" if r.heat >= 50 else "idle"
-                    await db.commit()
+            try:
+                async with async_session() as db:
+                    result = await db.execute(select(Resident).where(Resident.id == current_resident.id))
+                    r = result.scalar_one_or_none()
+                    if r and r.status == "chatting":
+                        r.status = "popular" if r.heat >= 50 else "idle"
+                        await db.commit()
+                    # Also broadcast status reset so other clients update visuals
+                    await manager.broadcast(
+                        {"type": "resident_status", "resident_slug": r.slug if r else "", "status": r.status if r else "idle"},
+                    )
+            except Exception:
+                pass
 
-        # Save current position to User.last_x / last_y for next session
+        # Save current position
         pos = manager.positions.get(user_id)
         if pos:
-            async with async_session() as db:
-                result = await db.execute(select(User).where(User.id == user_id))
-                u = result.scalar_one_or_none()
-                if u and u.player_resident_id:
-                    u.last_x = int(pos.get("x", u.last_x))
-                    u.last_y = int(pos.get("y", u.last_y))
-                    await db.commit()
+            try:
+                async with async_session() as db:
+                    result = await db.execute(select(User).where(User.id == user_id))
+                    u = result.scalar_one_or_none()
+                    if u and u.player_resident_id:
+                        u.last_x = int(pos.get("x", u.last_x))
+                        u.last_y = int(pos.get("y", u.last_y))
+                        await db.commit()
+            except Exception:
+                pass
 
-        await manager.broadcast({"type": "player_left", "player_id": user_id}, exclude=user_id)
+        try:
+            await manager.broadcast({"type": "player_left", "player_id": user_id}, exclude=user_id)
+        except Exception:
+            pass
         manager.disconnect(user_id)
 
 

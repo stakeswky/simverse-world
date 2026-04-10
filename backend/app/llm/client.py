@@ -116,7 +116,22 @@ async def stream_chat(
         "system": system_prompt,
         "messages": messages,
     }
-    if not settings.llm_thinking:
+    # Check dynamic config first, fall back to settings
+    thinking_enabled = settings.llm_thinking
+    try:
+        from app.database import async_session as _session
+        from app.services.config_service import ConfigService
+        async with _session() as _db:
+            svc = ConfigService(_db)
+            val = await svc.get("llm.thinking", default=None)
+            if val is not None:
+                # Handle both bool and string values from DB
+                thinking_enabled = val is True or val == "true" or val == "True"
+    except Exception:
+        pass
+    if thinking_enabled:
+        kwargs["thinking"] = {"type": "enabled", "budget_tokens": 2048}
+    else:
         kwargs["thinking"] = {"type": "disabled"}
     async with client.messages.stream(**kwargs) as stream:
         async for text in stream.text_stream:
