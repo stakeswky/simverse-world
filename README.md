@@ -2,6 +2,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+**在线体验：[https://simverse.world](https://simverse.world/)**
+
 Skills World 是一个赛博朋克风格的开放世界多人游戏/模拟平台。玩家在像素风的虚拟村落中控制角色（"居民"），与 AI 驱动的 NPC 对话、锻造物品、交易和互动。每个 NPC 拥有独立的灵魂档案，由 LLM 驱动的对话系统赋予其独特的个性和记忆。
 
 ## 演示截图
