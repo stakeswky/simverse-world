@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     llm_model: str = ""
     llm_default_model: str = "claude-haiku-4-5-20251001"
     llm_max_tokens: int = 512
+    llm_thinking: bool = False  # disable thinking/reasoning for faster responses
 
     @property
     def effective_api_key(self) -> str:

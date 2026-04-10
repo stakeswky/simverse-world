@@ -28,6 +28,7 @@ export function ChatDrawer() {
   const [input, setInput] = useState('')
   const [streamingText, setStreamingText] = useState('')
   const [pendingRating, setPendingRating] = useState<{ conversationId: string; residentName: string } | null>(null)
+  const [isThinking, setIsThinking] = useState(false)
   const streamingRef = useRef('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -67,6 +68,7 @@ export function ChatDrawer() {
   useEffect(() => {
     return onWSMessage((data) => {
       if (data.type === 'chat_reply') {
+        setIsThinking(false)
         if (data.done === true) {
           const finalText = streamingRef.current
           if (finalText) {
@@ -82,6 +84,7 @@ export function ChatDrawer() {
           setStreamingText(streamingRef.current)
         }
       } else if (data.type === 'chat_ended') {
+        setIsThinking(false)
         const convId = data.conversation_id as string | undefined
         const resident = useGameStore.getState().chatResident
         if (convId && resident) {
@@ -118,6 +121,7 @@ export function ChatDrawer() {
     setMessages((prev) => [...prev, { role: 'user', sender: '你', text }])
     sendWS({ type: 'chat_msg', text })
     setInput('')
+    setIsThinking(true)
   }
 
   const sendPlayer = () => {
@@ -266,6 +270,12 @@ export function ChatDrawer() {
                 {m.text}
               </div>
             ))}
+            {isThinking && !streamingText && (
+              <div style={{ maxWidth: '85%', padding: '10px 14px', borderRadius: 12, fontSize: 13, lineHeight: 1.6, background: 'var(--bg-input)', color: '#d4d4d8', alignSelf: 'flex-start', borderBottomLeftRadius: 4 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{chatResident?.name ?? ''}</div>
+                <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>思考中...</span>
+              </div>
+            )}
             {streamingText && (
               <div style={{ maxWidth: '85%', padding: '10px 14px', borderRadius: 12, fontSize: 13, lineHeight: 1.6, background: 'var(--bg-input)', color: '#d4d4d8', alignSelf: 'flex-start', borderBottomLeftRadius: 4 }}>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{chatResident?.name ?? ''}</div>

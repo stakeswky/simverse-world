@@ -72,11 +72,14 @@ async def stream_chat(
 ) -> AsyncGenerator[str, None]:
     """Yield text chunks from LLM streaming response."""
     client = get_client(owner, user_config=user_config)
-    async with client.messages.stream(
-        model=model or settings.effective_model,
-        max_tokens=settings.llm_max_tokens,
-        system=system_prompt,
-        messages=messages,
-    ) as stream:
+    kwargs: dict = {
+        "model": model or settings.effective_model,
+        "max_tokens": settings.llm_max_tokens,
+        "system": system_prompt,
+        "messages": messages,
+    }
+    if not settings.llm_thinking:
+        kwargs["thinking"] = {"type": "disabled"}
+    async with client.messages.stream(**kwargs) as stream:
         async for text in stream.text_stream:
             yield text

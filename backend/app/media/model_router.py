@@ -156,11 +156,14 @@ class ModelRouter:
     ) -> AsyncGenerator[str, None]:
         """Stream text from the main model. Internal helper."""
         client = get_client(owner, user_config=user_config)
-        async with client.messages.stream(
-            model=settings.effective_model,
-            max_tokens=settings.llm_max_tokens,
-            system=system_prompt,
-            messages=messages,
-        ) as stream:
+        kwargs: dict = {
+            "model": settings.effective_model,
+            "max_tokens": settings.llm_max_tokens,
+            "system": system_prompt,
+            "messages": messages,
+        }
+        if not settings.llm_thinking:
+            kwargs["thinking"] = {"type": "disabled"}
+        async with client.messages.stream(**kwargs) as stream:
             async for text in stream.text_stream:
                 yield text
