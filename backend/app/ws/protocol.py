@@ -11,6 +11,8 @@ class StartChat(BaseModel):
 class ChatMsg(BaseModel):
     type: Literal["chat_msg"] = "chat_msg"
     text: str
+    media_url: str | None = None
+    media_type: str | None = None  # "image" or "video"; None means plain text
 
 
 class EndChat(BaseModel):
