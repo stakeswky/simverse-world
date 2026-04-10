@@ -54,6 +54,11 @@ class Settings(BaseSettings):
 
     allow_user_custom_llm: bool = False
 
+    # --- Ollama (local embedding) ---
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_embed_model: str = "qwen3-embedding:4b"
+    ollama_embed_dimensions: int = 1024
+
     model_config = {"env_file": ".env"}
 
 
