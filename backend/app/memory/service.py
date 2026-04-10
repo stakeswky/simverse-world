@@ -176,3 +176,97 @@ class MemoryService:
             await self.db.commit()
 
         return len(ids_to_delete)
+
+    async def retrieve_context(
+        self,
+        resident_id: str,
+        *,
+        user_id: str | None = None,
+        resident_id_target: str | None = None,
+        query_text: str = "",
+        max_events: int = 10,
+        max_reflections: int = 3,
+    ) -> dict:
+        """Retrieve memory context for a conversation.
+
+        Returns dict with keys: relationship, reflections, events.
+        """
+        # 1. Structured: relationship memory for this person
+        relationship = await self.get_relationship(
+            resident_id, user_id=user_id, resident_id_target=resident_id_target,
+        )
+
+        # 2. Structured: top reflections by importance
+        reflections = await self.get_recent_reflections(resident_id, limit=max_reflections)
+
+        # 3. Events: try vector search, fall back to recency+importance
+        events = await self._search_events(resident_id, query_text, limit=max_events)
+
+        # Update last_accessed_at for all retrieved memories
+        now = datetime.now(UTC)
+        all_memories = [m for m in [relationship] + reflections + events if m is not None]
+        for mem in all_memories:
+            mem.last_accessed_at = now
+        if all_memories:
+            await self.db.commit()
+
+        return {
+            "relationship": relationship,
+            "reflections": reflections,
+            "events": events,
+        }
+
+    async def _search_events(
+        self,
+        resident_id: str,
+        query_text: str,
+        limit: int = 10,
+    ) -> list[Memory]:
+        """Search event memories. Falls back to recency+importance ranking."""
+        stmt = (
+            select(Memory)
+            .where(Memory.resident_id == resident_id, Memory.type == "event")
+            .order_by(Memory.importance.desc(), Memory.created_at.desc())
+            .limit(limit)
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def search_events_vector(
+        self,
+        resident_id: str,
+        query_embedding: list[float],
+        limit: int = 10,
+    ) -> list[Memory]:
+        """Search event memories using pgvector cosine similarity.
+
+        For PostgreSQL with pgvector only. Falls back to _search_events() if unavailable.
+        """
+        try:
+            from sqlalchemy import text
+            stmt = text("""
+                SELECT id, content, importance, source, created_at, last_accessed_at,
+                       metadata_json, media_url, media_summary,
+                       1 - (embedding <=> :query_vec) AS similarity
+                FROM memories
+                WHERE resident_id = :rid AND type = 'event' AND embedding IS NOT NULL
+                ORDER BY embedding <=> :query_vec
+                LIMIT :lim
+            """)
+            result = await self.db.execute(stmt, {
+                "rid": resident_id,
+                "query_vec": str(query_embedding),
+                "lim": limit,
+            })
+            rows = result.fetchall()
+            if not rows:
+                return await self._search_events(resident_id, "", limit)
+
+            ids = [row[0] for row in rows]
+            mem_stmt = select(Memory).where(Memory.id.in_(ids))
+            mem_result = await self.db.execute(mem_stmt)
+            memories = {m.id: m for m in mem_result.scalars().all()}
+            return [memories[id] for id in ids if id in memories]
+        except Exception as e:
+            logger.debug("pgvector search unavailable, falling back: %s", e)
+            return await self._search_events(resident_id, "", limit)

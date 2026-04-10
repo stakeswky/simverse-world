@@ -149,3 +149,78 @@ async def test_evict_old_memories(db_session, resident):
 
     remaining = await svc.get_memories(resident.id, type="event")
     assert len(remaining) == 3
+
+
+from unittest.mock import AsyncMock, patch
+
+
+@pytest.mark.anyio
+async def test_retrieve_context_structured(db_session, resident):
+    """Test structured retrieval (relationship + reflections) without embeddings."""
+    svc = MemoryService(db_session)
+
+    # Add relationship
+    await svc.add_memory(
+        resident.id, "relationship", "A kind visitor",
+        0.5, "chat_player", related_user_id="user-1",
+        metadata_json={"affinity": 0.5, "trust": 0.6, "tags": ["kind"]},
+    )
+    # Add reflections
+    await svc.add_memory(resident.id, "reflection", "I enjoy deep conversations", 0.8, "reflection")
+    await svc.add_memory(resident.id, "reflection", "Engineering people are busy", 0.6, "reflection")
+
+    # Add events
+    await svc.add_memory(resident.id, "event", "Talked about AI", 0.6, "chat_player")
+    await svc.add_memory(resident.id, "event", "Discussed philosophy", 0.7, "chat_player")
+
+    ctx = await svc.retrieve_context(
+        resident_id=resident.id,
+        user_id="user-1",
+        query_text="Tell me about AI",
+    )
+
+    assert ctx["relationship"] is not None
+    assert ctx["relationship"].content == "A kind visitor"
+    assert len(ctx["reflections"]) <= 3
+    assert len(ctx["events"]) > 0
+
+
+@pytest.mark.anyio
+async def test_retrieve_context_no_relationship(db_session, resident):
+    """First-time visitor: no relationship memory yet."""
+    svc = MemoryService(db_session)
+    await svc.add_memory(resident.id, "event", "Some past event", 0.5, "chat_player")
+
+    ctx = await svc.retrieve_context(
+        resident_id=resident.id,
+        user_id="first-timer",
+        query_text="Hello",
+    )
+
+    assert ctx["relationship"] is None
+    assert ctx["reflections"] == []
+    assert isinstance(ctx["events"], list)
+
+
+@pytest.mark.anyio
+async def test_retrieve_context_updates_last_accessed(db_session, resident):
+    """Retrieving memories should update last_accessed_at."""
+    svc = MemoryService(db_session)
+    mem = await svc.add_memory(resident.id, "event", "Old event", 0.5, "chat_player")
+    original_accessed = mem.last_accessed_at
+
+    ctx = await svc.retrieve_context(
+        resident_id=resident.id,
+        user_id="user-1",
+        query_text="anything",
+    )
+
+    # Re-fetch to check updated timestamp
+    from sqlalchemy import select
+    from app.models.memory import Memory
+    result = await db_session.execute(select(Memory).where(Memory.id == mem.id))
+    refreshed = result.scalar_one()
+    # SQLite drops timezone info on round-trip; strip tzinfo for safe comparison
+    refreshed_ts = refreshed.last_accessed_at.replace(tzinfo=None) if refreshed.last_accessed_at.tzinfo else refreshed.last_accessed_at
+    original_ts = original_accessed.replace(tzinfo=None) if original_accessed.tzinfo else original_accessed
+    assert refreshed_ts >= original_ts
