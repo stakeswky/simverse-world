@@ -87,9 +87,10 @@ export function ChatDrawer() {
             ])
           }
           setStreamingText('')
+          setIsThinking(false)
           streamingRef.current = ''
         } else if (typeof data.text === 'string') {
-          if (isThinking) setIsThinking(false)
+          setIsThinking(false)
           streamingRef.current += data.text
           setStreamingText(streamingRef.current)
         }
