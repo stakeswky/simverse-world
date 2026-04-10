@@ -53,10 +53,14 @@ async def generate_portrait(
     """Generate AI portrait via Gemini. Returns URL path or None on failure."""
     prompt = build_portrait_prompt(name, persona_md)
 
-    base_url = settings.portrait_llm_base_url or "http://100.93.72.102:3000/v1"
-    api_key = settings.portrait_llm_api_key or "sk-placeholder"
+    base_url = settings.portrait_llm_base_url
+    api_key = settings.portrait_llm_api_key
     model = settings.portrait_llm_model or "gemini-3-pro-image-preview"
     timeout = settings.portrait_llm_timeout or 60
+
+    if not base_url or not api_key:
+        logger.warning("Portrait LLM not configured (PORTRAIT_LLM_BASE_URL / PORTRAIT_LLM_API_KEY)")
+        return None
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:

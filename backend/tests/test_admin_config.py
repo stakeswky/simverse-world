@@ -24,7 +24,6 @@ async def test_get_config_group(db_session):
     # SearXNG group should return defaults when DB is empty
     searxng_result = await _get_config_group(db_session, "searxng")
     assert "url" in searxng_result
-    assert searxng_result["url"] == "http://100.93.72.102:58080"
 
 
 @pytest.mark.anyio

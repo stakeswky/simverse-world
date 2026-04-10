@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     user_llm_timeout: int = 120
     user_llm_max_retries: int = 3
     user_llm_concurrency: int = 5
+    # --- SearXNG (research) ---
+    searxng_url: str = "http://localhost:58080"
+
     allow_user_custom_llm: bool = False
 
     model_config = {"env_file": ".env"}

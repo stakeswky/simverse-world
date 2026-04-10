@@ -23,7 +23,7 @@ class ForgePipeline:
         self._system_client = system_client
         self._user_client = user_client
         self._model = model or settings.effective_model
-        self._searxng_url = searxng_url or "http://100.93.72.102:58080/search"
+        self._searxng_url = searxng_url or f"{settings.searxng_url}/search"
 
     async def start(
         self,

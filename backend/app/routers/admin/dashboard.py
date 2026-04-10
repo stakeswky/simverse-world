@@ -117,7 +117,7 @@ async def _get_top_residents(db: AsyncSession, limit: int = 10) -> list[dict]:
     ]
 
 
-SEARXNG_URL = "http://100.93.72.102:58080"
+SEARXNG_URL = settings.searxng_url
 
 
 async def _check_service_health() -> list[dict]:

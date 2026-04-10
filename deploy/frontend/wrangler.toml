@@ -2,5 +2,10 @@
 name = "skills-world"
 compatibility_date = "2025-04-01"
 
-# Serve the Vite build output as static assets
-assets = { directory = "./dist" }
+# Serve the Vite build output as static assets with SPA fallback
+assets = { directory = "./dist", not_found_handling = "single-page-application" }
+
+# Custom domain (uncomment and set your own domain)
+# routes = [
+#   { pattern = "your-domain.com", custom_domain = true }
+# ]

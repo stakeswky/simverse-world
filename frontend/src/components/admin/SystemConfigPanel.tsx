@@ -270,7 +270,7 @@ const RATING_FIELDS: FieldDef[] = [
 ]
 
 const SEARXNG_FIELDS: FieldDef[] = [
-  { key: 'url', label: 'SearXNG 地址 (url)', type: 'text', hint: '搜索引擎的 base URL，例：http://100.93.72.102:58080' },
+  { key: 'url', label: 'SearXNG 地址 (url)', type: 'text', hint: '搜索引擎的 base URL，例：http://localhost:58080' },
   { key: 'query_delay', label: '查询延迟 (query_delay)', type: 'float', hint: '每次搜索请求之间的延迟，单位秒' },
   { key: 'top_n', label: '返回结果数 (top_n)', type: 'number', hint: '每次搜索最多返回的结果条数' },
 ]

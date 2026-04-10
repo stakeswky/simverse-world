@@ -4,7 +4,7 @@ set -euo pipefail
 # Deploy backend to remote server via SSH + Docker Compose
 # Usage: ./deploy.sh [user@host]
 
-REMOTE="${1:-root@100.93.72.102}"
+REMOTE="${1:-user@your-server-ip}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$SCRIPT_DIR/../.."
 BACKEND_DIR="$PROJECT_DIR/.worktrees/mvp-implementation/backend"

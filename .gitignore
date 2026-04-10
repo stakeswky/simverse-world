@@ -1,11 +1,36 @@
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+
+# Worktrees & AI context
 .worktrees/
 .superpowers/
-node_modules/
+CLAUDE.md
+
+# Internal docs & planning (not published)
+docs/superpowers/
+skills-world-plan/
+demo/
+
+# Python
 __pycache__/
 *.pyc
-.env
 *.egg-info/
+.venv/
+
+# Node
+node_modules/
+
+# Build
 dist/
 build/
-.venv/
-.worktrees/
+
+# Database
+*.db
+*.sqlite3
+
+# IDE
+.idea/
+.vscode/
+*.swp

@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.models.user import User
 from app.models.system_config import SystemConfig
@@ -34,9 +35,9 @@ router = APIRouter(prefix="/system", tags=["admin-system"])
 # Default values for each config group (used when DB has no entries yet)
 DEFAULT_CONFIGS: dict[str, dict[str, object]] = {
     "llm": {
-        "llm.model": "MiniMax-M2.5",
-        "llm.base_url": "https://coding.dashscope.aliyuncs.com/apps/anthropic",
-        "llm.api_key": "sk-sp-2f8527503ce241b28914942ebf6bd0b2",
+        "llm.model": settings.effective_model,
+        "llm.base_url": settings.llm_base_url,
+        "llm.api_key": settings.effective_api_key,
         "llm.temperature": 0.7,
         "llm.timeout": 120,
         "llm.max_retries": 3,
@@ -53,14 +54,14 @@ DEFAULT_CONFIGS: dict[str, dict[str, object]] = {
         "scoring.star3_min_rating": 3.5,
     },
     "searxng": {
-        "searxng.url": "http://100.93.72.102:58080",
+        "searxng.url": settings.searxng_url,
         "searxng.query_delay": 1.0,
         "searxng.top_n": 5,
     },
     "portrait": {
-        "portrait.model": "gemini-3-pro-image-preview",
-        "portrait.base_url": "http://100.93.72.102:3000/v1",
-        "portrait.api_key": "sk-JH0TeDWO6dk0bRvJCcr6LLZCllFmEbI2CFDZGMquw0bLRetP",
+        "portrait.model": settings.portrait_llm_model,
+        "portrait.base_url": settings.portrait_llm_base_url,
+        "portrait.api_key": settings.portrait_llm_api_key,
         "portrait.timeout": 180,
     },
 }
