@@ -37,3 +37,12 @@ seed_local.py
 .idea/
 .vscode/
 *.swp
+
+# OS
+.DS_Store
+
+# Playwright MCP
+.playwright-mcp/
+
+# Screenshots
+*.png
