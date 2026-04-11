@@ -119,3 +119,87 @@ async def test_basic_decide_no_plan_calls_llm():
 
     assert ctx.action_result is not None
     assert ctx.action_result.action == ActionType.IDLE
+
+
+# ── Plan Tests ───────────────────────────────────────────────────────
+
+@pytest.mark.anyio
+async def test_basic_plan_generates_plan_when_stale():
+    from app.agent.phases.plan.basic import BasicPlanPlugin
+
+    ctx = _make_ctx()
+    resident = ctx.resident
+    resident.daily_plans_json = None
+    resident.daily_goal_json = None
+    resident.persona_md = "A curious learner."
+
+    llm_response = '{"goal": {"goal": "学习新技能", "motivation": "好奇心驱使"}, "plans": [{"slot": 0, "hour_range": [7, 9], "action": "IDLE", "target": null, "location": "home", "importance": 2, "reason": "起床"}, {"slot": 1, "hour_range": [9, 11], "action": "STUDY", "target": null, "location": "library", "importance": 5, "reason": "学习"}, {"slot": 2, "hour_range": [11, 13], "action": "IDLE", "target": null, "location": "home", "importance": 2, "reason": "午餐"}]}'
+
+    with patch("app.agent.phases.plan.basic.llm_chat", return_value=llm_response), \
+         patch("app.agent.phases.plan.basic.MemoryService") as MockMS, \
+         patch("app.agent.phases.plan.basic.manager") as mock_mgr:
+        mock_svc = AsyncMock()
+        mock_svc.get_memories = AsyncMock(return_value=[])
+        MockMS.return_value = mock_svc
+        mock_mgr.broadcast = AsyncMock()
+
+        plugin = BasicPlanPlugin(params={"hourly_slots": 3, "max_social_slots": 1, "max_high_importance": 1})
+        ctx = await plugin.execute(ctx)
+
+    assert resident.daily_goal_json is not None
+    assert resident.daily_goal_json["goal"] == "学习新技能"
+    assert resident.daily_plans_json is not None
+    assert len(resident.daily_plans_json["plans"]) == 3
+
+
+@pytest.mark.anyio
+async def test_basic_plan_skips_when_fresh():
+    from app.agent.phases.plan.basic import BasicPlanPlugin
+    from datetime import datetime as dt
+
+    ctx = _make_ctx()
+    resident = ctx.resident
+    today = dt.now().strftime("%Y-%m-%d")
+    resident.daily_goal_json = {"goal": "existing", "motivation": "test", "created_at": "now", "status": "active"}
+    resident.daily_plans_json = {
+        "generated_date": today,
+        "plans": [
+            {"slot": 0, "hour_range": [7, 9], "action": "IDLE", "target": None, "location": "home", "importance": 2, "reason": "休息", "status": "pending"},
+        ],
+    }
+    ctx.hour = 8
+
+    plugin = BasicPlanPlugin(params={"hourly_slots": 1})
+    ctx = await plugin.execute(ctx)
+
+    assert ctx.current_plan is not None
+    assert ctx.current_plan.action == "IDLE"
+
+
+@pytest.mark.anyio
+async def test_basic_plan_broadcasts_on_generation():
+    from app.agent.phases.plan.basic import BasicPlanPlugin
+
+    ctx = _make_ctx()
+    resident = ctx.resident
+    resident.daily_plans_json = None
+    resident.daily_goal_json = None
+    resident.persona_md = "A friendly person."
+
+    llm_response = '{"goal": {"goal": "test", "motivation": "test"}, "plans": [{"slot": 0, "hour_range": [7, 9], "action": "IDLE", "target": null, "location": "home", "importance": 3, "reason": "rest"}]}'
+
+    with patch("app.agent.phases.plan.basic.llm_chat", return_value=llm_response), \
+         patch("app.agent.phases.plan.basic.MemoryService") as MockMS, \
+         patch("app.agent.phases.plan.basic.manager") as mock_mgr:
+        mock_svc = AsyncMock()
+        mock_svc.get_memories = AsyncMock(return_value=[])
+        MockMS.return_value = mock_svc
+        mock_mgr.broadcast = AsyncMock()
+
+        plugin = BasicPlanPlugin(params={"hourly_slots": 1, "max_social_slots": 1, "max_high_importance": 1})
+        ctx = await plugin.execute(ctx)
+
+    mock_mgr.broadcast.assert_called_once()
+    broadcast_data = mock_mgr.broadcast.call_args[0][0]
+    assert broadcast_data["type"] == "resident_plan_generated"
+    assert broadcast_data["resident_slug"] == resident.slug
