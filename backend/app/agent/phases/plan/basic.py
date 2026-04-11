@@ -179,15 +179,27 @@ class BasicPlanPlugin:
             slot_count=len(slots_info),
         )
 
-        raw = await llm_chat(system_prompt, [{"role": "user", "content": user_prompt}], max_tokens=600)
+        raw = await llm_chat(system_prompt, [{"role": "user", "content": user_prompt}], max_tokens=1200)
 
-        # Parse JSON response
+        # Parse JSON response — try multiple strategies
+        data = None
+        # Strategy 1: extract outermost { ... }
         start_idx = raw.find('{')
         end_idx = raw.rfind('}') + 1
         if start_idx == -1 or end_idx <= start_idx:
             raise ValueError(f"No JSON in plan response: {raw[:200]}")
 
-        data = json.loads(raw[start_idx:end_idx])
+        json_str = raw[start_idx:end_idx]
+        try:
+            data = json.loads(json_str)
+        except json.JSONDecodeError:
+            # Strategy 2: strip trailing commas and retry
+            import re
+            cleaned = re.sub(r',\s*([}\]])', r'\1', json_str)
+            try:
+                data = json.loads(cleaned)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Failed to parse plan JSON: {e} | raw: {json_str[:300]}")
 
         # Store goal
         goal = data.get("goal", {})
