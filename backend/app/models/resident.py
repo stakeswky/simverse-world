@@ -39,3 +39,7 @@ class Resident(Base):
     # --- Agent fields (P3: Agent Loop) ---
     home_tile_x: Mapped[int | None] = mapped_column(Integer, nullable=True)
     home_tile_y: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # --- Agent Planning (Plugin System) ---
+    daily_goal_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    daily_plans_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
