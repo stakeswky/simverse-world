@@ -1,10 +1,10 @@
-# Skills World — 赛博永生开放世界
+# Simverse World — 赛博永生开放世界
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **在线体验：[https://simverse.world](https://simverse.world/)**
 
-Skills World 是一个赛博朋克风格的开放世界多人游戏/模拟平台。玩家在像素风的虚拟村落中控制角色（"居民"），与 AI 驱动的 NPC 对话、锻造物品、交易和互动。每个 NPC 拥有独立的灵魂档案，由 LLM 驱动的对话系统赋予其独特的个性和记忆。
+Simverse World 是一个赛博朋克风格的开放世界多人游戏/模拟平台。玩家在像素风的虚拟村落中控制角色（"居民"），与 AI 驱动的 NPC 对话、锻造物品、交易和互动。每个 NPC 拥有独立的灵魂档案，由 LLM 驱动的对话系统赋予其独特的个性和记忆。居民具有自主行为能力——会根据性格作息、四处闲逛、互相聊天、形成记忆，人格也会随时间和经历发生真实的演化。
 
 ## 演示截图
 
@@ -28,6 +28,12 @@ Skills World 是一个赛博朋克风格的开放世界多人游戏/模拟平台
 ## 核心功能
 
 - **AI 驱动的角色对话** — 基于 LLM 的 NPC 系统，每个角色拥有独立的灵魂（persona / soul / ability）
+- **三层记忆系统** — 事件记忆（向量检索）→ 关系记忆（结构化）→ 反思记忆（高层认知），让 NPC 真正"记住"你
+- **SBTI 人格系统** — 15 维度 × 27 种人格类型，驱动行为决策和记忆着色
+- **人格动态演化** — 日常渐变 + 关键事件跳变，性格随交互真实成长
+- **居民自主行为** — AgentLoop 驱动 14 种行为（聊天、闲逛、工作、反思...），按 SBTI 作息调度
+- **居民间自主对话** — NPC 之间主动发起 3-8 轮 LLM 对话，产生记忆和关系
+- **多模态理解** — 玩家可发送图片/视频，居民能"看懂"并回应（qwen 图片 + kimi 视频）
 - **角色锻造（Forge）** — 多阶段 pipeline：自动调研 → 信息提取 → 角色构建 → 验证 → 精炼
 - **2D 像素风游戏世界** — Phaser.js 等距视角，小地图、角色移动、NPC 状态可视化
 - **AI 头像生成** — 通过 Gemini 模型自动生成角色像素风头像
@@ -43,10 +49,11 @@ Skills World 是一个赛博朋克风格的开放世界多人游戏/模拟平台
 |------|------|
 | [FastAPI](https://fastapi.tiangolo.com/) | Web 框架 & REST API |
 | [SQLAlchemy 2.0](https://www.sqlalchemy.org/) (async) | ORM |
-| [PostgreSQL](https://www.postgresql.org/) 16 | 主数据库（开发可用 SQLite） |
+| [PostgreSQL](https://www.postgresql.org/) 16 + pgvector | 主数据库 + 向量检索（开发可用 SQLite） |
 | [Redis](https://redis.io/) 7 | 缓存 & 会话 |
 | [Alembic](https://alembic.sqlalchemy.org/) | 数据库迁移 |
 | [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) | LLM 调用（兼容 OpenAI 格式端点） |
+| [Ollama](https://ollama.com/) | 本地 Embedding 模型（qwen3-embedding） |
 | [httpx](https://www.python-httpx.org/) | 异步 HTTP 客户端 |
 | [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) | 配置管理 |
 | [python-jose](https://github.com/mpdavis/python-jose) + [Passlib](https://passlib.readthedocs.io/) | JWT 认证 & 密码哈希 |
@@ -73,35 +80,51 @@ Skills World 是一个赛博朋克风格的开放世界多人游戏/模拟平台
 ## 项目结构
 
 ```
-Skills-World/
+Simverse-World/
 ├── backend/                  # FastAPI 后端
 │   ├── app/
 │   │   ├── config.py         # Pydantic Settings 配置中心
 │   │   ├── main.py           # FastAPI 入口 & 路由注册
 │   │   ├── database.py       # 数据库引擎 & Session
 │   │   ├── models/           # SQLAlchemy ORM 模型
+│   │   │   ├── memory.py     #   三层记忆模型（pgvector）
+│   │   │   └── personality_history.py  # 人格演化历史
 │   │   ├── routers/          # API 路由
 │   │   │   ├── auth.py       #   注册 / 登录 / JWT
 │   │   │   ├── residents.py  #   角色（居民）CRUD
 │   │   │   ├── forge.py      #   锻造 API
+│   │   │   ├── media.py      #   媒体上传 API
 │   │   │   ├── profile.py    #   用户档案
 │   │   │   └── admin/        #   管理后台 API
 │   │   ├── services/         # 业务逻辑
-│   │   │   ├── portrait_service.py  # AI 头像生成
-│   │   │   └── linuxdo_auth.py      # LinuxDo OAuth
+│   │   │   ├── sbti_service.py     # SBTI 人格类型计算
+│   │   │   ├── portrait_service.py # AI 头像生成
+│   │   │   └── linuxdo_auth.py     # LinuxDo OAuth
+│   │   ├── agent/            # 居民自主行为引擎
+│   │   │   ├── loop.py       #   AgentLoop 主循环
+│   │   │   ├── tick.py       #   resident_tick() 决策引擎
+│   │   │   ├── scheduler.py  #   SBTI 驱动的作息调度
+│   │   │   ├── actions.py    #   14 种行为类型定义
+│   │   │   ├── chat.py       #   居民间自主对话
+│   │   │   ├── pathfinder.py #   A* 寻路算法
+│   │   │   └── prompts.py    #   决策 LLM Prompt
+│   │   ├── memory/           # 三层记忆系统
+│   │   │   ├── service.py    #   MemoryService CRUD + 检索
+│   │   │   ├── embedding.py  #   Ollama 向量生成
+│   │   │   └── prompts.py    #   记忆提取/反思 Prompt
+│   │   ├── personality/      # 人格动态演化
+│   │   │   ├── evolution.py  #   渐变/跳变逻辑
+│   │   │   ├── guard.py      #   PersonalityGuard 约束
+│   │   │   └── prompts.py    #   演化评估 Prompt
+│   │   ├── media/            # 多模态处理
+│   │   │   ├── service.py    #   媒体上传/存储
+│   │   │   └── model_router.py  # 模型路由（qwen/kimi）
 │   │   ├── forge/            # 角色锻造 pipeline
-│   │   │   ├── pipeline.py   #   主流程编排
-│   │   │   ├── research_stage.py    # SearXNG 调研
-│   │   │   ├── extraction_stage.py  # LLM 信息提取
-│   │   │   ├── build_stage.py       # 角色构建
-│   │   │   ├── validation_stage.py  # 质量验证
-│   │   │   └── refinement_stage.py  # 精炼优化
 │   │   ├── llm/              # LLM 客户端工厂
 │   │   ├── ws/               # WebSocket 处理
 │   │   └── tasks/            # 定时任务（热度计算等）
 │   ├── alembic/              # 数据库迁移脚本
-│   ├── tests/                # pytest 测试
-│   └── seed/                 # 初始数据种子脚本
+│   └── tests/                # pytest 测试（300+）
 ├── frontend/                 # React + Phaser.js 前端
 │   ├── src/
 │   │   ├── components/       # React 组件（管理面板、游戏 UI 等）
@@ -130,6 +153,7 @@ Skills-World/
 - Node.js 18+
 - PostgreSQL 16（或使用 SQLite 开发模式）
 - Redis 7（可选，热度计算等功能需要）
+- Ollama（可选，本地 Embedding 模型）
 
 ### Step 1：启动数据库和 Redis
 
@@ -181,8 +205,14 @@ LLM_API_KEY=sk-your-api-key
 LLM_BASE_URL=https://api.anthropic.com          # 或其他兼容端点
 LLM_MODEL=claude-haiku-4-5-20251001
 
+# Ollama Embedding（可选，本地或远程）
+OLLAMA_BASE_URL=http://localhost:11434
+
 # SearXNG 搜索引擎（角色锻造调研用，可选）
 SEARXNG_URL=http://localhost:58080
+
+# 居民自主行为（可选，默认开启）
+AGENT_ENABLED=true
 ```
 
 然后：
@@ -193,9 +223,6 @@ pip install -e ".[dev]"
 
 # 执行数据库迁移
 alembic upgrade head
-
-# 导入初始居民数据（可选）
-python3 -m seed.seed_residents
 
 # 启动后端
 uvicorn app.main:app --reload --port 8000
@@ -315,14 +342,6 @@ npm run build
 npx wrangler deploy
 ```
 
-如需绑定自定义域名，编辑 `deploy/frontend/wrangler.toml`：
-
-```toml
-routes = [
-  { pattern = "your-domain.com", custom_domain = true }
-]
-```
-
 **方式 B：Nginx 静态托管**
 
 ```bash
@@ -333,97 +352,7 @@ npm install
 npm run build
 ```
 
-将 `frontend/dist/` 目录部署到 Nginx：
-
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-    root /var/www/skills-world/dist;
-    index index.html;
-
-    # SPA fallback
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    # 反向代理 API
-    location /api/ {
-        proxy_pass http://127.0.0.1:8100/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-
-    # WebSocket
-    location /ws {
-        proxy_pass http://127.0.0.1:8100/ws;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-}
-```
-
-### Step 4：远程部署（可选快捷脚本）
-
-如果你想从本地一键部署到远程服务器：
-
-```bash
-cd deploy/backend
-./deploy.sh user@your-server-ip
-```
-
-该脚本会通过 SSH + rsync 同步代码，然后在远程执行 `docker compose up -d --build`。
-
----
-
-## 部署方式三：Docker 全栈部署
-
-如果你希望前后端都通过 Docker 运行，可以在项目根目录创建一个全栈 compose 文件，或在 Nginx 容器中挂载前端构建产物。以下是一个参考配置：
-
-```yaml
-# docker-compose.prod.yml（参考，需根据实际情况调整）
-services:
-  db:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: skills_world
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    ports:
-      - "127.0.0.1:5432:5432"
-
-  api:
-    build:
-      context: ./backend
-      dockerfile: ../deploy/backend/Dockerfile
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:8100:8000"
-    depends_on:
-      - db
-    env_file: ./deploy/backend/.env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@db:5432/skills_world
-
-  nginx:
-    image: nginx:alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./frontend/dist:/usr/share/nginx/html:ro
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on:
-      - api
-
-volumes:
-  pgdata:
-```
+将 `frontend/dist/` 目录部署到 Nginx。
 
 ---
 
@@ -435,24 +364,25 @@ volumes:
 | `REDIS_URL` | 否 | `redis://localhost:6379/0` | Redis 连接字符串 |
 | `JWT_SECRET` | 是 | — | JWT 签名密钥 |
 | `LLM_API_KEY` | 是 | — | LLM API 密钥 |
-| `LLM_BASE_URL` | 否 | — | 自定义 LLM 端点（留空则使用 Anthropic 官方） |
+| `LLM_BASE_URL` | 否 | — | 自定义 LLM 端点 |
 | `LLM_MODEL` | 否 | `claude-haiku-4-5-20251001` | 默认 LLM 模型 |
-| `LLM_MAX_TOKENS` | 否 | `512` | 单次 LLM 最大 token 数 |
+| `LLM_THINKING` | 否 | `false` | 启用 LLM 推理模式 |
+| `OLLAMA_BASE_URL` | 否 | `http://localhost:11434` | Ollama Embedding 服务地址 |
+| `OLLAMA_EMBED_MODEL` | 否 | `qwen3-embedding:4b` | Embedding 模型 |
 | `SEARXNG_URL` | 否 | `http://localhost:58080` | SearXNG 搜索引擎地址 |
+| `AGENT_ENABLED` | 否 | `true` | 居民自主行为开关 |
+| `AGENT_TICK_INTERVAL` | 否 | `60` | 行为循环间隔（秒） |
 | `PORTRAIT_LLM_BASE_URL` | 否 | — | 头像生成 API 地址 |
 | `PORTRAIT_LLM_API_KEY` | 否 | — | 头像生成 API 密钥 |
-| `PORTRAIT_LLM_MODEL` | 否 | `gemini-3-pro-image-preview` | 头像生成模型 |
-| `CORS_ORIGINS` | 否 | `["http://localhost:5173"]` | 允许的跨域来源（JSON 数组） |
+| `CORS_ORIGINS` | 否 | `["http://localhost:5173"]` | 允许的跨域来源 |
 | `LINUXDO_CLIENT_ID` | 否 | — | LinuxDo OAuth Client ID |
-| `LINUXDO_CLIENT_SECRET` | 否 | — | LinuxDo OAuth Client Secret |
-| `GITHUB_CLIENT_ID` | 否 | — | GitHub OAuth Client ID |
 
 ## 开发指南
 
 ### 运行测试
 
 ```bash
-# 后端测试
+# 后端测试（300+ 测试用例）
 cd backend
 python3 -m pytest tests/
 
@@ -510,15 +440,19 @@ alembic downgrade -1
 - [x] 管理面板 — 仪表盘、用户管理、居民管理、锻造监控、经济配置、系统设置
 - [x] 用户设置面板 — 账户/角色/交互/隐私/LLM/经济 6 大分区
 
-### v1.3 — 世界演化（计划中）
+### v1.3 — 居民自主进化 ✅ (2026-04-11)
 
-- [ ] NPC 自主行为 — 路径规划、自主移动、NPC 之间对话
-- [ ] 昼夜循环与天气系统
-- [ ] 区域专属机制 — 不同区（工坊/学院/自由区）拥有独特玩法
-- [ ] 世界事件系统 — 全服事件触发与参与
+- [x] 三层记忆系统 — 事件记忆（向量检索）+ 关系记忆 + 反思记忆
+- [x] SBTI 人格系统 — 15 维度 27 种性格类型，驱动行为和记忆着色
+- [x] 居民自主行为 — AgentLoop + SBTI 作息调度 + A* 寻路 + 14 种行为
+- [x] 居民间自主对话 — 3-8 轮 LLM 对话 + 双向记忆 + 话题摘要广播
+- [x] 多模态理解 — 图片（qwen3.6-plus）+ 视频（kimi-k2.5）模型路由
+- [x] 人格动态演化 — 渐变（日常积累）+ 跳变（关键事件）+ 三层文本同步
+- [x] 人格演化约束 — PersonalityGuard（步长限制、冷却、月度预算）
 
 ### v1.4 — 平台扩展（计划中）
 
+- [ ] Agent 插件系统 — YAML 驱动的行为插件架构 + 分层规划
 - [ ] 物品与背包系统 — 可交易的虚拟物品
 - [ ] 交易市场 — 玩家之间的物品/Soul Coin 交易
 - [ ] 移动端适配（响应式 UI + 触控操作）
