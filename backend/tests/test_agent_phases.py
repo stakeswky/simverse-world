@@ -1,95 +1,121 @@
-"""Tests for all phase plugins."""
+"""Tests for agent phase plugins."""
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from app.agent.schemas import TickContext, HourlyPlan, DailyGoal
-from app.agent.actions import ActionType, ActionResult
+from unittest.mock import AsyncMock, patch, MagicMock
+
+from app.agent.actions import ActionType
+from app.agent.schemas import TickContext, HourlyPlan
 
 
-def _make_resident(slug="test-resident", tile_x=76, tile_y=50, status="idle",
-                   district="central", meta_json=None, name="Test"):
+def _make_resident(slug="test-resident"):
     r = MagicMock()
-    r.id = f"id-{slug}"
+    r.id = "res-1"
     r.slug = slug
-    r.name = name
-    r.tile_x = tile_x
-    r.tile_y = tile_y
-    r.status = status
-    r.district = district
-    r.home_tile_x = 70
-    r.home_tile_y = 45
-    r.persona_md = "A friendly person."
-    r.meta_json = meta_json or {"sbti": {"type": "CTRL", "type_name": "控制者", "dimensions": {"So1": "M", "Ac3": "M"}}}
-    r.daily_goal_json = None
-    r.daily_plans_json = None
+    r.name = "Test Resident"
+    r.district = "engineering"
+    r.status = "idle"
+    r.tile_x = 10
+    r.tile_y = 10
+    r.home_tile_x = 5
+    r.home_tile_y = 5
+    r.meta_json = {"sbti": {"type": "GOGO", "type_name": "行者", "dimensions": {
+        "S1": "H", "S2": "H", "S3": "M",
+        "E1": "H", "E2": "M", "E3": "H",
+        "A1": "M", "A2": "M", "A3": "H",
+        "Ac1": "H", "Ac2": "H", "Ac3": "H",
+        "So1": "M", "So2": "H", "So3": "M",
+    }}}
     return r
 
 
-def _make_ctx(resident=None, db=None, nearby=None):
-    return TickContext(
-        db=db or AsyncMock(),
-        resident=resident or _make_resident(),
+def _make_ctx():
+    db = AsyncMock()
+    resident = _make_resident()
+    ctx = TickContext(
+        db=db,
+        resident=resident,
         world_time="10:00",
         hour=10,
         schedule_phase="上午",
-        nearby_residents=nearby or [],
+        nearby_residents=[],
+        current_plan=None,
+        available_actions=[ActionType.WORK, ActionType.IDLE, ActionType.WANDER, ActionType.OBSERVE],
     )
+    return ctx
+
+
+# ── Decide Tests ─────────────────────────────────────────────────────
+
+@pytest.mark.anyio
+async def test_basic_decide_force_executes_high_importance_plan():
+    from app.agent.phases.decide.basic import BasicDecidePlugin
+
+    ctx = _make_ctx()
+    ctx.current_plan = HourlyPlan(
+        slot=3, hour_range=(9, 12), action="WORK",
+        target=None, location="office", importance=7,
+        reason="重要工作", status="pending",
+    )
+    ctx.available_actions = [ActionType.WORK, ActionType.IDLE, ActionType.WANDER]
+
+    with patch("app.agent.phases.decide.basic.MemoryService") as MockMS:
+        mock_svc = AsyncMock()
+        mock_svc.get_memories = AsyncMock(return_value=[])
+        MockMS.return_value = mock_svc
+
+        plugin = BasicDecidePlugin(params={"interrupt_threshold": 6, "plan_adherence_hint": True})
+        ctx = await plugin.execute(ctx)
+
+    assert ctx.action_result is not None
+    assert ctx.action_result.action == ActionType.WORK
+    assert ctx.plan_followed is True
+    assert ctx.current_plan.status == "executing"
 
 
 @pytest.mark.anyio
-async def test_basic_perceive_finds_nearby():
-    from app.agent.phases.perceive.basic import BasicPerceivePlugin
+async def test_basic_decide_low_importance_calls_llm():
+    from app.agent.phases.decide.basic import BasicDecidePlugin
 
-    resident = _make_resident(tile_x=76, tile_y=50)
-    nearby_r = _make_resident(slug="nearby", tile_x=80, tile_y=50)
-    far_r = _make_resident(slug="far", tile_x=100, tile_y=100)
+    ctx = _make_ctx()
+    ctx.current_plan = HourlyPlan(
+        slot=0, hour_range=(7, 9), action="IDLE",
+        target=None, location="home", importance=3,
+        reason="早起休息", status="pending",
+    )
+    ctx.available_actions = [ActionType.IDLE, ActionType.WANDER, ActionType.OBSERVE]
 
-    db = AsyncMock()
-    result_mock = MagicMock()
-    result_mock.scalars.return_value.all.return_value = [nearby_r, far_r]
-    db.execute = AsyncMock(return_value=result_mock)
+    with patch("app.agent.phases.decide.basic.llm_chat") as mock_llm, \
+         patch("app.agent.phases.decide.basic.MemoryService") as MockMS:
+        mock_llm.return_value = '{"action": "WANDER", "target_slug": null, "target_tile": [80, 50], "reason": "出去走走"}'
+        mock_svc = AsyncMock()
+        mock_svc.get_memories = AsyncMock(return_value=[])
+        MockMS.return_value = mock_svc
 
-    plugin = BasicPerceivePlugin(params={"radius": 10})
-    ctx = _make_ctx(resident=resident, db=db)
-    ctx = await plugin.execute(ctx)
+        plugin = BasicDecidePlugin(params={"interrupt_threshold": 6, "plan_adherence_hint": True})
+        ctx = await plugin.execute(ctx)
 
-    assert len(ctx.nearby_residents) == 1
-    assert ctx.nearby_residents[0].slug == "nearby"
-
-
-@pytest.mark.anyio
-async def test_basic_perceive_custom_radius():
-    from app.agent.phases.perceive.basic import BasicPerceivePlugin
-
-    resident = _make_resident(tile_x=76, tile_y=50)
-    nearby_r = _make_resident(slug="nearby", tile_x=80, tile_y=50)
-
-    db = AsyncMock()
-    result_mock = MagicMock()
-    result_mock.scalars.return_value.all.return_value = [nearby_r]
-    db.execute = AsyncMock(return_value=result_mock)
-
-    plugin = BasicPerceivePlugin(params={"radius": 3})
-    ctx = _make_ctx(resident=resident, db=db)
-    ctx = await plugin.execute(ctx)
-
-    assert len(ctx.nearby_residents) == 0
+    assert ctx.action_result is not None
+    assert ctx.action_result.action == ActionType.WANDER
+    assert ctx.plan_followed is False
+    assert ctx.current_plan.status == "interrupted"
 
 
 @pytest.mark.anyio
-async def test_social_perceive_wider_radius():
-    from app.agent.phases.perceive.social import SocialPerceivePlugin
+async def test_basic_decide_no_plan_calls_llm():
+    from app.agent.phases.decide.basic import BasicDecidePlugin
 
-    resident = _make_resident(tile_x=76, tile_y=50)
-    mid_r = _make_resident(slug="mid", tile_x=88, tile_y=50)  # dist=12
+    ctx = _make_ctx()
+    ctx.current_plan = None
+    ctx.available_actions = [ActionType.IDLE, ActionType.WANDER]
 
-    db = AsyncMock()
-    result_mock = MagicMock()
-    result_mock.scalars.return_value.all.return_value = [mid_r]
-    db.execute = AsyncMock(return_value=result_mock)
+    with patch("app.agent.phases.decide.basic.llm_chat") as mock_llm, \
+         patch("app.agent.phases.decide.basic.MemoryService") as MockMS:
+        mock_llm.return_value = '{"action": "IDLE", "target_slug": null, "target_tile": null, "reason": "发呆"}'
+        mock_svc = AsyncMock()
+        mock_svc.get_memories = AsyncMock(return_value=[])
+        MockMS.return_value = mock_svc
 
-    plugin = SocialPerceivePlugin(params={"radius": 14})
-    ctx = _make_ctx(resident=resident, db=db)
-    ctx = await plugin.execute(ctx)
+        plugin = BasicDecidePlugin(params={"interrupt_threshold": 6, "plan_adherence_hint": True})
+        ctx = await plugin.execute(ctx)
 
-    assert len(ctx.nearby_residents) == 1
-    assert ctx.nearby_residents[0].slug == "mid"
+    assert ctx.action_result is not None
+    assert ctx.action_result.action == ActionType.IDLE

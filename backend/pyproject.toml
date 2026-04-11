@@ -17,6 +17,7 @@ dependencies = [
     "redis>=5.2",
     "anthropic>=0.42",
     "aiosqlite>=0.20",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]

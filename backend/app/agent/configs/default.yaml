@@ -1,0 +1,35 @@
+name: default
+description: Standard resident behavior, balanced across all dimensions
+
+phase_order: [perceive, plan, decide, execute, memorize]
+
+phases:
+  perceive:
+    plugin: app.agent.phases.perceive.basic.BasicPerceivePlugin
+    params:
+      radius: 10
+
+  plan:
+    plugin: app.agent.phases.plan.basic.BasicPlanPlugin
+    params:
+      plan_interval_hours: 24
+      hourly_slots: 7
+      max_social_slots: 2
+      max_high_importance: 2
+
+  decide:
+    plugin: app.agent.phases.decide.basic.BasicDecidePlugin
+    params:
+      interrupt_threshold: 6
+      plan_adherence_hint: true
+
+  execute:
+    plugin: app.agent.phases.execute.basic.BasicExecutePlugin
+    params:
+      max_steps_per_tick: 1
+
+  memorize:
+    plugin: app.agent.phases.memorize.basic.BasicMemorizePlugin
+    params:
+      base_importance: 0.3
+      plan_deviation_boost: 0.2

@@ -1,0 +1,45 @@
+name: extravert
+description: Extraverted residents (So1=H, Ac3=H), social and spontaneous
+
+phase_order: [perceive, plan, decide, execute, memorize]
+
+phases:
+  perceive:
+    plugin: app.agent.phases.perceive.social.SocialPerceivePlugin
+    params:
+      radius: 14
+      track_relationships: true
+
+  plan:
+    plugin: app.agent.phases.plan.basic.BasicPlanPlugin
+    params:
+      plan_interval_hours: 24
+      hourly_slots: 9
+      max_social_slots: 4
+      max_high_importance: 3
+      preferred_actions:
+        - CHAT_RESIDENT:3
+        - GOSSIP:3
+        - WANDER:2
+        - VISIT_DISTRICT:2
+        - WORK:1
+        - REFLECT:0.3
+
+  decide:
+    plugin: app.agent.phases.decide.spontaneous.SpontaneousDecidePlugin
+    params:
+      interrupt_threshold: 8
+      plan_adherence_hint: true
+      social_eagerness: true
+      distraction_chance: 0.3
+
+  execute:
+    plugin: app.agent.phases.execute.basic.BasicExecutePlugin
+    params:
+      max_steps_per_tick: 1
+
+  memorize:
+    plugin: app.agent.phases.memorize.basic.BasicMemorizePlugin
+    params:
+      base_importance: 0.25
+      plan_deviation_boost: 0.1
