@@ -43,6 +43,65 @@ def _make_ctx():
     return ctx
 
 
+# ── Perceive Tests ───────────────────────────────────────────────────
+
+@pytest.mark.anyio
+async def test_basic_perceive_finds_nearby():
+    from app.agent.phases.perceive.basic import BasicPerceivePlugin
+
+    resident = _make_resident("self")
+    resident.tile_x = 76
+    resident.tile_y = 50
+    nearby_r = _make_resident("nearby")
+    nearby_r.tile_x = 80
+    nearby_r.tile_y = 50
+    nearby_r.id = "id-nearby"
+    far_r = _make_resident("far")
+    far_r.tile_x = 100
+    far_r.tile_y = 100
+    far_r.id = "id-far"
+
+    db = AsyncMock()
+    result_mock = MagicMock()
+    result_mock.scalars.return_value.all.return_value = [nearby_r, far_r]
+    db.execute = AsyncMock(return_value=result_mock)
+
+    plugin = BasicPerceivePlugin(params={"radius": 10})
+    ctx = _make_ctx()
+    ctx.db = db
+    ctx.resident = resident
+    ctx = await plugin.execute(ctx)
+
+    assert len(ctx.nearby_residents) == 1
+    assert ctx.nearby_residents[0].slug == "nearby"
+
+
+@pytest.mark.anyio
+async def test_basic_perceive_custom_radius():
+    from app.agent.phases.perceive.basic import BasicPerceivePlugin
+
+    resident = _make_resident("self")
+    resident.tile_x = 76
+    resident.tile_y = 50
+    nearby_r = _make_resident("nearby")
+    nearby_r.tile_x = 80
+    nearby_r.tile_y = 50
+    nearby_r.id = "id-nearby"
+
+    db = AsyncMock()
+    result_mock = MagicMock()
+    result_mock.scalars.return_value.all.return_value = [nearby_r]
+    db.execute = AsyncMock(return_value=result_mock)
+
+    plugin = BasicPerceivePlugin(params={"radius": 3})  # dist=4 > 3
+    ctx = _make_ctx()
+    ctx.db = db
+    ctx.resident = resident
+    ctx = await plugin.execute(ctx)
+
+    assert len(ctx.nearby_residents) == 0
+
+
 # ── Decide Tests ─────────────────────────────────────────────────────
 
 @pytest.mark.anyio
