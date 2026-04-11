@@ -9,7 +9,7 @@ from app.models.resident import Resident
 from app.models.user import User
 from app.models.conversation import Conversation, Message
 from app.services.auth_service import verify_token
-from app.services.coin_service import charge, reward
+from app.services.coin_service import charge, reward, get_balance
 from app.services.player_chat_service import PlayerChatService, deliver_pending_messages
 from app.llm.prompt import assemble_system_prompt
 from app.llm.client import stream_chat
@@ -167,7 +167,6 @@ async def websocket_handler(ws: WebSocket):
                             manager.unlock_resident(resident.id)
                             continue
                         wake_cost = resident.token_cost_per_turn * 3
-                        from app.services.coin_service import charge, get_balance
                         ok = await charge(db, user_id, wake_cost, f"wake:{slug}")
                         if not ok:
                             await manager.send(user_id, {"type": "error", "message": "Insufficient Soul Coins"})
