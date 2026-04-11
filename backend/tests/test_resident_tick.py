@@ -5,7 +5,8 @@ from sqlalchemy import select
 from app.models.resident import Resident
 from app.models.memory import Memory
 from app.agent.actions import ActionType, ActionResult
-from app.agent.tick import resident_tick, parse_action_result, _daily_counts
+from app.agent.tick import resident_tick, _daily_counts
+from app.agent.schemas import parse_action_result
 
 
 @pytest.fixture
@@ -95,38 +96,35 @@ def test_parse_action_result_extracts_json_from_prose():
 
 
 @pytest.mark.anyio
-async def test_resident_tick_wander(db_session, tick_resident):
-    """Tick should update tile position and create a memory for WANDER."""
+async def test_resident_tick_via_plugin_chain(db_session, tick_resident):
+    """Tick should run plugin chain and return action result."""
     _daily_counts.clear()
 
-    with patch("app.agent.tick.llm_chat", new=AsyncMock(
-        return_value=_mock_decision_response("WANDER", target_tile=[80, 55])
-    )):
-        with patch("app.agent.tick.get_walkable_tiles", return_value=frozenset(
-            (x, y) for x in range(60, 100) for y in range(40, 70)
-        )):
-            result = await resident_tick(db_session, tick_resident)
+    class MockPhase:
+        def __init__(self, set_action=False):
+            self._set_action = set_action
+        async def execute(self, ctx):
+            if self._set_action:
+                ctx.action_result = ActionResult(
+                    action=ActionType.IDLE, target_slug=None,
+                    target_tile=None, reason="test",
+                )
+            return ctx
+
+    with patch("app.agent.tick.registry") as mock_reg:
+        mock_reg.get_phases.return_value = [
+            MockPhase(), MockPhase(set_action=True), MockPhase(),
+        ]
+        result = await resident_tick(db_session, tick_resident)
 
     assert result is not None
-    assert result.action == ActionType.WANDER
-
-    # Resident position should be updated
-    await db_session.refresh(tick_resident)
-    assert tick_resident.tile_x != 76 or tick_resident.tile_y != 50 or result.target_tile == (76, 50)
-
-    # A memory should be created
-    mem_result = await db_session.execute(
-        select(Memory).where(Memory.resident_id == tick_resident.id, Memory.type == "event")
-    )
-    memories = mem_result.scalars().all()
-    assert len(memories) >= 1
+    assert result.action == ActionType.IDLE
 
 
 @pytest.mark.anyio
 async def test_resident_tick_respects_daily_limit(db_session, tick_resident):
     """Tick should return None when daily action limit is reached."""
     from app.config import settings
-    # Pre-fill daily count to max
     _daily_counts[tick_resident.id] = settings.agent_max_daily_actions
 
     result = await resident_tick(db_session, tick_resident)
@@ -134,14 +132,16 @@ async def test_resident_tick_respects_daily_limit(db_session, tick_resident):
 
 
 @pytest.mark.anyio
-async def test_resident_tick_llm_failure_returns_none(db_session, tick_resident):
-    """If LLM fails, tick should return None gracefully without crashing."""
+async def test_resident_tick_phase_failure_returns_none(db_session, tick_resident):
+    """If a phase raises, tick should stop gracefully."""
     _daily_counts.clear()
 
-    with patch("app.agent.tick.llm_chat", new=AsyncMock(side_effect=Exception("LLM down"))):
+    class FailPhase:
+        async def execute(self, ctx):
+            raise Exception("phase error")
+
+    with patch("app.agent.tick.registry") as mock_reg:
+        mock_reg.get_phases.return_value = [FailPhase()]
         result = await resident_tick(db_session, tick_resident)
 
     assert result is None
-    # Resident should still be in original state
-    await db_session.refresh(tick_resident)
-    assert tick_resident.status == "idle"
