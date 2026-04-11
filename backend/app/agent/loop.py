@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.actions import ActionType, ActionResult
 from app.agent.chat import resident_chat
+from app.agent.registry import registry
 from app.agent.scheduler import build_schedule, should_tick
 from app.agent.tick import resident_tick
 from app.config import settings
@@ -46,7 +47,9 @@ class AgentLoop:
 
     async def run(self) -> None:
         """Main loop — runs indefinitely."""
-        logger.info("AgentLoop started (interval=%ds)", settings.agent_tick_interval)
+        registry.load_all()
+        logger.info("AgentLoop started (interval=%ds, %d agent configs loaded)",
+                     settings.agent_tick_interval, len(registry._configs))
         while True:
             if not settings.agent_enabled:
                 await asyncio.sleep(settings.agent_tick_interval)
