@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 1440
     github_client_id: str = ""
     github_client_secret: str = ""
+    github_redirect_uri: str = ""
     anthropic_api_key: str = ""
     # Custom LLM endpoint (overrides anthropic_api_key if set)
     llm_api_key: str = ""

@@ -11,6 +11,7 @@ from app.database import get_db
 from app.schemas.user import RegisterRequest, LoginRequest, AuthResponse, UserResponse
 from app.services.auth_service import register_user, login_user, create_token
 from app.services.linuxdo_auth import LinuxDoOAuth, find_or_create_user
+from app.services.github_auth import GitHubOAuth, find_or_create_github_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -171,5 +172,54 @@ async def linuxdo_callback(
     token = create_token(user.id)
 
     # Redirect to frontend with token
+    frontend_url = settings.cors_origins[0] if settings.cors_origins else "http://localhost:5173"
+    return RedirectResponse(f"{frontend_url}/auth/callback?token={token}", status_code=302)
+
+
+# ── GitHub OAuth ──────────────────────────────────────────────
+
+@router.get("/github/login")
+async def github_login():
+    """Redirect to GitHub OAuth2 authorize page."""
+    if not settings.github_client_id or not settings.github_client_secret:
+        raise HTTPException(501, "GitHub OAuth not configured")
+
+    oauth = GitHubOAuth(
+        client_id=settings.github_client_id,
+        client_secret=settings.github_client_secret,
+        redirect_uri=settings.github_redirect_uri,
+    )
+    url, state = oauth.build_authorize_url()
+    _store_state(state)
+    return RedirectResponse(url, status_code=307)
+
+
+@router.get("/github/callback")
+async def github_callback(
+    code: str,
+    state: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """GitHub OAuth2 callback."""
+    if not _validate_and_delete_state(state):
+        raise HTTPException(400, "Invalid or expired state parameter")
+
+    if not settings.github_client_id:
+        raise HTTPException(501, "GitHub OAuth not configured")
+
+    oauth = GitHubOAuth(
+        client_id=settings.github_client_id,
+        client_secret=settings.github_client_secret,
+        redirect_uri=settings.github_redirect_uri,
+    )
+
+    try:
+        gh_user = await oauth.exchange_code(code)
+    except Exception as e:
+        raise HTTPException(401, f"GitHub authentication failed: {e}")
+
+    user, _ = await find_or_create_github_user(db, gh_user)
+    token = create_token(user.id)
+
     frontend_url = settings.cors_origins[0] if settings.cors_origins else "http://localhost:5173"
     return RedirectResponse(f"{frontend_url}/auth/callback?token={token}", status_code=302)
