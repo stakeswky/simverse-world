@@ -203,3 +203,105 @@ async def test_basic_plan_broadcasts_on_generation():
     broadcast_data = mock_mgr.broadcast.call_args[0][0]
     assert broadcast_data["type"] == "resident_plan_generated"
     assert broadcast_data["resident_slug"] == resident.slug
+
+
+# ── Execute Tests ────────────────────────────────────────────────────
+
+@pytest.mark.anyio
+async def test_basic_execute_movement():
+    from app.agent.phases.execute.basic import BasicExecutePlugin
+    from app.agent.actions import ActionResult
+
+    resident = _make_resident()
+    resident.tile_x = 76
+    resident.tile_y = 50
+    ctx = _make_ctx()
+    ctx.resident = resident
+    ctx.action_result = ActionResult(
+        action=ActionType.WANDER, target_slug=None,
+        target_tile=(80, 50), reason="散步",
+    )
+
+    with patch("app.agent.phases.execute.basic.get_walkable_tiles") as mock_wt, \
+         patch("app.agent.phases.execute.basic.find_path") as mock_fp:
+        mock_wt.return_value = {(76, 50), (77, 50), (78, 50), (79, 50), (80, 50)}
+        mock_fp.return_value = [(76, 50), (77, 50), (78, 50), (79, 50), (80, 50)]
+        plugin = BasicExecutePlugin(params={"max_steps_per_tick": 1})
+        ctx = await plugin.execute(ctx)
+
+    assert ctx.new_tile == (77, 50)
+    assert resident.tile_x == 77
+
+
+@pytest.mark.anyio
+async def test_basic_execute_idle():
+    from app.agent.phases.execute.basic import BasicExecutePlugin
+    from app.agent.actions import ActionResult
+
+    ctx = _make_ctx()
+    ctx.action_result = ActionResult(
+        action=ActionType.IDLE, target_slug=None, target_tile=None, reason="休息",
+    )
+
+    plugin = BasicExecutePlugin(params={})
+    ctx = await plugin.execute(ctx)
+    assert ctx.resident.status == "idle"
+
+
+@pytest.mark.anyio
+async def test_basic_execute_skips_when_no_action():
+    from app.agent.phases.execute.basic import BasicExecutePlugin
+
+    ctx = _make_ctx()
+    ctx.action_result = None
+
+    plugin = BasicExecutePlugin(params={})
+    ctx = await plugin.execute(ctx)
+    assert ctx.new_tile is None
+
+
+# ── Memorize Tests ───────────────────────────────────────────────────
+
+@pytest.mark.anyio
+async def test_basic_memorize_creates_memory():
+    from app.agent.phases.memorize.basic import BasicMemorizePlugin
+    from app.agent.actions import ActionResult
+
+    ctx = _make_ctx()
+    ctx.action_result = ActionResult(
+        action=ActionType.WANDER, target_slug=None,
+        target_tile=(80, 50), reason="散步",
+    )
+
+    with patch("app.agent.phases.memorize.basic.MemoryService") as MockMS:
+        mock_svc = AsyncMock()
+        MockMS.return_value = mock_svc
+        plugin = BasicMemorizePlugin(params={"base_importance": 0.3, "plan_deviation_boost": 0.2})
+        ctx = await plugin.execute(ctx)
+
+    mock_svc.add_memory.assert_called_once()
+    call_kwargs = mock_svc.add_memory.call_args
+    assert call_kwargs[1]["importance"] == 0.3
+    assert ctx.memory_created is True
+
+
+@pytest.mark.anyio
+async def test_basic_memorize_boosts_importance_on_plan_deviation():
+    from app.agent.phases.memorize.basic import BasicMemorizePlugin
+    from app.agent.actions import ActionResult
+
+    ctx = _make_ctx()
+    ctx.action_result = ActionResult(
+        action=ActionType.CHAT_RESIDENT, target_slug="alice",
+        target_tile=None, reason="聊天",
+    )
+    ctx.plan_followed = False
+
+    with patch("app.agent.phases.memorize.basic.MemoryService") as MockMS:
+        mock_svc = AsyncMock()
+        MockMS.return_value = mock_svc
+        plugin = BasicMemorizePlugin(params={"base_importance": 0.3, "plan_deviation_boost": 0.2})
+        ctx = await plugin.execute(ctx)
+
+    call_kwargs = mock_svc.add_memory.call_args
+    assert call_kwargs[1]["importance"] == pytest.approx(0.5)
