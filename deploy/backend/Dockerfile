@@ -7,8 +7,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libpq-dev && \
     rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY pyproject.toml .
+# Install dependencies declared in pyproject.toml without building the package itself
+RUN pip install --no-cache-dir \
+    fastapi uvicorn[standard] sqlalchemy[asyncio] asyncpg alembic \
+    pydantic-settings pydantic[email] python-jose[cryptography] \
+    passlib[bcrypt] bcrypt==4.0.1 httpx redis anthropic aiosqlite pyyaml \
+    python-multipart
 
 COPY . .
 

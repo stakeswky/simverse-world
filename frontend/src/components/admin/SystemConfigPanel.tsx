@@ -3,18 +3,6 @@ import { getAdminSystemConfig, updateAdminSystemConfig } from '../../services/ap
 
 // ─── Shared sub-components ────────────────────────────────────────
 
-function SectionHeader({ icon, title }: { icon: string; title: string }) {
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 8,
-      marginBottom: 20, paddingBottom: 12,
-      borderBottom: '1px solid var(--border)',
-    }}>
-      <span style={{ fontSize: 18 }}>{icon}</span>
-      <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>{title}</h2>
-    </div>
-  )
-}
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (

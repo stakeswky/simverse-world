@@ -25,7 +25,7 @@ export function AdminPage() {
       case 'dashboard':
         return <DashboardPanel />
       case 'users':
-        return token ? <UsersPanel token={token} /> : null
+        return <UsersPanel />
       case 'residents':
         return token ? <ResidentsPanel token={token} /> : null
       case 'forge':
@@ -33,7 +33,7 @@ export function AdminPage() {
       case 'economy':
         return token ? <EconomyPanel token={token} /> : null
       case 'system':
-        return token ? <SystemConfigPanel token={token} /> : null
+        return token ? <SystemConfigPanel token={token as string} /> : null
       default:
         return <DashboardPanel />
     }

@@ -7,18 +7,22 @@ set -euo pipefail
 REMOTE="${1:-user@your-server-ip}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$SCRIPT_DIR/../.."
-BACKEND_DIR="$PROJECT_DIR/.worktrees/mvp-implementation/backend"
+BACKEND_DIR="$PROJECT_DIR/backend"
 REMOTE_DIR="/opt/skills-world"
 
 echo "==> Syncing backend to $REMOTE:$REMOTE_DIR..."
 ssh "$REMOTE" "mkdir -p $REMOTE_DIR/backend $REMOTE_DIR/deploy"
 
-# Sync backend code
+# Sync backend code (exclude local dev artifacts)
 rsync -avz --delete \
   --exclude '__pycache__' \
   --exclude '.pytest_cache' \
   --exclude '*.pyc' \
+  --exclude '.venv/' \
+  --exclude 'venv/' \
   --exclude 'data/' \
+  --exclude '*.db' \
+  --exclude 'static/uploads/' \
   "$BACKEND_DIR/" "$REMOTE:$REMOTE_DIR/backend/"
 
 # Sync deploy configs
