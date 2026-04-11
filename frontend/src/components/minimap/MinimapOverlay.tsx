@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { MinimapCanvas } from './MinimapCanvas'
 import { DistrictZones, type DistrictKey } from './DistrictZones'
 import { ResidentPanel } from './ResidentPanel'
@@ -24,6 +24,19 @@ export function MinimapOverlay() {
     setExpanded((prev) => !prev)
     setSelectedDistrict(null)
   }, [])
+
+  // ESC to close expanded minimap
+  useEffect(() => {
+    if (!expanded) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setExpanded(false)
+        setSelectedDistrict(null)
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [expanded])
 
   // Expanded: centered overlay with large map
   if (expanded) {
