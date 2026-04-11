@@ -45,6 +45,9 @@ PLAN_SYSTEM_PROMPT = """\
 """
 
 PLAN_USER_PROMPT = """\
+昨天做了什么：
+{yesterday_summary}
+
 最近的重要记忆：
 {recent_memories}
 
@@ -129,11 +132,23 @@ class BasicPlanPlugin:
 
         # Fetch memories for context
         memory_svc = MemoryService(ctx.db)
-        recent = await memory_svc.get_memories(resident.id, type="event", limit=5)
+        recent_all = await memory_svc.get_memories(resident.id, type="event", limit=20)
+        # Filter to importance > 0.5, take top 5
+        recent = [m for m in recent_all if m.importance > 0.5][:5]
+        if not recent:
+            recent = recent_all[:3]  # fallback: at least some context
         rels = await memory_svc.get_memories(resident.id, type="relationship", limit=3)
 
         recent_text = "\n".join(f"- {m.content}" for m in recent) or "（无）"
         rels_text = "\n".join(f"- {m.content}" for m in rels) or "（无）"
+
+        # Yesterday's event summary
+        yesterday = (datetime.now().replace(hour=0, minute=0, second=0, microsecond=0))
+        yesterday_events = [
+            m for m in recent_all
+            if m.created_at and m.created_at.date() < yesterday.date()
+        ][:5]
+        yesterday_text = "\n".join(f"- {m.content}" for m in yesterday_events) if yesterday_events else "（无）"
 
         action_types = ", ".join(a.value for a in ActionType)
 
@@ -158,6 +173,7 @@ class BasicPlanPlugin:
         )
 
         user_prompt = PLAN_USER_PROMPT.format(
+            yesterday_summary=yesterday_text,
             recent_memories=recent_text,
             relationships=rels_text,
             slot_count=len(slots_info),

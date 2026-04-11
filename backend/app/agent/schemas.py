@@ -53,6 +53,7 @@ class TickContext:
     hour: int
     schedule_phase: str
     nearby_residents: list[Resident] = field(default_factory=list)
+    nearby_known: dict[str, str] = field(default_factory=dict)  # resident_id -> relationship text
     current_plan: HourlyPlan | None = None
     daily_goal: DailyGoal | None = None
     action_result: ActionResult | None = None
