@@ -11,6 +11,7 @@ class ResidentListItem(BaseModel):
     sprite_key: str
     tile_x: int
     tile_y: int
+    home_location_id: str | None
     star_rating: int
     token_cost_per_turn: int
     meta_json: dict | None
