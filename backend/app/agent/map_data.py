@@ -221,3 +221,26 @@ def get_valid_target_tile(loc_id: str) -> tuple[int, int] | None:
     if not loc:
         return None
     return loc.get("entrance", loc.get("center"))
+
+
+# ── Housing Assignment ────────────────────────────────────────────────
+
+_HOUSING_ORDER = [
+    "house_a", "house_b", "house_c", "house_d", "house_e", "house_f",
+    "apt_star", "apt_moon", "apt_dawn",
+]
+
+
+def assign_home(occupied: dict[str, int]) -> str | None:
+    """Find first available home. Returns location_id or None if all full.
+
+    Args:
+        occupied: {location_id: current_occupant_count}
+    """
+    for loc_id in _HOUSING_ORDER:
+        loc = LOCATIONS[loc_id]
+        capacity = loc.get("capacity", 0)
+        current = occupied.get(loc_id, 0)
+        if current < capacity:
+            return loc_id
+    return None

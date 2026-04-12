@@ -87,3 +87,40 @@ def test_get_valid_target_tile():
 def test_get_valid_target_tile_fallback_to_center():
     tile = get_valid_target_tile("central_plaza")
     assert tile == (75, 56)  # center, since no entrance
+
+
+# ── Housing Assignment Tests ─────────────────────────────────────────
+
+from app.agent.map_data import assign_home
+
+
+def test_assign_home_first_resident_gets_private():
+    """First 6 residents get private houses."""
+    loc_id = assign_home(occupied={})
+    assert loc_id == "house_a"
+
+
+def test_assign_home_respects_capacity():
+    """Once private houses are full, assigns apartments."""
+    occupied = {"house_a": 1, "house_b": 1, "house_c": 1,
+                "house_d": 1, "house_e": 1, "house_f": 1}
+    loc_id = assign_home(occupied=occupied)
+    assert loc_id == "apt_star"
+
+
+def test_assign_home_apartment_fills():
+    """Apartments fill room by room."""
+    occupied = {"house_a": 1, "house_b": 1, "house_c": 1,
+                "house_d": 1, "house_e": 1, "house_f": 1,
+                "apt_star": 5, "apt_moon": 3}
+    loc_id = assign_home(occupied=occupied)
+    assert loc_id == "apt_moon"  # still has capacity
+
+
+def test_assign_home_all_full():
+    """When everything is full, returns None."""
+    occupied = {"house_a": 1, "house_b": 1, "house_c": 1,
+                "house_d": 1, "house_e": 1, "house_f": 1,
+                "apt_star": 5, "apt_moon": 5, "apt_dawn": 5}
+    loc_id = assign_home(occupied=occupied)
+    assert loc_id is None

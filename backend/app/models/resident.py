@@ -43,3 +43,6 @@ class Resident(Base):
     # --- Agent Planning (Plugin System) ---
     daily_goal_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     daily_plans_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # --- Housing (Map Awareness) ---
+    home_location_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
