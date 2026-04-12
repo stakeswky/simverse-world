@@ -74,8 +74,8 @@ def get_available_actions(resident, nearby_residents: list) -> list[ActionType]:
         from app.agent.map_data import get_location_by_id
         home_loc = get_location_by_id(home_loc_id)
         if home_loc:
-            entrance = home_loc["entrance"]
-            if not (resident.tile_x == entrance[0] and resident.tile_y == entrance[1]):
+            entrance = home_loc.get("entrance") or home_loc.get("center")
+            if entrance and not (resident.tile_x == entrance[0] and resident.tile_y == entrance[1]):
                 available.append(ActionType.GO_HOME)
     else:
         # Fallback to old home_tile_x/y
