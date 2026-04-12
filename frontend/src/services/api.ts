@@ -630,3 +630,12 @@ export function adminPatchUser(
     headers: { Authorization: `Bearer ${token}` },
   })
 }
+
+// ─── Player Position API ─────────────────────────────────────────
+
+export function updatePlayerPosition(tileX: number, tileY: number): Promise<{ tile_x: number; tile_y: number }> {
+  return apiFetch('/residents/player/position', {
+    method: 'PUT',
+    body: JSON.stringify({ tile_x: tileX, tile_y: tileY }),
+  })
+}

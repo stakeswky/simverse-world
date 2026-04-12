@@ -3,6 +3,7 @@ import { bridge } from './phaserBridge'
 import { applyStatusVisuals, clearStatusVisuals, STATUS_CONFIG } from './StatusVisuals'
 import { useGameStore } from '../stores/gameStore'
 import { sendPosition, sendWS, onWSMessage } from '../services/ws'
+import { updatePlayerPosition } from '../services/api'
 
 const TILE_SIZE = 32
 const PLAYER_SPEED = 160
@@ -254,7 +255,7 @@ class MainScene extends Phaser.Scene {
 
     // Handle late-arriving spawn_position and resident status updates
     onWSMessage((msg) => {
-      if (msg.type === 'spawn_position' && this.player) {
+      if (msg.type === 'spawn_position' && this.player && !this.isTeleporting) {
         const x = msg.x as number
         const y = msg.y as number
         this.player.setPosition(x, y)
@@ -322,6 +323,8 @@ class MainScene extends Phaser.Scene {
         this.isTeleporting = false
         // Persist teleported position to backend (bypass 4px dead-zone)
         sendWS({ type: 'move', x: Math.round(targetX), y: Math.round(targetY), direction: 'down' })
+        // Also persist via REST API to ensure DB survives WS reconnect
+        updatePlayerPosition(tileX, tileY).catch(() => { /* silent fail — WS path already sent */ })
         bridge.emit('teleport:complete', { tileX, tileY })
       })
     })
