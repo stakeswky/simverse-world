@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from app.agent.actions import ActionType
+from app.agent.map_data import format_location_list_for_prompt
 from app.agent.scheduler import build_schedule
 from app.agent.schemas import TickContext, DailyGoal, HourlyPlan
 from app.config import settings
@@ -23,8 +24,12 @@ PLAN_SYSTEM_PROMPT = """\
 - 姓名：{name}
 - 人格类型（SBTI）：{sbti_type}（{sbti_name}）
 - 性格描述：{persona_snippet}
+- 家：{home_name}
 
 活跃时段：{wake_hour}:00 - {sleep_hour}:00，共 {slot_count} 个时段
+
+小镇地图（可选目的地）：
+{location_list}
 
 可选行动：{action_types}
 
@@ -32,13 +37,16 @@ PLAN_SYSTEM_PROMPT = """\
 - importance 1-10，大部分为 2-4，最多 {max_high_importance} 个时段 >= 6
 - 社交行动（CHAT_RESIDENT/GOSSIP）最多 {max_social_slots} 个时段
 - 以第一人称自然表达目标，不要生硬的开头
+- location 字段必须从上面的地点列表中选择地点名称
+- WANDER/VISIT_DISTRICT 的 target_tile 使用目标地点的入口坐标
+- GO_HOME 不需要 target_tile（自动导航）
 {preferred_actions_hint}
 
 输出严格 JSON，不要其他文字：
 {{
   "goal": {{"goal": "今日目标描述", "motivation": "动机"}},
   "plans": [
-    {{"slot": 0, "hour_range": [{start_0}, {end_0}], "action": "ACTION_TYPE", "target": null, "location": "地点", "importance": 3, "reason": "原因"}},
+    {{"slot": 0, "hour_range": [{start_0}, {end_0}], "action": "ACTION_TYPE", "target": null, "location": "地点名称", "importance": 3, "reason": "原因"}},
     ...
   ]
 }}
@@ -152,6 +160,17 @@ class BasicPlanPlugin:
 
         action_types = ", ".join(a.value for a in ActionType)
 
+        # Resolve home name
+        home_loc_id = resident.home_location_id
+        home_name = "未分配"
+        if home_loc_id:
+            from app.agent.map_data import get_location_by_id
+            home_loc = get_location_by_id(home_loc_id)
+            if home_loc:
+                home_name = home_loc["name"]
+
+        location_list = format_location_list_for_prompt()
+
         preferred_hint = ""
         if self.preferred_actions:
             preferred_hint = "- 偏好行为权重：" + ", ".join(self.preferred_actions)
@@ -161,9 +180,11 @@ class BasicPlanPlugin:
             sbti_type=sbti.get("type", "OJBK"),
             sbti_name=sbti.get("type_name", "无所谓人"),
             persona_snippet=(resident.persona_md or "")[:200],
+            home_name=home_name,
             wake_hour=schedule.wake_hour,
             sleep_hour=schedule.sleep_hour,
             slot_count=len(slots_info),
+            location_list=location_list,
             action_types=action_types,
             max_high_importance=self.max_high_importance,
             max_social_slots=self.max_social_slots,
