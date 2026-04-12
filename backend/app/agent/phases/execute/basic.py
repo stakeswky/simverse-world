@@ -5,6 +5,7 @@ import logging
 from typing import Any
 
 from app.agent.actions import ActionType
+from app.agent.map_data import get_valid_target_tile
 from app.agent.pathfinder import get_walkable_tiles, find_path
 from app.agent.schemas import TickContext
 
@@ -24,22 +25,33 @@ class BasicExecutePlugin:
         movement_actions = {ActionType.WANDER, ActionType.GO_HOME, ActionType.VISIT_DISTRICT}
 
         try:
-            if action in movement_actions and ctx.action_result.target_tile:
-                walkable = get_walkable_tiles()
-                path = find_path(
-                    (ctx.resident.tile_x, ctx.resident.tile_y),
-                    ctx.action_result.target_tile,
-                    walkable,
-                )
-                if path and len(path) >= 2:
-                    next_tile = path[1]
-                    ctx.resident.tile_x = next_tile[0]
-                    ctx.resident.tile_y = next_tile[1]
-                    ctx.resident.status = "walking"
-                    ctx.new_tile = next_tile
-                    await ctx.db.commit()
-                else:
-                    ctx.new_tile = (ctx.resident.tile_x, ctx.resident.tile_y)
+            if action in movement_actions:
+                # Resolve target tile
+                target = ctx.action_result.target_tile
+                if action == ActionType.GO_HOME:
+                    # Use home_location_id entrance
+                    home_loc_id = getattr(ctx.resident, 'home_location_id', None)
+                    if home_loc_id:
+                        target = get_valid_target_tile(home_loc_id)
+                    elif ctx.resident.home_tile_x is not None:
+                        target = (ctx.resident.home_tile_x, ctx.resident.home_tile_y)
+
+                if target:
+                    walkable = get_walkable_tiles()
+                    path = find_path(
+                        (ctx.resident.tile_x, ctx.resident.tile_y),
+                        target,
+                        walkable,
+                    )
+                    if path and len(path) >= 2:
+                        next_tile = path[1]
+                        ctx.resident.tile_x = next_tile[0]
+                        ctx.resident.tile_y = next_tile[1]
+                        ctx.resident.status = "walking"
+                        ctx.new_tile = next_tile
+                        await ctx.db.commit()
+                    else:
+                        ctx.new_tile = (ctx.resident.tile_x, ctx.resident.tile_y)
             elif action in {ActionType.IDLE, ActionType.NAP, ActionType.REFLECT, ActionType.JOURNAL}:
                 if ctx.resident.status not in ("chatting", "socializing"):
                     ctx.resident.status = "idle"

@@ -5,6 +5,7 @@ import logging
 from typing import Any
 
 from app.agent.actions import ActionType
+from app.agent.map_data import get_location_at
 from app.agent.schemas import TickContext
 from app.memory.service import MemoryService
 
@@ -12,37 +13,39 @@ logger = logging.getLogger(__name__)
 
 
 def format_action_memory(action_result, resident) -> str:
+    """Format an action into a human-readable memory string with location."""
+    loc = get_location_at(resident.tile_x, resident.tile_y)
+    loc_name = loc["name"] if loc else "户外"
+
     action = action_result.action
     if action == ActionType.WANDER:
-        tile = action_result.target_tile
-        return f"四处游荡，走向 ({tile[0]}, {tile[1]})" if tile else "四处游荡"
+        return f"在{loc_name}附近四处游荡"
     elif action == ActionType.GO_HOME:
         return "回到了自己的家"
     elif action == ActionType.VISIT_DISTRICT:
-        tile = action_result.target_tile
-        return f"前往了另一个区域 ({tile[0] if tile else '?'}, {tile[1] if tile else '?'})"
+        return f"前往了{loc_name}"
     elif action == ActionType.CHAT_RESIDENT:
-        return f"和 {action_result.target_slug or '某位居民'} 开始了对话"
+        return f"在{loc_name}和 {action_result.target_slug or '某位居民'} 聊天"
     elif action == ActionType.OBSERVE:
-        return "静静地观察着周围的情况"
+        return f"在{loc_name}静静地观察着周围的情况"
     elif action == ActionType.EAVESDROP:
-        return "偷偷听了附近居民的对话"
+        return f"在{loc_name}偷偷听了附近居民的对话"
     elif action == ActionType.REFLECT:
-        return "进行了一段时间的自我反思"
+        return f"在{loc_name}进行了一段时间的自我反思"
     elif action == ActionType.JOURNAL:
-        return "在心里记录了今天的见闻"
+        return f"在{loc_name}记录了今天的见闻"
     elif action == ActionType.WORK:
-        return "专注于自己的工作"
+        return f"在{loc_name}专注于工作"
     elif action == ActionType.STUDY:
-        return "学习了一些新知识"
+        return f"在{loc_name}学习了一些新知识"
     elif action == ActionType.GOSSIP:
-        return f"和 {action_result.target_slug or '某位居民'} 闲聊八卦"
+        return f"在{loc_name}和 {action_result.target_slug or '某位居民'} 闲聊八卦"
     elif action == ActionType.NAP:
-        return "小憩了一会儿"
+        return f"在{loc_name}小憩了一会儿"
     elif action == ActionType.IDLE:
-        return "发了会儿呆"
+        return f"在{loc_name}发了会儿呆"
     else:
-        return f"执行了 {action.value}"
+        return f"在{loc_name}执行了 {action.value}"
 
 
 class BasicMemorizePlugin:

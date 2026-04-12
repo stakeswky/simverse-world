@@ -14,6 +14,7 @@ def _make_resident(status="idle", district="engineering", tile_x=76, tile_y=50):
     r.slug = "test-res"
     r.home_tile_x = None
     r.home_tile_y = None
+    r.home_location_id = None
     return r
 
 
