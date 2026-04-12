@@ -1,5 +1,6 @@
 from app.agent.map_data import (
     LOCATIONS,
+    assign_home,
     get_location_at,
     get_location_id_at,
     get_location_by_id,
@@ -91,8 +92,6 @@ def test_get_valid_target_tile_fallback_to_center():
 
 # ── Housing Assignment Tests ─────────────────────────────────────────
 
-from app.agent.map_data import assign_home
-
 
 def test_assign_home_first_resident_gets_private():
     """First 6 residents get private houses."""
@@ -115,6 +114,13 @@ def test_assign_home_apartment_fills():
                 "apt_star": 5, "apt_moon": 3}
     loc_id = assign_home(occupied=occupied)
     assert loc_id == "apt_moon"  # still has capacity
+
+
+def test_assign_home_partial_fill_skips_correctly():
+    """When house_a is full, next resident gets house_b."""
+    occupied = {"house_a": 1}
+    loc_id = assign_home(occupied=occupied)
+    assert loc_id == "house_b"
 
 
 def test_assign_home_all_full():

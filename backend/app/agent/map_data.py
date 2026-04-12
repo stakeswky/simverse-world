@@ -238,7 +238,9 @@ def assign_home(occupied: dict[str, int]) -> str | None:
         occupied: {location_id: current_occupant_count}
     """
     for loc_id in _HOUSING_ORDER:
-        loc = LOCATIONS[loc_id]
+        loc = LOCATIONS.get(loc_id)
+        if not loc:
+            continue
         capacity = loc.get("capacity", 0)
         current = occupied.get(loc_id, 0)
         if current < capacity:
