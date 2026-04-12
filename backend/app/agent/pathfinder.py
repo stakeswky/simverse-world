@@ -25,11 +25,10 @@ def get_walkable_tiles() -> set[tuple[int, int]]:
             for y in range(y1, y2 + 1):
                 tiles.add((x, y))
 
-    # Corridors connecting the three zones (north, mid, south)
-    # North zone y=12-34, Mid zone y=42-62, South zone y=58-83
-    # Fill gaps to ensure connectivity
+    # Full-area walkable zone connecting all three zones and outdoor areas.
+    # Covers x=14..133, y=12..99 (includes town_entrance at y=85-99).
     for x in range(14, 134):
-        for y in range(12, 84):
+        for y in range(12, 100):
             tiles.add((x, y))
 
     _walkable_tiles_cache = tiles
