@@ -1,7 +1,7 @@
-import pytest
 from app.agent.map_data import (
     LOCATIONS,
     get_location_at,
+    get_location_id_at,
     get_location_by_id,
     get_public_locations,
     get_housing_locations,
@@ -29,6 +29,11 @@ def test_get_location_at_inside_library():
 def test_get_location_at_outside():
     loc = get_location_at(0, 0)
     assert loc is None
+
+
+def test_get_location_id_at():
+    assert get_location_id_at(63, 48) == "library"
+    assert get_location_id_at(0, 0) is None
 
 
 def test_get_location_by_id():
@@ -77,3 +82,8 @@ def test_get_valid_target_tile():
     tile = get_valid_target_tile("library")
     assert tile == (57, 43)  # entrance
     assert get_valid_target_tile("nonexistent") is None
+
+
+def test_get_valid_target_tile_fallback_to_center():
+    tile = get_valid_target_tile("central_plaza")
+    assert tile == (75, 56)  # center, since no entrance

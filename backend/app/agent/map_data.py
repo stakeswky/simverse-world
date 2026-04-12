@@ -147,22 +147,25 @@ LOCATIONS: dict[str, dict[str, Any]] = {
 }
 
 
-def get_location_at(x: int, y: int) -> dict | None:
-    """Return location dict if (x,y) falls within any location's bounds."""
-    for loc in LOCATIONS.values():
+def _find_location_in_bounds(x: int, y: int) -> tuple[str | None, dict | None]:
+    """Return (loc_id, loc) if (x,y) falls within any location's bounds, else (None, None)."""
+    for loc_id, loc in LOCATIONS.items():
         x1, y1, x2, y2 = loc["bounds"]
         if x1 <= x <= x2 and y1 <= y <= y2:
-            return loc
-    return None
+            return loc_id, loc
+    return None, None
+
+
+def get_location_at(x: int, y: int) -> dict | None:
+    """Return location dict if (x,y) falls within any location's bounds."""
+    _, loc = _find_location_in_bounds(x, y)
+    return loc
 
 
 def get_location_id_at(x: int, y: int) -> str | None:
     """Return location ID if (x,y) falls within any location's bounds."""
-    for loc_id, loc in LOCATIONS.items():
-        x1, y1, x2, y2 = loc["bounds"]
-        if x1 <= x <= x2 and y1 <= y <= y2:
-            return loc_id
-    return None
+    loc_id, _ = _find_location_in_bounds(x, y)
+    return loc_id
 
 
 def get_location_by_id(loc_id: str) -> dict | None:
