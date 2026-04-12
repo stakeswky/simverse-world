@@ -2,12 +2,11 @@
 from app.agent.actions import ActionType
 
 DECISION_SYSTEM = """\
-你是一个游戏 NPC 居民的自主决策引擎。你的任务是根据居民当前的状态、周围环境和记忆，
-选择最符合角色人格的下一个行动。
+你是一个游戏 NPC 居民的自主决策引擎。你的任务是根据居民当前的状态、周围环境和记忆，选择最符合角色人格的下一个行动。
 
 居民信息：
 - 姓名：{name}
-- 区域：{district}
+- 当前位置：{current_location}
 - 人格类型（SBTI）：{sbti_type}（{sbti_name}）
 - 当前状态：{status}
 
@@ -23,11 +22,13 @@ DECISION_SYSTEM = """\
 
 规则：
 - CHAT_RESIDENT 需要在 nearby_residents 中选一个空闲居民，填入 target_slug
-- WANDER/GO_HOME/VISIT_DISTRICT 填入 target_tile，其余为 null
+- WANDER/VISIT_DISTRICT 填入 target_tile（使用地点入口坐标），其余为 null
+- GO_HOME 不需要 target_tile（自动导航到你的家）
 - GOSSIP 需要 target_slug，内容由后续流程生成
 - 社交类型低（So1=L）的居民，倾向于选择 REFLECT/JOURNAL/OBSERVE
 - 行动力高（Ac3=H）的居民，倾向于 WORK/STUDY/WANDER
 - 当天已执行 {today_action_count} 个行动，上限 {max_daily_actions}
+{location_boost_hint}
 """
 
 DECISION_USER = """\
@@ -57,9 +58,21 @@ def build_decision_prompt(
     max_daily_actions: int,
 ) -> tuple[str, str]:
     """Build (system_prompt, user_prompt) for the resident decision step."""
+    from app.agent.map_data import get_location_at
+
     sbti = (resident.meta_json or {}).get("sbti", {})
     sbti_type = sbti.get("type", "OJBK")
     sbti_name = sbti.get("type_name", "无所谓人")
+
+    # Resolve current location
+    loc = get_location_at(resident.tile_x, resident.tile_y)
+    if loc:
+        current_location = f"{loc['name']}（{loc.get('description', '')}）"
+        boosted = loc.get("boosted_actions", [])
+        location_boost_hint = f"\n你在{loc['name']}里，这里特别适合：{', '.join(boosted)}" if boosted else ""
+    else:
+        current_location = f"户外 ({resident.tile_x}, {resident.tile_y})"
+        location_boost_hint = ""
 
     nearby_text = "\n".join(
         f"- {r.name}（{r.slug}）：{r.status}，距离约 {_tile_dist(resident, r)} 格"
@@ -76,13 +89,14 @@ def build_decision_prompt(
 
     system = DECISION_SYSTEM.format(
         name=resident.name,
-        district=resident.district,
+        current_location=current_location,
         sbti_type=sbti_type,
         sbti_name=sbti_name,
         status=resident.status,
         available_actions=action_list,
         today_action_count=len(today_actions),
         max_daily_actions=max_daily_actions,
+        location_boost_hint=location_boost_hint,
     )
     user = DECISION_USER.format(
         world_time=world_time,
