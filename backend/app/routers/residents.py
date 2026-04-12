@@ -5,11 +5,13 @@ import random
 import zipfile
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.resident import Resident
-from app.schemas.resident import ResidentListItem, ResidentDetail, ResidentEditRequest, VersionSnapshot, ResidentImportResponse
+from app.models.user import User
+from app.schemas.resident import ResidentListItem, ResidentDetail, ResidentEditRequest, VersionSnapshot, ResidentImportResponse, PlayerPositionUpdate
 from app.services.resident_service import list_residents, get_resident_by_slug
 from app.services.version_service import create_version_snapshot, get_versions
 from app.services.auth_service import get_current_user
@@ -182,6 +184,29 @@ async def import_resident(
         soul_md=resident.soul_md,
         meta_json=resident.meta_json,
     )
+
+
+@router.put("/player/position")
+async def update_player_position(
+    request: Request,
+    req: PlayerPositionUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Persist the player's tile coordinates (from teleport) to the user record."""
+    user = await _require_user_auth(request, db)
+    if not user.player_resident_id:
+        raise HTTPException(status_code=404, detail="No player resident")
+
+    result = await db.execute(select(User).where(User.id == user.id))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    TILE_SIZE = 32
+    db_user.last_x = req.tile_x * TILE_SIZE + TILE_SIZE // 2
+    db_user.last_y = req.tile_y * TILE_SIZE + TILE_SIZE
+    await db.commit()
+    return {"tile_x": req.tile_x, "tile_y": req.tile_y}
 
 
 @router.get("/{slug}", response_model=ResidentDetail)

@@ -52,3 +52,9 @@ class ResidentImportResponse(BaseModel):
     persona_md: str
     soul_md: str
     meta_json: dict | None
+
+
+class PlayerPositionUpdate(BaseModel):
+    """Request to update the current user's player position."""
+    tile_x: int
+    tile_y: int
