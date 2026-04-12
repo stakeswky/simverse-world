@@ -54,6 +54,10 @@ class BasicExecutePlugin:
                         ctx.resident.status = "idle"
                         ctx.new_tile = (ctx.resident.tile_x, ctx.resident.tile_y)
                     await ctx.db.commit()
+                else:
+                    # No valid target — reset to idle
+                    ctx.resident.status = "idle"
+                    await ctx.db.commit()
             elif action in {ActionType.IDLE, ActionType.NAP, ActionType.REFLECT, ActionType.JOURNAL}:
                 if ctx.resident.status not in ("chatting", "socializing"):
                     ctx.resident.status = "idle"
