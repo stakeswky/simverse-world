@@ -38,8 +38,8 @@ PLAN_SYSTEM_PROMPT = """\
 - 社交行动（CHAT_RESIDENT/GOSSIP）最多 {max_social_slots} 个时段
 - 以第一人称自然表达目标，不要生硬的开头
 - location 字段必须从上面的地点列表中选择地点名称
-- WANDER/VISIT_DISTRICT 的 target_tile 使用目标地点的入口坐标
-- GO_HOME 不需要 target_tile（自动导航）
+- target 字段：WANDER/VISIT_DISTRICT 使用目标地点的入口坐标 [x, y]，其余为 null
+- GO_HOME 的 target 为 null（自动导航）
 {preferred_actions_hint}
 
 输出严格 JSON，不要其他文字：
