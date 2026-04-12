@@ -1,22 +1,7 @@
 """A* pathfinding for resident movement on the tilemap grid."""
 import heapq
 
-# District bounding boxes: (x_min, y_min, x_max, y_max)
-# These approximate the walkable regions in the Tiled map.
-# Walls and water tiles within these boxes are still blocked
-# — in the MVP we use conservative inner margins.
-DISTRICT_BOUNDS: dict[str, tuple[int, int, int, int]] = {
-    "engineering":  (60, 40, 95, 65),
-    "art":          (30, 40, 60, 65),
-    "business":     (60, 65, 95, 90),
-    "free":         (30, 65, 60, 90),
-    "central":      (55, 45, 80, 70),   # Central Plaza
-}
-
-# Tiles that are explicitly blocked within district bounds (walls, water, etc.)
-# In a production build these would be parsed from the Tiled map's collision layer.
-_BLOCKED_TILES: frozenset[tuple[int, int]] = frozenset()
-
+from app.agent.map_data import LOCATIONS
 
 _walkable_tiles_cache: set[tuple[int, int]] | None = None
 
@@ -24,23 +9,37 @@ _walkable_tiles_cache: set[tuple[int, int]] | None = None
 def get_walkable_tiles() -> set[tuple[int, int]]:
     """Return the set of all walkable tile coordinates.
 
-    MVP: generate a grid covering all district bounding boxes,
-    minus any explicitly blocked tiles.
-
-    Production: parse the tilemap JSON collision layer instead.
+    Derives walkable areas from LOCATIONS bounds, covering all named
+    locations plus connecting corridors between them.
     """
     global _walkable_tiles_cache
     if _walkable_tiles_cache is not None:
         return _walkable_tiles_cache
 
     tiles: set[tuple[int, int]] = set()
-    for x_min, y_min, x_max, y_max in DISTRICT_BOUNDS.values():
-        for x in range(x_min, x_max + 1):
-            for y in range(y_min, y_max + 1):
+
+    # All named location interiors are walkable
+    for loc in LOCATIONS.values():
+        x1, y1, x2, y2 = loc["bounds"]
+        for x in range(x1, x2 + 1):
+            for y in range(y1, y2 + 1):
                 tiles.add((x, y))
-    tiles -= set(_BLOCKED_TILES)
+
+    # Corridors connecting the three zones (north, mid, south)
+    # North zone y=12-34, Mid zone y=42-62, South zone y=58-83
+    # Fill gaps to ensure connectivity
+    for x in range(14, 134):
+        for y in range(12, 84):
+            tiles.add((x, y))
+
     _walkable_tiles_cache = tiles
     return tiles
+
+
+def reset_walkable_cache() -> None:
+    """Reset cache (for testing)."""
+    global _walkable_tiles_cache
+    _walkable_tiles_cache = None
 
 
 def find_path(
@@ -55,11 +54,10 @@ def find_path(
         from_tile: (x, y) start tile
         to_tile:   (x, y) destination tile
         walkable_tiles: set of passable tiles
-        max_steps: abort if path exceeds this length (prevents runaway search)
+        max_steps: abort if path exceeds this length
 
     Returns:
-        Ordered list of (x, y) tiles from start (inclusive) to end (inclusive),
-        or None if no path exists.
+        Ordered list of (x, y) tiles from start to end, or None if no path.
     """
     if from_tile == to_tile:
         return [from_tile]
@@ -68,10 +66,8 @@ def find_path(
         return None
 
     def heuristic(a: tuple[int, int], b: tuple[int, int]) -> int:
-        # Manhattan distance — admissible for 4-directional grid
         return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
-    # Priority queue: (f_score, tie_breaker, tile)
     open_heap: list[tuple[int, int, tuple[int, int]]] = []
     counter = 0
     heapq.heappush(open_heap, (heuristic(from_tile, to_tile), counter, from_tile))
@@ -85,7 +81,6 @@ def find_path(
         _, _, current = heapq.heappop(open_heap)
 
         if current == to_tile:
-            # Reconstruct path
             path: list[tuple[int, int]] = []
             node: tuple[int, int] | None = current
             while node is not None:
@@ -111,4 +106,4 @@ def find_path(
                 counter += 1
                 heapq.heappush(open_heap, (f, counter, neighbor))
 
-    return None  # No path found
+    return None

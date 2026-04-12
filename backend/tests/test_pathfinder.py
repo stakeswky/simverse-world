@@ -1,5 +1,5 @@
 import pytest
-from app.agent.pathfinder import find_path, get_walkable_tiles, DISTRICT_BOUNDS
+from app.agent.pathfinder import find_path, get_walkable_tiles
 
 
 def test_find_path_direct_neighbors():
@@ -55,12 +55,13 @@ def test_get_walkable_tiles_returns_set():
     assert len(tiles) > 100  # Should cover multiple districts
 
 
-def test_district_bounds_coverage():
-    """All districts in DISTRICT_BOUNDS should contribute walkable tiles."""
-    assert len(DISTRICT_BOUNDS) >= 4
+def test_locations_coverage():
+    """All locations in map_data should contribute walkable tiles."""
+    from app.agent.map_data import LOCATIONS
+    assert len(LOCATIONS) >= 4
     tiles = get_walkable_tiles()
-    # Spot-check: central area (76, 50) should be walkable
-    assert (76, 50) in tiles
+    # Spot-check: tavern entrance area should be walkable
+    assert (72, 14) in tiles
 
 
 def test_find_path_heuristic_optimality():
