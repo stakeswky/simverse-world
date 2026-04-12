@@ -6,11 +6,19 @@ import {
 import type { AdminResident } from '../../services/api'
 
 const DISTRICT_OPTIONS = [
-  { value: '', label: '全部街区' },
-  { value: 'engineering', label: '工程区' },
-  { value: 'product', label: '产品区' },
-  { value: 'academy', label: '学院区' },
-  { value: 'free', label: '自由区' },
+  { value: '', label: '全部地点' },
+  { value: 'academy', label: '学院' },
+  { value: 'tavern', label: '酒馆' },
+  { value: 'cafe', label: '咖啡馆' },
+  { value: 'workshop', label: '工坊' },
+  { value: 'library', label: '图书馆' },
+  { value: 'shop', label: '杂货铺' },
+  { value: 'town_hall', label: '市政厅' },
+  { value: 'north_path', label: '北林荫道' },
+  { value: 'central_plaza', label: '中央广场' },
+  { value: 'south_lawn', label: '南草坪' },
+  { value: 'town_entrance', label: '小镇入口' },
+  { value: 'outdoor', label: '户外' },
 ]
 
 const STATUS_OPTIONS = [
@@ -241,7 +249,7 @@ export function ResidentsPanel({ token }: ResidentsPanelProps) {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
-              {['名称', '类型', '街区', '评分', '热度', '状态', '创建者', '操作'].map((h) => (
+              {['名称', '类型', '地点', '评分', '热度', '状态', '创建者', '操作'].map((h) => (
                 <th
                   key={h}
                   style={{
