@@ -50,24 +50,34 @@ from app.models.resident import Resident
 # In-memory sessions (MVP — replace with Redis for production)
 _sessions: dict[str, dict[str, Any]] = {}
 
-DISTRICT_TILE_SLOTS: dict[str, list[tuple[int, int]]] = {
-    "engineering": [(58, 55), (60, 55), (62, 55), (56, 57), (58, 57), (60, 57),
-                    (62, 57), (64, 57), (56, 59), (58, 59), (60, 59), (62, 59),
-                    (64, 59), (56, 61), (58, 61), (60, 61), (62, 61), (64, 61),
-                    (56, 63), (58, 63)],
-    "product":     [(35, 40), (37, 40), (39, 40), (35, 42), (37, 42), (39, 42),
-                    (35, 44), (37, 44), (39, 44), (35, 46), (37, 46), (39, 46),
-                    (35, 48), (37, 48), (39, 48), (35, 50), (37, 50), (39, 50),
-                    (35, 52), (37, 52)],
-    "academy":     [(30, 65), (32, 65), (34, 65), (30, 67), (32, 67), (34, 67),
-                    (30, 69), (32, 69), (34, 69), (30, 71), (32, 71), (34, 71),
-                    (30, 73), (32, 73), (34, 73), (30, 75), (32, 75), (34, 75),
-                    (30, 77), (32, 77)],
-    "free":        [(100, 38), (102, 38), (104, 38), (106, 38), (108, 38),
-                    (100, 40), (102, 40), (104, 40), (106, 40), (108, 40),
-                    (100, 42), (102, 42), (104, 42), (106, 42), (108, 42),
-                    (100, 44), (102, 44), (104, 44), (106, 44), (108, 44)],
+# Location-based tile slots for new resident placement.
+# Each location maps to a grid of candidate tiles (step=2 for spacing).
+_LOCATION_BOUNDS = {
+    "academy":       (15, 18, 42, 34),
+    "tavern":        (72, 13, 83, 26),
+    "cafe":          (53, 14, 62, 26),
+    "workshop":      (108, 20, 124, 34),
+    "library":       (57, 43, 70, 53),
+    "shop":          (75, 43, 93, 53),
+    "town_hall":     (106, 45, 132, 62),
+    "north_path":    (15, 35, 135, 42),
+    "central_plaza": (55, 54, 95, 58),
+    "south_lawn":    (15, 76, 99, 83),
+    "town_entrance": (50, 85, 90, 99),
 }
+
+
+def _gen_slots(x1: int, y1: int, x2: int, y2: int, step: int = 2) -> list[tuple[int, int]]:
+    """Generate a grid of candidate tiles within bounds."""
+    return [(x, y) for x in range(x1, x2 + 1, step) for y in range(y1, y2 + 1, step)]
+
+
+LOCATION_TILE_SLOTS: dict[str, list[tuple[int, int]]] = {
+    loc: _gen_slots(*bounds) for loc, bounds in _LOCATION_BOUNDS.items()
+}
+
+# Backwards alias: old code uses DISTRICT_TILE_SLOTS
+DISTRICT_TILE_SLOTS = LOCATION_TILE_SLOTS
 
 SPRITE_KEYS = [
     "伊莎贝拉", "克劳斯", "亚当", "梅", "塔玛拉",
@@ -361,16 +371,26 @@ asyncio.run(call_llm())
             session["ability_md"], session["persona_md"], session["soul_md"]
         )
 
-        # Assign district using keyword matching (skip LLM for speed)
+        # Assign location using keyword matching (skip LLM for speed)
         combined = (session["ability_md"] + session["persona_md"]).lower()
-        if any(kw in combined for kw in ["engineer", "backend", "frontend", "algorithm", "code", "编程", "架构", "开发"]):
-            district = "engineering"
-        elif any(kw in combined for kw in ["product", "design", "产品", "设计", "运营"]):
-            district = "product"
-        elif any(kw in combined for kw in ["teacher", "professor", "学者", "教授", "导师", "哲学"]):
+        if any(kw in combined for kw in ["engineer", "backend", "frontend", "algorithm", "code", "编程", "架构", "开发", "制造", "修理"]):
+            district = "workshop"
+        elif any(kw in combined for kw in ["teacher", "professor", "学者", "教授", "导师", "学习", "研究", "哲学"]):
             district = "academy"
+        elif any(kw in combined for kw in ["librarian", "book", "书", "阅读", "知识", "写作"]):
+            district = "library"
+        elif any(kw in combined for kw in ["shop", "store", "卖", "商", "交易", "经济", "money"]):
+            district = "shop"
+        elif any(kw in combined for kw in ["admin", "govern", "市政", "行政", "管理", "政治"]):
+            district = "town_hall"
+        elif any(kw in combined for kw in ["drink", "bar", "酒", "社交", "聚会"]):
+            district = "tavern"
+        elif any(kw in combined for kw in ["coffee", "咖啡", "休闲", "放松", "chat"]):
+            district = "cafe"
+        elif any(kw in combined for kw in ["product", "design", "产品", "设计", "运营"]):
+            district = "cafe"
         else:
-            district = "free"
+            district = "central_plaza"
         session["district"] = district
 
         # Find tile, slug, create resident
@@ -486,15 +506,15 @@ async def _assign_district(client, model: str, name: str,
         if match:
             data = json.loads(match.group())
             district = data.get("district", "free")
-            if district in DISTRICT_TILE_SLOTS:
+            if district in LOCATION_TILE_SLOTS:
                 return district
     except Exception:
         pass
-    return "free"
+    return "central_plaza"
 
 
 async def _find_available_tile(db: AsyncSession, district: str) -> tuple[int, int]:
-    slots = DISTRICT_TILE_SLOTS.get(district, DISTRICT_TILE_SLOTS["free"])
+    slots = LOCATION_TILE_SLOTS.get(district, LOCATION_TILE_SLOTS.get("central_plaza", []))
     result = await db.execute(
         select(Resident.tile_x, Resident.tile_y).where(Resident.district == district)
     )
