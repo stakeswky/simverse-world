@@ -170,7 +170,7 @@ async def allocate_resident_location(
     if preferred_tile is not None:
         preferred_location_id = get_location_id_at(*preferred_tile)
         if preferred_location_id:
-            canonical_location_id = normalize_location_id(preferred_location_id, default=canonical_location_id)
+            canonical_location_id = normalize_location_id(preferred_location_id, default=canonical_location_id, allocatable_only=True)
             if not await _is_tile_occupied(db, *preferred_tile):
                 home_id = await allocate_home(db) if assign_housing else None
                 return canonical_location_id, preferred_tile[0], preferred_tile[1], home_id

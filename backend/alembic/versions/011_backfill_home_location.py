@@ -58,11 +58,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    conn = op.get_bind()
-    conn.execute(
-        text(
-            "UPDATE residents SET home_location_id = NULL "
-            "WHERE home_location_id IS NOT NULL "
-            "AND resident_type != 'player'"
-        )
-    )
+    # Intentional no-op: backfill data is safe to keep.
+    # Rolling back would destroy pre-existing home assignments
+    # that were set before this migration.
+    pass

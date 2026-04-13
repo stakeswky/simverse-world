@@ -256,6 +256,7 @@ async def allocate_home(db) -> str | None:
     rows = await db.execute(
         select(Resident.home_location_id, func.count())
         .where(Resident.home_location_id.isnot(None))
+        .where(Resident.resident_type != "player")
         .group_by(Resident.home_location_id)
     )
     occupied = {row[0]: row[1] for row in rows.all()}
