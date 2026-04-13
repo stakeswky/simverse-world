@@ -71,3 +71,43 @@ def test_find_path_heuristic_optimality():
     assert path is not None
     # Manhattan distance = 38, path length should be 39 (optimal)
     assert len(path) == 39
+
+
+def test_collision_tiles_excluded():
+    """Tiles blocked in the collision layer should not be walkable."""
+    from app.agent.pathfinder import _load_collision_tiles, get_walkable_tiles, reset_walkable_cache
+    reset_walkable_cache()
+    blocked = _load_collision_tiles()
+    if not blocked:
+        pytest.skip("Tilemap not available in test environment")
+    walkable = get_walkable_tiles()
+    # At least some blocked tiles should be excluded
+    excluded = blocked - walkable
+    # Some blocked tiles may be force-included (entrances), but most should be excluded
+    assert len(excluded) > len(blocked) * 0.9, f"Only {len(excluded)}/{len(blocked)} blocked tiles excluded"
+    reset_walkable_cache()
+
+
+def test_location_entrances_always_walkable():
+    """Location entrances and centers must be walkable even if on collision tiles."""
+    from app.agent.pathfinder import get_walkable_tiles, reset_walkable_cache, _get_forced_walkable
+    reset_walkable_cache()
+    walkable = get_walkable_tiles()
+    forced = _get_forced_walkable()
+    for tile in forced:
+        assert tile in walkable, f"Forced-walkable tile {tile} not in walkable set"
+    reset_walkable_cache()
+
+
+def test_walkable_count_with_collisions():
+    """Walkable set should be smaller than the full rectangular area when collisions loaded."""
+    from app.agent.pathfinder import get_walkable_tiles, reset_walkable_cache, _load_collision_tiles
+    reset_walkable_cache()
+    blocked = _load_collision_tiles()
+    if not blocked:
+        pytest.skip("Tilemap not available in test environment")
+    walkable = get_walkable_tiles()
+    full_rect = 120 * 88  # (134-14) * (100-12)
+    assert len(walkable) < full_rect, f"Walkable {len(walkable)} should be less than {full_rect}"
+    assert len(walkable) > full_rect * 0.5, f"Walkable {len(walkable)} too small, expected > {full_rect * 0.5}"
+    reset_walkable_cache()

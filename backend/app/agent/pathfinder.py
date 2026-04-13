@@ -1,28 +1,85 @@
 """A* pathfinding for resident movement on the tilemap grid."""
 import heapq
+import json
+import logging
+from pathlib import Path
 
 from app.agent.map_data import LOCATIONS
 
+logger = logging.getLogger(__name__)
+
 _walkable_tiles_cache: set[tuple[int, int]] | None = None
+
+# Rectangular bounds for the overall walkable area
+_WALKABLE_X_RANGE = range(14, 134)  # x=14..133
+_WALKABLE_Y_RANGE = range(12, 100)  # y=12..99
+
+_TILEMAP_PATH = Path(__file__).resolve().parents[3] / "frontend" / "public" / "assets" / "village" / "tilemap" / "tilemap.json"
+
+
+def _load_collision_tiles() -> set[tuple[int, int]]:
+    """Read the Collisions layer from tilemap.json and return blocked tile coordinates."""
+    try:
+        with open(_TILEMAP_PATH) as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        logger.warning("Could not load tilemap for collision data: %s", e)
+        return set()
+
+    map_width = data["width"]
+
+    for layer in data["layers"]:
+        if layer["name"] == "Collisions":
+            coll_data = layer["data"]
+            blocked: set[tuple[int, int]] = set()
+            for y in _WALKABLE_Y_RANGE:
+                for x in _WALKABLE_X_RANGE:
+                    idx = y * map_width + x
+                    if idx < len(coll_data) and coll_data[idx] != 0:
+                        blocked.add((x, y))
+            return blocked
+
+    logger.warning("No 'Collisions' layer found in tilemap")
+    return set()
+
+
+def _get_forced_walkable() -> set[tuple[int, int]]:
+    """Return tiles that must always be walkable (location entrances and centers)."""
+    forced: set[tuple[int, int]] = set()
+    for loc in LOCATIONS.values():
+        if "entrance" in loc:
+            forced.add(tuple(loc["entrance"]))
+        if "center" in loc:
+            forced.add(tuple(loc["center"]))
+    return forced
 
 
 def get_walkable_tiles() -> set[tuple[int, int]]:
     """Return the set of all walkable tile coordinates.
 
-    Derives walkable areas from LOCATIONS bounds, covering all named
-    locations plus connecting corridors between them.
+    Derives walkable tiles from the rectangular map bounds, subtracts
+    collision-layer blocked tiles, and force-includes all location
+    entrances and centers.
     """
     global _walkable_tiles_cache
     if _walkable_tiles_cache is not None:
         return _walkable_tiles_cache
 
+    # Start with full rectangular area
     tiles: set[tuple[int, int]] = set()
-
-    # Full-area walkable zone covering all locations and connecting corridors.
-    # Range x=14..133, y=12..99 is a superset of all LOCATIONS bounds.
-    for x in range(14, 134):
-        for y in range(12, 100):
+    for x in _WALKABLE_X_RANGE:
+        for y in _WALKABLE_Y_RANGE:
             tiles.add((x, y))
+
+    # Subtract collision-layer blocked tiles
+    blocked = _load_collision_tiles()
+    if blocked:
+        tiles -= blocked
+        logger.info("Loaded %d collision tiles, effective walkable: %d", len(blocked), len(tiles))
+
+    # Force-add location entrances and centers (always reachable)
+    forced = _get_forced_walkable()
+    tiles |= forced
 
     _walkable_tiles_cache = tiles
     return tiles
