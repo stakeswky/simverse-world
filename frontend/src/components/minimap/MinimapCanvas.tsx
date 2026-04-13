@@ -66,7 +66,7 @@ export function MinimapCanvas({ width = 180, height = 130 }: Props) {
       ref={canvasRef}
       width={width}
       height={height}
-      style={{ display: 'block', borderRadius: width > 200 ? 10 : 6 }}
+      style={{ display: 'block', borderRadius: width > 200 ? 10 : 6, pointerEvents: 'none' }}
     />
   )
 }
