@@ -6,13 +6,17 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agent.map_data import get_location_by_id
 from app.models.user import User
 from app.models.resident import Resident
+from app.services.forge_service import allocate_resident_location
 
 # Central Plaza spawn point (tile coordinates)
-CENTRAL_PLAZA_X = 76
-CENTRAL_PLAZA_Y = 50
-SPAWN_RADIUS = 5
+CENTRAL_PLAZA_LOCATION_ID = "central_plaza"
+_CENTRAL_PLAZA = get_location_by_id(CENTRAL_PLAZA_LOCATION_ID) or {"center": (75, 56), "bounds": (55, 54, 95, 58)}
+CENTRAL_PLAZA_X, CENTRAL_PLAZA_Y = _CENTRAL_PLAZA["center"]
+_x1, _y1, _x2, _y2 = _CENTRAL_PLAZA["bounds"]
+SPAWN_RADIUS = min((CENTRAL_PLAZA_X - _x1), (_x2 - CENTRAL_PLAZA_X), (CENTRAL_PLAZA_Y - _y1), (_y2 - CENTRAL_PLAZA_Y))
 TILE_SIZE = 32
 
 
@@ -49,9 +53,11 @@ async def create_player_resident(
     if user.player_resident_id:
         raise ValueError(f"User {user_id} already has a player resident")
 
-    # Generate spawn position near Central Plaza (tile coords)
-    spawn_x = CENTRAL_PLAZA_X + random.randint(-SPAWN_RADIUS, SPAWN_RADIUS)
-    spawn_y = CENTRAL_PLAZA_Y + random.randint(-SPAWN_RADIUS, SPAWN_RADIUS)
+    # Generate a preferred spawn position near Central Plaza, then canonicalize through the shared allocator.
+    preferred_spawn = (
+        CENTRAL_PLAZA_X + random.randint(-SPAWN_RADIUS, SPAWN_RADIUS),
+        CENTRAL_PLAZA_Y + random.randint(-SPAWN_RADIUS, SPAWN_RADIUS),
+    )
 
     # Generate unique slug
     slug = _generate_player_slug(name)
@@ -59,10 +65,18 @@ async def create_player_resident(
     if existing.scalar_one_or_none():
         slug = f"{slug}-{uuid.uuid4().hex[:6]}"
 
+    district, spawn_x, spawn_y, _home = await allocate_resident_location(
+        db,
+        requested_location_id=CENTRAL_PLAZA_LOCATION_ID,
+        preferred_tile=preferred_spawn,
+        default_location_id=CENTRAL_PLAZA_LOCATION_ID,
+        assign_housing=False,
+    )
+
     resident = Resident(
         slug=slug,
         name=name,
-        district="free",
+        district=district,
         status="idle",
         resident_type="player",
         reply_mode=reply_mode,

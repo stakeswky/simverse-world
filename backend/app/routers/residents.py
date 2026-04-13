@@ -17,7 +17,7 @@ from app.services.version_service import create_version_snapshot, get_versions
 from app.services.auth_service import get_current_user
 from app.services.scoring_service import compute_star_rating
 from app.services.sbti_service import compute_sbti, update_meta_with_sbti
-from app.services.forge_service import DISTRICT_TILE_SLOTS, _find_available_tile, _generate_slug, SPRITE_KEYS
+from app.services.forge_service import allocate_resident_location, _generate_slug, SPRITE_KEYS
 
 router = APIRouter(prefix="/residents", tags=["residents"])
 
@@ -133,17 +133,12 @@ async def import_resident(
 
     star_rating = compute_star_rating(r_score)
 
-    # Auto-assign district based on content
-    district = "free"
-    combined = (ability_md + persona_md).lower()
-    if any(kw in combined for kw in ["backend", "frontend", "engineer", "algorithm", "devops", "golang", "python", "rust", "java"]):
-        district = "engineering"
-    elif any(kw in combined for kw in ["product", "design", "analyst", "marketing", "operations"]):
-        district = "product"
-    elif any(kw in combined for kw in ["professor", "teacher", "mentor", "philosopher", "historian"]):
-        district = "academy"
-
-    tile_x, tile_y = await _find_available_tile(db, district)
+    district, tile_x, tile_y, home_loc_id = await allocate_resident_location(
+        db,
+        ability_text=ability_md,
+        persona_text=persona_md,
+        soul_text=soul_md,
+    )
 
     # Compute SBTI personality (non-blocking: skip if fails)
     final_meta = {**meta_json, "origin": "import"}
@@ -168,6 +163,7 @@ async def import_resident(
         tile_x=tile_x,
         tile_y=tile_y,
         star_rating=star_rating,
+        home_location_id=home_loc_id,
     )
     db.add(resident)
     await db.commit()

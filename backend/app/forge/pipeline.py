@@ -93,7 +93,7 @@ class ForgePipeline:
 
     async def _create_resident(self, session: ForgeSession):
         """Create a Resident from a completed forge session."""
-        from app.services.forge_service import DISTRICT_TILE_SLOTS, SPRITE_KEYS
+        from app.services.forge_service import SPRITE_KEYS, allocate_resident_location
         from app.services.coin_service import reward
         from app.services.scoring_service import compute_star_rating
 
@@ -108,27 +108,12 @@ class ForgePipeline:
         slug = re.sub(r'[^\w\u4e00-\u9fff-]', '-', slug)
         slug = re.sub(r'-+', '-', slug).strip('-') or f"resident-{session.id[:8]}"
 
-        # Determine district from ability text
-        district = "free"
-        text = (ability_md + persona_md).lower()
-        if any(k in text for k in ("工程", "代码", "编程", "engineer", "code", "dev")):
-            district = "engineering"
-        elif any(k in text for k in ("产品", "设计", "product", "design", "创业")):
-            district = "product"
-        elif any(k in text for k in ("学术", "研究", "教育", "academy", "research", "教授")):
-            district = "academy"
-
-        # Find available tile
-        slots = DISTRICT_TILE_SLOTS.get(district, DISTRICT_TILE_SLOTS["free"])
-        result = await self._db.execute(
-            select(Resident.tile_x, Resident.tile_y).where(Resident.district == district)
+        district, tile_x, tile_y, home_loc_id = await allocate_resident_location(
+            self._db,
+            ability_text=ability_md,
+            persona_text=persona_md,
+            soul_text=soul_md,
         )
-        occupied = {(r.tile_x, r.tile_y) for r in result.all()}
-        tile_x, tile_y = slots[0]
-        for x, y in slots:
-            if (x, y) not in occupied:
-                tile_x, tile_y = x, y
-                break
 
         resident = Resident(
             slug=slug, name=name, district=district, status="idle", heat=10,
@@ -137,6 +122,7 @@ class ForgePipeline:
             meta_json={"origin": "forge"},
             sprite_key=random.choice(SPRITE_KEYS),
             tile_x=tile_x, tile_y=tile_y, star_rating=2,
+            home_location_id=home_loc_id,
         )
         self._db.add(resident)
         await self._db.flush()

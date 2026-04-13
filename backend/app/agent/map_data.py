@@ -246,3 +246,17 @@ def assign_home(occupied: dict[str, int]) -> str | None:
         if current < capacity:
             return loc_id
     return None
+
+
+async def allocate_home(db) -> str | None:
+    """Query current housing occupancy and assign the next available home."""
+    from sqlalchemy import select, func
+    from app.models.resident import Resident
+
+    rows = await db.execute(
+        select(Resident.home_location_id, func.count())
+        .where(Resident.home_location_id.isnot(None))
+        .group_by(Resident.home_location_id)
+    )
+    occupied = {row[0]: row[1] for row in rows.all()}
+    return assign_home(occupied)
