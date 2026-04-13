@@ -17,6 +17,12 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
     headers: { ...authHeaders(), ...(options.headers as Record<string, string> || {}) },
   })
   if (!resp.ok) {
+    if (resp.status === 401) {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      window.location.href = '/login'
+      throw new Error('Session expired')
+    }
     const body = await resp.text()
     throw new Error(`API ${resp.status}: ${body}`)
   }
