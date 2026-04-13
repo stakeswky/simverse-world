@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ResidentListItem(BaseModel):
@@ -56,5 +56,5 @@ class ResidentImportResponse(BaseModel):
 
 class PlayerPositionUpdate(BaseModel):
     """Request to update the current user's player position."""
-    tile_x: int
-    tile_y: int
+    tile_x: int = Field(ge=0, le=139)
+    tile_y: int = Field(ge=0, le=99)

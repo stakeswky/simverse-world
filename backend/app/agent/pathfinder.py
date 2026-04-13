@@ -18,15 +18,8 @@ def get_walkable_tiles() -> set[tuple[int, int]]:
 
     tiles: set[tuple[int, int]] = set()
 
-    # All named location interiors are walkable
-    for loc in LOCATIONS.values():
-        x1, y1, x2, y2 = loc["bounds"]
-        for x in range(x1, x2 + 1):
-            for y in range(y1, y2 + 1):
-                tiles.add((x, y))
-
-    # Full-area walkable zone connecting all three zones and outdoor areas.
-    # Covers x=14..133, y=12..99 (includes town_entrance at y=85-99).
+    # Full-area walkable zone covering all locations and connecting corridors.
+    # Range x=14..133, y=12..99 is a superset of all LOCATIONS bounds.
     for x in range(14, 134):
         for y in range(12, 100):
             tiles.add((x, y))

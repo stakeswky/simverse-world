@@ -51,19 +51,12 @@ from app.models.resident import Resident
 _sessions: dict[str, dict[str, Any]] = {}
 
 # Location-based tile slots for new resident placement.
-# Each location maps to a grid of candidate tiles (step=2 for spacing).
+# Derived from map_data.LOCATIONS to avoid duplication.
+from app.agent.map_data import LOCATIONS as _MAP_LOCATIONS
+
 _LOCATION_BOUNDS = {
-    "academy":       (15, 18, 42, 34),
-    "tavern":        (72, 13, 83, 26),
-    "cafe":          (53, 14, 62, 26),
-    "workshop":      (108, 20, 124, 34),
-    "library":       (57, 43, 70, 53),
-    "shop":          (75, 43, 93, 53),
-    "town_hall":     (106, 45, 132, 62),
-    "north_path":    (15, 35, 135, 42),
-    "central_plaza": (55, 54, 95, 58),
-    "south_lawn":    (15, 76, 99, 83),
-    "town_entrance": (50, 85, 90, 99),
+    k: v["bounds"] for k, v in _MAP_LOCATIONS.items()
+    if v["type"] not in ("private", "apartment")
 }
 
 

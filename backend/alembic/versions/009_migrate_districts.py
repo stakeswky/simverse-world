@@ -5,6 +5,7 @@ Revises: 008_home_location
 Create Date: 2026-04-12
 """
 from alembic import op
+from sqlalchemy import text
 
 revision = "009_migrate_districts"
 down_revision = "008_home_location"
@@ -34,7 +35,7 @@ def upgrade() -> None:
     conn = op.get_bind()
     # Read all residents with their tile coordinates
     rows = conn.execute(
-        op.f.sa.text("SELECT id, tile_x, tile_y FROM residents")
+        text("SELECT id, tile_x, tile_y FROM residents")
     ).fetchall()
 
     for row in rows:
@@ -53,7 +54,7 @@ def upgrade() -> None:
             new_district = "outdoor"
 
         conn.execute(
-            op.f.sa.text(
+            text(
                 "UPDATE residents SET district = :district WHERE id = :id"
             ),
             {"district": new_district, "id": resident_id},
@@ -65,7 +66,7 @@ def downgrade() -> None:
     # Reverse: map old district values back
     # academy/engineering → engineering, product → product, free → free
     rows = conn.execute(
-        op.f.sa.text("SELECT id, district FROM residents")
+        text("SELECT id, district FROM residents")
     ).fetchall()
 
     for row in rows:
@@ -85,7 +86,7 @@ def downgrade() -> None:
             old_district = "free"
 
         conn.execute(
-            op.f.sa.text(
+            text(
                 "UPDATE residents SET district = :district WHERE id = :id"
             ),
             {"district": old_district, "id": resident_id},
