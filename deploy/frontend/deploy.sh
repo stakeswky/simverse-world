@@ -5,7 +5,7 @@ set -euo pipefail
 # Usage: VITE_API_URL=https://api.example.com ./deploy.sh
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-FRONTEND_DIR="$SCRIPT_DIR/../../.worktrees/mvp-implementation/frontend"
+FRONTEND_DIR="$SCRIPT_DIR/../../frontend"
 
 echo "==> Building frontend..."
 cd "$FRONTEND_DIR"

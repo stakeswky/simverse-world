@@ -25,6 +25,7 @@ node_modules/
 # Build
 dist/
 build/
+.wrangler/
 
 # Database
 *.db
@@ -46,3 +47,4 @@ seed_local.py
 
 # Screenshots
 *.png
+.omx/
