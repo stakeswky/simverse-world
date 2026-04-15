@@ -64,6 +64,15 @@ DEFAULT_CONFIGS: dict[str, dict[str, object]] = {
         "portrait.api_key": settings.portrait_llm_api_key,
         "portrait.timeout": 180,
     },
+    "embedding": {
+        "embedding.provider": "ollama",
+        "embedding.dimensions": 1024,
+        "embedding.ollama.base_url": settings.ollama_base_url,
+        "embedding.ollama.model": settings.ollama_embed_model,
+        "embedding.siliconflow.api_key": "",
+        "embedding.siliconflow.base_url": "https://api.siliconflow.cn/v1",
+        "embedding.siliconflow.model": "Qwen/Qwen3-Embedding-8B",
+    },
 }
 
 VALID_GROUPS = set(DEFAULT_CONFIGS.keys()) | {"economy", "district", "oauth", "sprite", "user_llm", "portrait"}
@@ -97,6 +106,9 @@ async def _set_config(
     """Set a single config entry."""
     svc = ConfigService(db)
     await svc.set(key, value, group=group, updated_by=admin_id)
+    if group == "embedding":
+        from app.memory.providers.factory import invalidate_provider_cache
+        invalidate_provider_cache()
 
 
 async def _set_config_batch(
@@ -106,11 +118,16 @@ async def _set_config_batch(
 ) -> None:
     """Set multiple config entries at once."""
     svc = ConfigService(db)
+    touched_groups: set[str] = set()
     for entry in updates:
         await svc.set(
             entry["key"], entry["value"],
             group=entry["group"], updated_by=admin_id,
         )
+        touched_groups.add(entry["group"])
+    if "embedding" in touched_groups:
+        from app.memory.providers.factory import invalidate_provider_cache
+        invalidate_provider_cache()
 
 
 async def _get_all_groups(db: AsyncSession) -> list[str]:
