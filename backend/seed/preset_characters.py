@@ -1,5 +1,5 @@
 """
-Seed 10 original town residents into the database.
+Seed the 11 original town residents into the database.
 
 The cast is designed for the town itself (日常小镇风): every character has a
 job anchored to a named map location, a daily life that maps onto the agent
