@@ -286,6 +286,341 @@ it('registers through Chrome 149 navigator.modelContext', async () => {
 
 **Green gates：** 先跑上述 focused tests，再按 Task 0.1 用 Node 22 重跑原 34-test focused gate 加本 Task 新增 2 tests（合计 36）、原 336-test full gate 加新增 2 tests（合计 338）、lint、typecheck、disabled/enabled build、artifact/secret/clean checks。全部通过后提交 `fix(webmcp): support Chrome navigator model context`；commit body 必须包含实际 focused/full/lint/typecheck/build 输出的 `Verified-by:`。随后把这个修复 commit 作为新的 exact Day-0 SHA，从 Task 0.2 重新部署，并重新开始 Task 0.3 全部 live rows。未取得 ChatGPT 3/3 与 Chrome 149 3/3 仍禁止进入 Phase 1。
 
+#### Task 0.3b：仅在同文档路由 live RED 时用 AbortSignal 注销工具
+
+**触发事实：** 部署 `2a8c30a81f7e37705eba7019f8c80403bebee5bd` 后，Chrome `149.0.7827.155` 从 `/challenge` 用 `history.pushState()` 加 `popstate` 切到 `/town`，页面已渲染 Town，但 `navigator.modelContextTesting.listTools()` 仍返回 `simverse_get_challenge_status`，属于 stale tool。独立 contract probe 已证明 Chrome 149 的 `registerTool(tool, { signal })` 在 `signal.abort()` 后列表归零并发出 `WebMCP.toolsRemoved`。
+
+**文件：**
+
+- 修改 `frontend/src/webmcp/types.ts`
+- 修改 `frontend/src/webmcp/registerChallengeStatusTool.ts`
+- 修改 `frontend/src/webmcp/registerChallengeStatusTool.test.ts`
+- 修改 `frontend/src/pages/ChallengePage.tsx`
+- 修改 `frontend/src/pages/ChallengePage.test.tsx`
+
+**Red tests：** 注册器测试一覆盖两个页面 lease 的 StrictMode 式交接：第一个 signal abort 后同步挂入第二个 lease，host registration 仍只能调用一次且内部 signal 不能 abort；最后一个 lease abort 后内部 signal 必须 abort；再挂入第三个 lease必须产生全新 registration。测试二让第一轮 host registration 保持 pending，在最后 lease abort 后创建新 epoch，再让旧 epoch reject，断言旧失败不能删除新 record。测试三断言 test reset 会 abort 无外部 signal 的 permanent host registration。页面测试用真实 `<StrictMode>` setup-cleanup-setup，断言只注册一次且最终 unmount 后 host signal aborted。修改生产代码前运行新增测试，必须先因 `RegistrationOptions` 没有 `signal`、host 没收到 options、页面 cleanup/reset 不注销而 RED。
+
+`types.ts` 对现有接口只增加完整的注册 options：
+
+```ts
+export interface WebMcpRegistrationOptions {
+  readonly signal?: AbortSignal
+}
+
+export interface WebMcpModelContext {
+  registerTool(
+    definition: WebMcpToolDefinition,
+    options?: WebMcpRegistrationOptions,
+  ): void | Promise<void>
+}
+```
+
+`registerChallengeStatusTool.ts` 的完整 record、consumer 与清理 helper 为：
+
+```ts
+interface RegistrationOptions extends ToolOptions {
+  readonly enabled?: boolean
+  readonly navigator?: Navigator
+  readonly signal?: AbortSignal
+}
+
+interface RegistrationRecord {
+  readonly controller: AbortController
+  readonly consumerSignals: Set<AbortSignal>
+  permanent: boolean
+  cleanupScheduled: boolean
+  promise: Promise<WebMcpRegistrationState>
+}
+
+let registrations = new WeakMap<Document, RegistrationRecord>()
+let registrationRecords = new Set<RegistrationRecord>()
+
+function scheduleRegistrationCleanup(
+  toolDocument: Document,
+  record: RegistrationRecord,
+): void {
+  if (record.permanent || record.consumerSignals.size > 0 || record.cleanupScheduled) return
+  record.cleanupScheduled = true
+  queueMicrotask(() => {
+    record.cleanupScheduled = false
+    if (record.permanent || record.consumerSignals.size > 0) return
+    if (registrations.get(toolDocument) === record) registrations.delete(toolDocument)
+    registrationRecords.delete(record)
+    record.controller.abort()
+  })
+}
+
+function attachRegistrationConsumer(
+  toolDocument: Document,
+  record: RegistrationRecord,
+  signal?: AbortSignal,
+): boolean {
+  if (!signal) {
+    record.permanent = true
+    return true
+  }
+  if (signal.aborted) return false
+  if (record.consumerSignals.has(signal)) return true
+  record.consumerSignals.add(signal)
+  signal.addEventListener('abort', () => {
+    record.consumerSignals.delete(signal)
+    scheduleRegistrationCleanup(toolDocument, record)
+  }, { once: true })
+  return true
+}
+```
+
+`registerChallengeStatusTool()` 的完整 replacement 为：
+
+```ts
+export async function registerChallengeStatusTool(
+  options: RegistrationOptions = {},
+): Promise<WebMcpRegistrationState> {
+  if (!(options.enabled ?? isWebMcpEnabled())) return 'disabled'
+  if (options.signal?.aborted) return 'failed'
+
+  const toolDocument = options.document ?? currentDocument()
+  let modelContext: WebMcpModelContext
+  let registerTool: WebMcpModelContext['registerTool']
+  try {
+    if (!toolDocument) return 'unsupported'
+    const detectedModelContext = getModelContext(toolDocument, options.navigator)
+    if (!detectedModelContext) return 'unsupported'
+    const detectedRegisterTool = detectedModelContext.registerTool
+    if (typeof detectedRegisterTool !== 'function') return 'unsupported'
+    modelContext = detectedModelContext
+    registerTool = detectedRegisterTool
+  } catch {
+    return 'unsupported'
+  }
+
+  const existingRegistration = registrations.get(toolDocument)
+  if (existingRegistration) {
+    if (!attachRegistrationConsumer(toolDocument, existingRegistration, options.signal)) return 'failed'
+    return existingRegistration.promise
+  }
+
+  const controller = new AbortController()
+  const record: RegistrationRecord = {
+    controller,
+    consumerSignals: new Set<AbortSignal>(),
+    permanent: false,
+    cleanupScheduled: false,
+    promise: Promise.resolve('failed'),
+  }
+  if (!attachRegistrationConsumer(toolDocument, record, options.signal)) return 'failed'
+
+  const registration = Promise.resolve()
+    .then(() => registerTool.call(
+      modelContext,
+      createChallengeStatusTool({
+        document: toolDocument,
+        statusProvider: options.statusProvider,
+        clock: options.clock,
+      }),
+      { signal: controller.signal },
+    ))
+    .then(() => 'registered' as const)
+    .catch(() => {
+      if (registrations.get(toolDocument) === record) registrations.delete(toolDocument)
+      registrationRecords.delete(record)
+      controller.abort()
+      return 'failed' as const
+    })
+
+  record.promise = registration
+  registrations.set(toolDocument, record)
+  registrationRecords.add(record)
+  return registration
+}
+
+/** Test isolation only. Production registrations live for an active document or page lease. */
+export function resetWebMcpRegistrationsForTests(): void {
+  for (const record of registrationRecords) record.controller.abort()
+  registrationRecords = new Set<RegistrationRecord>()
+  registrations = new WeakMap<Document, RegistrationRecord>()
+}
+```
+
+`ChallengePage.tsx` 的完整 effect replacement 为：
+
+```ts
+useEffect(() => {
+  let active = true
+  const controller = new AbortController()
+
+  void registerChallengeStatusTool({ signal: controller.signal })
+    .then((state) => {
+      if (active) setRegistrationState(state)
+    })
+    .catch(() => {
+      if (active) setRegistrationState('failed')
+    })
+
+  return () => {
+    active = false
+    controller.abort()
+  }
+}, [])
+```
+
+`registerChallengeStatusTool.test.ts` 新增的完整 flush helper 与测试为：
+
+```ts
+async function flushRegistrationCleanup(): Promise<void> {
+  await new Promise<void>((resolve) => queueMicrotask(resolve))
+}
+
+it('keeps one host registration across a lifecycle handoff and aborts after the final lease', async () => {
+  const hostSignals: AbortSignal[] = []
+  const registerTool = vi.fn((
+    _tool: WebMcpToolDefinition,
+    options?: WebMcpRegistrationOptions,
+  ) => {
+    if (options?.signal) hostSignals.push(options.signal)
+  })
+  const toolDocument = createToolDocument()
+  const toolNavigator = createToolNavigator(registerTool)
+  const firstLease = new AbortController()
+
+  await expect(registerChallengeStatusTool({
+    document: toolDocument,
+    navigator: toolNavigator,
+    signal: firstLease.signal,
+    enabled: true,
+  })).resolves.toBe('registered')
+  expect(registerTool).toHaveBeenCalledTimes(1)
+  expect(hostSignals[0]?.aborted).toBe(false)
+
+  firstLease.abort()
+  const secondLease = new AbortController()
+  await expect(registerChallengeStatusTool({
+    document: toolDocument,
+    navigator: toolNavigator,
+    signal: secondLease.signal,
+    enabled: true,
+  })).resolves.toBe('registered')
+  await flushRegistrationCleanup()
+  expect(registerTool).toHaveBeenCalledTimes(1)
+  expect(hostSignals[0]?.aborted).toBe(false)
+
+  secondLease.abort()
+  await flushRegistrationCleanup()
+  expect(hostSignals[0]?.aborted).toBe(true)
+
+  const thirdLease = new AbortController()
+  await expect(registerChallengeStatusTool({
+    document: toolDocument,
+    navigator: toolNavigator,
+    signal: thirdLease.signal,
+    enabled: true,
+  })).resolves.toBe('registered')
+  expect(registerTool).toHaveBeenCalledTimes(2)
+  expect(hostSignals[1]?.aborted).toBe(false)
+})
+
+it('keeps an aborted pending registration epoch isolated from a fresh registration', async () => {
+  let rejectFirstRegistration: (reason?: unknown) => void = () => undefined
+  const firstHostRegistration = new Promise<void>((_resolve, reject) => {
+    rejectFirstRegistration = reject
+  })
+  const hostSignals: AbortSignal[] = []
+  const registerTool = vi.fn((
+    _tool: WebMcpToolDefinition,
+    options?: WebMcpRegistrationOptions,
+  ) => {
+    if (options?.signal) hostSignals.push(options.signal)
+    return hostSignals.length === 1 ? firstHostRegistration : Promise.resolve()
+  })
+  const toolDocument = createToolDocument()
+  const toolNavigator = createToolNavigator(registerTool)
+  const firstLease = new AbortController()
+  const firstState = registerChallengeStatusTool({
+    document: toolDocument,
+    navigator: toolNavigator,
+    signal: firstLease.signal,
+    enabled: true,
+  })
+  await flushRegistrationCleanup()
+  expect(registerTool).toHaveBeenCalledTimes(1)
+
+  firstLease.abort()
+  await flushRegistrationCleanup()
+  expect(hostSignals[0]?.aborted).toBe(true)
+
+  const secondLease = new AbortController()
+  await expect(registerChallengeStatusTool({
+    document: toolDocument,
+    navigator: toolNavigator,
+    signal: secondLease.signal,
+    enabled: true,
+  })).resolves.toBe('registered')
+  expect(registerTool).toHaveBeenCalledTimes(2)
+  expect(hostSignals[1]?.aborted).toBe(false)
+
+  rejectFirstRegistration(new Error('stale registration failed'))
+  await expect(firstState).resolves.toBe('failed')
+  await expect(registerChallengeStatusTool({
+    document: toolDocument,
+    navigator: toolNavigator,
+    signal: secondLease.signal,
+    enabled: true,
+  })).resolves.toBe('registered')
+  expect(registerTool).toHaveBeenCalledTimes(2)
+})
+
+it('aborts permanent host registrations during test reset', async () => {
+  let hostSignal: AbortSignal | undefined
+  const registerTool = vi.fn((
+    _tool: WebMcpToolDefinition,
+    options?: WebMcpRegistrationOptions,
+  ) => {
+    hostSignal = options?.signal
+  })
+  const toolDocument = createToolDocument(registerTool)
+
+  await expect(registerChallengeStatusTool({
+    document: toolDocument,
+    enabled: true,
+  })).resolves.toBe('registered')
+  expect(hostSignal?.aborted).toBe(false)
+
+  resetWebMcpRegistrationsForTests()
+  expect(hostSignal?.aborted).toBe(true)
+})
+```
+
+`ChallengePage.test.tsx` 新增测试为：
+
+```ts
+it('aborts the host registration when the challenge surface unmounts', async () => {
+  vi.stubEnv('VITE_WEBMCP_ENABLED', 'true')
+  const hostSignals: AbortSignal[] = []
+  const registerTool = vi.fn((
+    _tool: WebMcpToolDefinition,
+    options?: WebMcpRegistrationOptions,
+  ) => {
+    if (options?.signal) hostSignals.push(options.signal)
+  })
+  Object.defineProperty(navigator, 'modelContext', {
+    configurable: true,
+    value: { registerTool },
+  })
+  const rendered = render(
+    <StrictMode><MemoryRouter><ChallengePage /></MemoryRouter></StrictMode>,
+  )
+
+  await waitFor(() => expect(screen.getByText('Site Tool ready')).toBeInTheDocument())
+  expect(registerTool).toHaveBeenCalledTimes(1)
+  expect(hostSignals).toHaveLength(1)
+  expect(hostSignals[0]?.aborted).toBe(false)
+  rendered.unmount()
+  await waitFor(() => expect(hostSignals[0]?.aborted).toBe(true))
+})
+```
+
+两个测试文件都从 `types.ts` 导入 `WebMcpRegistrationOptions`；所有已有只关心第一个参数的 mock 继续允许第二个 options。若任一真实 Site Tool host 接受注册但忽略 `options.signal`、导致 route exit 后工具仍存在，该 host 的 live row 必须记 RED 并停止，不得用 reload、UI 隐藏或普通浏览器 fallback 冒充注销。**Green gates：** Node 22 focused 合计 40 tests、full 合计 342 tests，lint、typecheck、disabled/enabled build、artifact/secret/clean checks全部通过；真实 Chrome 149 本地产物同文档切到 `/town` 后工具数必须为 0，Back 回 `/challenge` 后必须为 1。提交 `fix(webmcp): unregister challenge tool on route exit`，再将新 commit 作为 exact Day-0 从 Task 0.2 重新部署，并完整重跑 Task 0.3。
+
 **实现：** `LIVE_GATE.md` 只写真实数据，固定表头如下：
 
 ```markdown
