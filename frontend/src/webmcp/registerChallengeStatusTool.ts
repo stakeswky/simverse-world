@@ -27,6 +27,15 @@ interface ToolOptions {
 interface RegistrationOptions extends ToolOptions {
   readonly enabled?: boolean
   readonly navigator?: Navigator
+  readonly signal?: AbortSignal
+}
+
+interface RegistrationRecord {
+  readonly controller: AbortController
+  readonly consumerSignals: Set<AbortSignal>
+  permanent: boolean
+  cleanupScheduled: boolean
+  promise: Promise<WebMcpRegistrationState>
 }
 
 const SAFE_TOOL_ERROR: ChallengeStatusToolError = Object.freeze({
@@ -43,7 +52,42 @@ const SAFE_INPUT_ERROR: ChallengeStatusToolError = Object.freeze({
   }),
 })
 
-let registrations = new WeakMap<Document, Promise<WebMcpRegistrationState>>()
+let registrations = new WeakMap<Document, RegistrationRecord>()
+let registrationRecords = new Set<RegistrationRecord>()
+
+function scheduleRegistrationCleanup(
+  toolDocument: Document,
+  record: RegistrationRecord,
+): void {
+  if (record.permanent || record.consumerSignals.size > 0 || record.cleanupScheduled) return
+  record.cleanupScheduled = true
+  queueMicrotask(() => {
+    record.cleanupScheduled = false
+    if (record.permanent || record.consumerSignals.size > 0) return
+    if (registrations.get(toolDocument) === record) registrations.delete(toolDocument)
+    registrationRecords.delete(record)
+    record.controller.abort()
+  })
+}
+
+function attachRegistrationConsumer(
+  toolDocument: Document,
+  record: RegistrationRecord,
+  signal?: AbortSignal,
+): boolean {
+  if (!signal) {
+    record.permanent = true
+    return true
+  }
+  if (signal.aborted) return false
+  if (record.consumerSignals.has(signal)) return true
+  record.consumerSignals.add(signal)
+  signal.addEventListener('abort', () => {
+    record.consumerSignals.delete(signal)
+    scheduleRegistrationCleanup(toolDocument, record)
+  }, { once: true })
+  return true
+}
 
 function currentDocument(): Document | undefined {
   return typeof document === 'undefined' ? undefined : document
@@ -130,6 +174,7 @@ export async function registerChallengeStatusTool(
   options: RegistrationOptions = {},
 ): Promise<WebMcpRegistrationState> {
   if (!(options.enabled ?? isWebMcpEnabled())) return 'disabled'
+  if (options.signal?.aborted) return 'failed'
 
   const toolDocument = options.document ?? currentDocument()
   let modelContext: WebMcpModelContext
@@ -147,25 +192,48 @@ export async function registerChallengeStatusTool(
   }
 
   const existingRegistration = registrations.get(toolDocument)
-  if (existingRegistration) return existingRegistration
+  if (existingRegistration) {
+    if (!attachRegistrationConsumer(toolDocument, existingRegistration, options.signal)) return 'failed'
+    return existingRegistration.promise
+  }
+
+  const controller = new AbortController()
+  const record: RegistrationRecord = {
+    controller,
+    consumerSignals: new Set<AbortSignal>(),
+    permanent: false,
+    cleanupScheduled: false,
+    promise: Promise.resolve('failed'),
+  }
+  if (!attachRegistrationConsumer(toolDocument, record, options.signal)) return 'failed'
 
   const registration = Promise.resolve()
-    .then(() => registerTool.call(modelContext, createChallengeStatusTool({
-      document: toolDocument,
-      statusProvider: options.statusProvider,
-      clock: options.clock,
-    })))
+    .then(() => registerTool.call(
+      modelContext,
+      createChallengeStatusTool({
+        document: toolDocument,
+        statusProvider: options.statusProvider,
+        clock: options.clock,
+      }),
+      { signal: controller.signal },
+    ))
     .then(() => 'registered' as const)
     .catch(() => {
-      registrations.delete(toolDocument)
+      if (registrations.get(toolDocument) === record) registrations.delete(toolDocument)
+      registrationRecords.delete(record)
+      controller.abort()
       return 'failed' as const
     })
 
-  registrations.set(toolDocument, registration)
+  record.promise = registration
+  registrations.set(toolDocument, record)
+  registrationRecords.add(record)
   return registration
 }
 
-/** Test isolation only. Production registrations live for the current document. */
+/** Test isolation only. Production registrations live for an active document or page lease. */
 export function resetWebMcpRegistrationsForTests(): void {
-  registrations = new WeakMap<Document, Promise<WebMcpRegistrationState>>()
+  for (const record of registrationRecords) record.controller.abort()
+  registrationRecords = new Set<RegistrationRecord>()
+  registrations = new WeakMap<Document, RegistrationRecord>()
 }

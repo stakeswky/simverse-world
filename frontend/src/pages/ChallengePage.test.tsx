@@ -7,7 +7,7 @@ import { ChallengePage } from './ChallengePage'
 import { getChallengeStatus } from '../webmcp/challengeStatus'
 import { resetAgentActivityForTests } from '../webmcp/activity'
 import { resetWebMcpRegistrationsForTests } from '../webmcp/registerChallengeStatusTool'
-import type { WebMcpToolDefinition } from '../webmcp/types'
+import type { WebMcpRegistrationOptions, WebMcpToolDefinition } from '../webmcp/types'
 
 afterEach(() => {
   cleanup()
@@ -73,6 +73,31 @@ describe('ChallengePage', () => {
 
     await waitFor(() => expect(screen.getByText('Site Tool ready')).toBeInTheDocument())
     expect(registerTool).toHaveBeenCalledTimes(1)
+  })
+
+  it('aborts the host registration when the challenge surface unmounts', async () => {
+    vi.stubEnv('VITE_WEBMCP_ENABLED', 'true')
+    const hostSignals: AbortSignal[] = []
+    const registerTool = vi.fn((
+      _tool: WebMcpToolDefinition,
+      options?: WebMcpRegistrationOptions,
+    ) => {
+      if (options?.signal) hostSignals.push(options.signal)
+    })
+    Object.defineProperty(navigator, 'modelContext', {
+      configurable: true,
+      value: { registerTool },
+    })
+    const rendered = render(
+      <StrictMode><MemoryRouter><ChallengePage /></MemoryRouter></StrictMode>,
+    )
+
+    await waitFor(() => expect(screen.getByText('Site Tool ready')).toBeInTheDocument())
+    expect(registerTool).toHaveBeenCalledTimes(1)
+    expect(hostSignals).toHaveLength(1)
+    expect(hostSignals[0]?.aborted).toBe(false)
+    rendered.unmount()
+    await waitFor(() => expect(hostSignals[0]?.aborted).toBe(true))
   })
 
   it('uses full-document links when leaving the challenge surface', () => {

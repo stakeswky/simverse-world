@@ -47,8 +47,9 @@ export function ChallengePage() {
 
   useEffect(() => {
     let active = true
+    const controller = new AbortController()
 
-    void registerChallengeStatusTool()
+    void registerChallengeStatusTool({ signal: controller.signal })
       .then((state) => {
         if (active) setRegistrationState(state)
       })
@@ -58,6 +59,7 @@ export function ChallengePage() {
 
     return () => {
       active = false
+      controller.abort()
     }
   }, [])
 

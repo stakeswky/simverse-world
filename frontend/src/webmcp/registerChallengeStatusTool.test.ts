@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { getAgentActivityHistory, resetAgentActivityForTests } from './activity'
 import { getChallengeStatus } from './challengeStatus'
-import type { WebMcpModelContext, WebMcpToolDefinition } from './types'
+import type {
+  WebMcpModelContext,
+  WebMcpRegistrationOptions,
+  WebMcpToolDefinition,
+} from './types'
 import {
   CHALLENGE_STATUS_TOOL_NAME,
   createChallengeStatusTool,
@@ -27,6 +31,10 @@ function createToolNavigator(registerTool: WebMcpModelContext['registerTool']): 
     value: { registerTool },
   })
   return toolNavigator
+}
+
+async function flushRegistrationCleanup(): Promise<void> {
+  await new Promise<void>((resolve) => queueMicrotask(resolve))
 }
 
 afterEach(() => {
@@ -56,9 +64,128 @@ describe('registerChallengeStatusTool', () => {
     })).resolves.toBe('registered')
 
     expect(registerTool).toHaveBeenCalledTimes(1)
-    expect(registerTool).toHaveBeenCalledWith(expect.objectContaining({
-      name: CHALLENGE_STATUS_TOOL_NAME,
-    }))
+    expect(registerTool).toHaveBeenCalledWith(
+      expect.objectContaining({ name: CHALLENGE_STATUS_TOOL_NAME }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    )
+  })
+
+  it('keeps one host registration across a lifecycle handoff and aborts after the final lease', async () => {
+    const hostSignals: AbortSignal[] = []
+    const registerTool = vi.fn((
+      _tool: WebMcpToolDefinition,
+      options?: WebMcpRegistrationOptions,
+    ) => {
+      if (options?.signal) hostSignals.push(options.signal)
+    })
+    const toolDocument = createToolDocument()
+    const toolNavigator = createToolNavigator(registerTool)
+    const firstLease = new AbortController()
+
+    await expect(registerChallengeStatusTool({
+      document: toolDocument,
+      navigator: toolNavigator,
+      signal: firstLease.signal,
+      enabled: true,
+    })).resolves.toBe('registered')
+    expect(registerTool).toHaveBeenCalledTimes(1)
+    expect(hostSignals[0]?.aborted).toBe(false)
+
+    firstLease.abort()
+    const secondLease = new AbortController()
+    await expect(registerChallengeStatusTool({
+      document: toolDocument,
+      navigator: toolNavigator,
+      signal: secondLease.signal,
+      enabled: true,
+    })).resolves.toBe('registered')
+    await flushRegistrationCleanup()
+    expect(registerTool).toHaveBeenCalledTimes(1)
+    expect(hostSignals[0]?.aborted).toBe(false)
+
+    secondLease.abort()
+    await flushRegistrationCleanup()
+    expect(hostSignals[0]?.aborted).toBe(true)
+
+    const thirdLease = new AbortController()
+    await expect(registerChallengeStatusTool({
+      document: toolDocument,
+      navigator: toolNavigator,
+      signal: thirdLease.signal,
+      enabled: true,
+    })).resolves.toBe('registered')
+    expect(registerTool).toHaveBeenCalledTimes(2)
+    expect(hostSignals[1]?.aborted).toBe(false)
+  })
+
+  it('keeps an aborted pending registration epoch isolated from a fresh registration', async () => {
+    let rejectFirstRegistration: (reason?: unknown) => void = () => undefined
+    const firstHostRegistration = new Promise<void>((_resolve, reject) => {
+      rejectFirstRegistration = reject
+    })
+    const hostSignals: AbortSignal[] = []
+    const registerTool = vi.fn((
+      _tool: WebMcpToolDefinition,
+      options?: WebMcpRegistrationOptions,
+    ) => {
+      if (options?.signal) hostSignals.push(options.signal)
+      return hostSignals.length === 1 ? firstHostRegistration : Promise.resolve()
+    })
+    const toolDocument = createToolDocument()
+    const toolNavigator = createToolNavigator(registerTool)
+    const firstLease = new AbortController()
+    const firstState = registerChallengeStatusTool({
+      document: toolDocument,
+      navigator: toolNavigator,
+      signal: firstLease.signal,
+      enabled: true,
+    })
+    await flushRegistrationCleanup()
+    expect(registerTool).toHaveBeenCalledTimes(1)
+
+    firstLease.abort()
+    await flushRegistrationCleanup()
+    expect(hostSignals[0]?.aborted).toBe(true)
+
+    const secondLease = new AbortController()
+    await expect(registerChallengeStatusTool({
+      document: toolDocument,
+      navigator: toolNavigator,
+      signal: secondLease.signal,
+      enabled: true,
+    })).resolves.toBe('registered')
+    expect(registerTool).toHaveBeenCalledTimes(2)
+    expect(hostSignals[1]?.aborted).toBe(false)
+
+    rejectFirstRegistration(new Error('stale registration failed'))
+    await expect(firstState).resolves.toBe('failed')
+    await expect(registerChallengeStatusTool({
+      document: toolDocument,
+      navigator: toolNavigator,
+      signal: secondLease.signal,
+      enabled: true,
+    })).resolves.toBe('registered')
+    expect(registerTool).toHaveBeenCalledTimes(2)
+  })
+
+  it('aborts permanent host registrations during test reset', async () => {
+    let hostSignal: AbortSignal | undefined
+    const registerTool = vi.fn((
+      _tool: WebMcpToolDefinition,
+      options?: WebMcpRegistrationOptions,
+    ) => {
+      hostSignal = options?.signal
+    })
+    const toolDocument = createToolDocument(registerTool)
+
+    await expect(registerChallengeStatusTool({
+      document: toolDocument,
+      enabled: true,
+    })).resolves.toBe('registered')
+    expect(hostSignal?.aborted).toBe(false)
+
+    resetWebMcpRegistrationsForTests()
+    expect(hostSignal?.aborted).toBe(true)
   })
 
   it('degrades safely when WebMCP feature detection itself throws', async () => {

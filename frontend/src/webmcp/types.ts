@@ -14,8 +14,15 @@ export interface WebMcpToolDefinition {
   readonly execute: (input?: unknown) => unknown | Promise<unknown>
 }
 
+export interface WebMcpRegistrationOptions {
+  readonly signal?: AbortSignal
+}
+
 export interface WebMcpModelContext {
-  registerTool(definition: WebMcpToolDefinition): void | Promise<void>
+  registerTool(
+    definition: WebMcpToolDefinition,
+    options?: WebMcpRegistrationOptions,
+  ): void | Promise<void>
 }
 
 export type WebMcpDocument = Document & {
