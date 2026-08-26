@@ -284,7 +284,7 @@ it('registers through Chrome 149 navigator.modelContext', async () => {
 })
 ```
 
-**Green gates：** 先跑上述 focused tests，再按 Task 0.1 用 Node 22 重跑 34-test focused gate、336-test full gate、lint、typecheck、disabled/enabled build、artifact/secret/clean checks。全部通过后提交 `fix(webmcp): support Chrome navigator model context`；commit body 必须包含实际 focused/full/lint/typecheck/build 输出的 `Verified-by:`。随后把这个修复 commit 作为新的 exact Day-0 SHA，从 Task 0.2 重新部署，并重新开始 Task 0.3 全部 live rows。未取得 ChatGPT 3/3 与 Chrome 149 3/3 仍禁止进入 Phase 1。
+**Green gates：** 先跑上述 focused tests，再按 Task 0.1 用 Node 22 重跑原 34-test focused gate 加本 Task 新增 2 tests（合计 36）、原 336-test full gate 加新增 2 tests（合计 338）、lint、typecheck、disabled/enabled build、artifact/secret/clean checks。全部通过后提交 `fix(webmcp): support Chrome navigator model context`；commit body 必须包含实际 focused/full/lint/typecheck/build 输出的 `Verified-by:`。随后把这个修复 commit 作为新的 exact Day-0 SHA，从 Task 0.2 重新部署，并重新开始 Task 0.3 全部 live rows。未取得 ChatGPT 3/3 与 Chrome 149 3/3 仍禁止进入 Phase 1。
 
 **实现：** `LIVE_GATE.md` 只写真实数据，固定表头如下：
 

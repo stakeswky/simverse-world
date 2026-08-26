@@ -26,6 +26,7 @@ interface ToolOptions {
 
 interface RegistrationOptions extends ToolOptions {
   readonly enabled?: boolean
+  readonly navigator?: Navigator
 }
 
 const SAFE_TOOL_ERROR: ChallengeStatusToolError = Object.freeze({
@@ -135,7 +136,7 @@ export async function registerChallengeStatusTool(
   let registerTool: WebMcpModelContext['registerTool']
   try {
     if (!toolDocument) return 'unsupported'
-    const detectedModelContext = getModelContext(toolDocument)
+    const detectedModelContext = getModelContext(toolDocument, options.navigator)
     if (!detectedModelContext) return 'unsupported'
     const detectedRegisterTool = detectedModelContext.registerTool
     if (typeof detectedRegisterTool !== 'function') return 'unsupported'

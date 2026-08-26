@@ -15,6 +15,7 @@ afterEach(() => {
   resetAgentActivityForTests()
   vi.unstubAllEnvs()
   Reflect.deleteProperty(document, 'modelContext')
+  Reflect.deleteProperty(navigator, 'modelContext')
 })
 
 describe('ChallengePage', () => {
@@ -58,6 +59,20 @@ describe('ChallengePage', () => {
     })
     expect(screen.getByText('WebMCP Challenge Town')).toBeInTheDocument()
     expect(screen.getByText('Harbor district tension')).toBeInTheDocument()
+  })
+
+  it('registers through Chrome 149 navigator.modelContext', async () => {
+    vi.stubEnv('VITE_WEBMCP_ENABLED', 'true')
+    const registerTool = vi.fn()
+    Object.defineProperty(navigator, 'modelContext', {
+      configurable: true,
+      value: { registerTool },
+    })
+
+    render(<MemoryRouter><ChallengePage /></MemoryRouter>)
+
+    await waitFor(() => expect(screen.getByText('Site Tool ready')).toBeInTheDocument())
+    expect(registerTool).toHaveBeenCalledTimes(1)
   })
 
   it('uses full-document links when leaving the challenge surface', () => {

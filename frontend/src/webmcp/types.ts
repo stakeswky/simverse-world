@@ -22,6 +22,23 @@ export type WebMcpDocument = Document & {
   readonly modelContext?: WebMcpModelContext
 }
 
-export function getModelContext(toolDocument: Document): WebMcpModelContext | undefined {
-  return (toolDocument as WebMcpDocument).modelContext
+export type WebMcpNavigator = Navigator & {
+  readonly modelContext?: WebMcpModelContext
+}
+
+function navigatorForDocument(toolDocument: Document): Navigator | undefined {
+  if (toolDocument.defaultView) return toolDocument.defaultView.navigator
+  if (typeof document !== 'undefined' && toolDocument === document && typeof navigator !== 'undefined') {
+    return navigator
+  }
+  return undefined
+}
+
+export function getModelContext(
+  toolDocument: Document,
+  toolNavigator: Navigator | undefined = navigatorForDocument(toolDocument),
+): WebMcpModelContext | undefined {
+  const documentContext = (toolDocument as WebMcpDocument).modelContext
+  if (documentContext) return documentContext
+  return (toolNavigator as WebMcpNavigator | undefined)?.modelContext
 }

@@ -20,6 +20,15 @@ function createToolDocument(registerTool?: WebMcpModelContext['registerTool']): 
   return toolDocument
 }
 
+function createToolNavigator(registerTool: WebMcpModelContext['registerTool']): Navigator {
+  const toolNavigator = {} as Navigator
+  Object.defineProperty(toolNavigator, 'modelContext', {
+    configurable: true,
+    value: { registerTool },
+  })
+  return toolNavigator
+}
+
 afterEach(() => {
   resetWebMcpRegistrationsForTests()
   resetAgentActivityForTests()
@@ -33,6 +42,23 @@ describe('registerChallengeStatusTool', () => {
 
     await expect(registerChallengeStatusTool({ document: toolDocument, enabled: true }))
       .resolves.toBe('unsupported')
+  })
+
+  it('registers through the Chrome 149 navigator.modelContext surface', async () => {
+    const registerTool = vi.fn().mockResolvedValue(undefined)
+    const toolDocument = createToolDocument()
+    const toolNavigator = createToolNavigator(registerTool)
+
+    await expect(registerChallengeStatusTool({
+      document: toolDocument,
+      navigator: toolNavigator,
+      enabled: true,
+    })).resolves.toBe('registered')
+
+    expect(registerTool).toHaveBeenCalledTimes(1)
+    expect(registerTool).toHaveBeenCalledWith(expect.objectContaining({
+      name: CHALLENGE_STATUS_TOOL_NAME,
+    }))
   })
 
   it('degrades safely when WebMCP feature detection itself throws', async () => {
