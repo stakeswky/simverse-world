@@ -26,6 +26,10 @@ vi.mock('./pages/WatchPage', () => ({
   WatchPage: () => <main data-testid="watch-page">Agent Viewer</main>,
 }))
 
+vi.mock('./pages/ChallengePage', () => ({
+  ChallengePage: () => <main data-testid="challenge-page">WebMCP Challenge</main>,
+}))
+
 vi.mock('./pages/AdminPage', () => ({
   AdminPage: () => <main data-testid="admin-page">Admin Console</main>,
 }))
@@ -119,13 +123,17 @@ describe('public and authenticated routes', () => {
     expect(screen.queryByTestId('game-page')).not.toBeInTheDocument()
   })
 
-  it('exposes /town and /watch without a player login', async () => {
+  it('exposes /town, /watch, and /challenge without a player login', async () => {
     const town = renderRoute('/town')
     expect(await screen.findByTestId('town-page')).toBeInTheDocument()
     town.unmount()
 
     renderRoute('/watch')
     expect(await screen.findByTestId('watch-page')).toBeInTheDocument()
+    cleanup()
+
+    renderRoute('/challenge')
+    expect(await screen.findByTestId('challenge-page')).toBeInTheDocument()
   })
 
   it('normalizes trailing-slash spectator routes without mounting gameplay overlays', async () => {
@@ -146,6 +154,13 @@ describe('public and authenticated routes', () => {
 
     renderRoute('/watch/')
     expect(await screen.findByTestId('watch-page')).toBeInTheDocument()
+    expect(screen.queryByText('连接已断开，正在重连…')).not.toBeInTheDocument()
+    expect(screen.queryByText('Hidden Achievement')).not.toBeInTheDocument()
+    expect(screen.queryByText('不应显示')).not.toBeInTheDocument()
+    cleanup()
+
+    renderRoute('/challenge/')
+    expect(await screen.findByTestId('challenge-page')).toBeInTheDocument()
     expect(screen.queryByText('连接已断开，正在重连…')).not.toBeInTheDocument()
     expect(screen.queryByText('Hidden Achievement')).not.toBeInTheDocument()
     expect(screen.queryByText('不应显示')).not.toBeInTheDocument()
