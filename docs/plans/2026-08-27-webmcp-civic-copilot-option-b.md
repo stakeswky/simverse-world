@@ -167,6 +167,125 @@ curl -fsS https://simverse.world/challenge | rg -q 'Simverse World'
 
 **测试动作：** 对 exact deployed commit 在 ChatGPT 内置浏览器和 Chrome 149 分别执行三轮：direct open、discover、call、visible receipt、leave `/town`、Back、Forward、refresh、programmatic same-document transition、BFCache。另用普通浏览器 fresh profile 执行 1 轮，断言页面完整、无 modelContext 也不报错且不声称工具可用。Day-0 没有 backend session/approval，expiry 两列明确记 `N/A — Day-0 status probe`，不得伪造 PASS。每轮记录应用版本、模型、URL、commit、asset hash、开始时间、结果、duration、截图文件名与 duplicate/stale 结论。
 
+#### Task 0.3a：仅在首轮 Chrome 149 live RED 时修复双宿主 feature detection
+
+**触发事实：** 2026-08-27 首轮 live probe 在官方 Chrome for Testing `149.0.7827.155`、`WebMCPTesting,DevToolsWebMCPSupport` 开启且 `window.originAgentCluster === true` 时确认 Chrome 149 的 imperative API 位于 `navigator.modelContext`；同页 `document.modelContext` 为 `undefined`。直接用 `navigator.modelContext.registerTool()` 注册与 `getTools()`/DevTools `WebMCP.toolsAdded` 发现成功。因此不得把 Chrome 151、UA 模拟或注入假 `document.modelContext` 记为 PASS。
+
+**文件：**
+
+- 修改 `frontend/src/webmcp/types.ts`
+- 修改 `frontend/src/webmcp/registerChallengeStatusTool.ts`
+- 修改 `frontend/src/webmcp/registerChallengeStatusTool.test.ts`
+- 修改 `frontend/src/pages/ChallengePage.test.tsx`
+
+**Red tests：** 在注册器测试中注入只有 `navigator.modelContext` 的 Chrome 149 形状，断言注册成功且只调用一次；在页面测试中把 model context 只挂到全局 `navigator`，断言 UI 进入 `Site Tool ready`。修改生产代码前用 pinned Node 22 运行：
+
+```bash
+cd frontend
+npm run test -- src/webmcp/registerChallengeStatusTool.test.ts src/pages/ChallengePage.test.tsx
+```
+
+两条新增断言必须先因当前代码只读 `document.modelContext` 而失败。
+
+`types.ts` 的完整兼容实现为：
+
+```ts
+export type WebMcpDocument = Document & {
+  readonly modelContext?: WebMcpModelContext
+}
+
+export type WebMcpNavigator = Navigator & {
+  readonly modelContext?: WebMcpModelContext
+}
+
+function navigatorForDocument(toolDocument: Document): Navigator | undefined {
+  if (toolDocument.defaultView) return toolDocument.defaultView.navigator
+  if (typeof document !== 'undefined' && toolDocument === document && typeof navigator !== 'undefined') {
+    return navigator
+  }
+  return undefined
+}
+
+export function getModelContext(
+  toolDocument: Document,
+  toolNavigator: Navigator | undefined = navigatorForDocument(toolDocument),
+): WebMcpModelContext | undefined {
+  const documentContext = (toolDocument as WebMcpDocument).modelContext
+  if (documentContext) return documentContext
+  return (toolNavigator as WebMcpNavigator | undefined)?.modelContext
+}
+```
+
+`registerChallengeStatusTool.ts` 只扩充注册参数并把已解析的 navigator 传给 adapter；工具定义、结果、去重 key 与错误边界不变：
+
+```ts
+interface RegistrationOptions extends ToolOptions {
+  readonly enabled?: boolean
+  readonly navigator?: Navigator
+}
+
+const detectedModelContext = getModelContext(toolDocument, options.navigator)
+```
+
+`registerChallengeStatusTool.test.ts` 新增的完整 helper 与测试为：
+
+```ts
+function createToolNavigator(registerTool: WebMcpModelContext['registerTool']): Navigator {
+  const toolNavigator = {} as Navigator
+  Object.defineProperty(toolNavigator, 'modelContext', {
+    configurable: true,
+    value: { registerTool },
+  })
+  return toolNavigator
+}
+
+it('registers through the Chrome 149 navigator.modelContext surface', async () => {
+  const registerTool = vi.fn().mockResolvedValue(undefined)
+  const toolDocument = createToolDocument()
+  const toolNavigator = createToolNavigator(registerTool)
+
+  await expect(registerChallengeStatusTool({
+    document: toolDocument,
+    navigator: toolNavigator,
+    enabled: true,
+  })).resolves.toBe('registered')
+
+  expect(registerTool).toHaveBeenCalledTimes(1)
+  expect(registerTool).toHaveBeenCalledWith(expect.objectContaining({
+    name: CHALLENGE_STATUS_TOOL_NAME,
+  }))
+})
+```
+
+`ChallengePage.test.tsx` 的清理与新增测试为：
+
+```ts
+afterEach(() => {
+  cleanup()
+  resetWebMcpRegistrationsForTests()
+  resetAgentActivityForTests()
+  vi.unstubAllEnvs()
+  Reflect.deleteProperty(document, 'modelContext')
+  Reflect.deleteProperty(navigator, 'modelContext')
+})
+
+it('registers through Chrome 149 navigator.modelContext', async () => {
+  vi.stubEnv('VITE_WEBMCP_ENABLED', 'true')
+  const registerTool = vi.fn()
+  Object.defineProperty(navigator, 'modelContext', {
+    configurable: true,
+    value: { registerTool },
+  })
+
+  render(<MemoryRouter><ChallengePage /></MemoryRouter>)
+
+  await waitFor(() => expect(screen.getByText('Site Tool ready')).toBeInTheDocument())
+  expect(registerTool).toHaveBeenCalledTimes(1)
+})
+```
+
+**Green gates：** 先跑上述 focused tests，再按 Task 0.1 用 Node 22 重跑 34-test focused gate、336-test full gate、lint、typecheck、disabled/enabled build、artifact/secret/clean checks。全部通过后提交 `fix(webmcp): support Chrome navigator model context`；commit body 必须包含实际 focused/full/lint/typecheck/build 输出的 `Verified-by:`。随后把这个修复 commit 作为新的 exact Day-0 SHA，从 Task 0.2 重新部署，并重新开始 Task 0.3 全部 live rows。未取得 ChatGPT 3/3 与 Chrome 149 3/3 仍禁止进入 Phase 1。
+
 **实现：** `LIVE_GATE.md` 只写真实数据，固定表头如下：
 
 ```markdown
