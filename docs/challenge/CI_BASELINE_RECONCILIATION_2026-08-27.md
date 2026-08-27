@@ -99,12 +99,15 @@ fixture/assertion. No node was skipped, xfailed, deleted, or excluded.
 ## Final proof and warnings
 
 - Original node set: `48 passed, 3 warnings in 4.11s`.
-- Full backend: `4520 passed, 6 skipped, 57 deselected, 395 warnings in 343.17s`.
+- Initial post-fix full backend: `4520 passed, 6 skipped, 57 deselected, 395
+  warnings in 343.17s`.
+- Final clean candidate `3da1dac7010db6db86ce68324fb79e322003556d`:
+  `4520 passed, 6 skipped, 57 deselected, 40 warnings in 345.89s`.
 - Real Redis Challenge gate with skip-fail enabled: `259 passed, 1 warning`.
 - Empty PGVector migration and API registration smoke: head/current
   `068_fix_theater_bounds`, health and registration passed.
-- The 395 warnings are deprecations/test-fixture notices (principally Pydantic
-  class config, test JWT length, AsyncMock/SQLAlchemy fixture cleanup). They did
-  not hide a failure and remain listed as residual maintenance, not converted
-  into release success criteria.
-
+- Both warning summaries are deprecations/test-fixture notices (principally
+  Pydantic class config, test JWT length, AsyncMock/SQLAlchemy fixture cleanup).
+  They did not hide a failure and remain listed as residual maintenance, not
+  converted into release success criteria. The final candidate count is the
+  controlling number.
