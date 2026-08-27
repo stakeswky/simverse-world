@@ -2,8 +2,12 @@ import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 
 import { ChallengeHeader } from '../components/challenge/ChallengeHeader'
+import { AgentActivityPanel } from '../components/challenge/AgentActivityPanel'
+import { DecisionFlowPanel } from '../components/challenge/DecisionFlowPanel'
 import { LivingWorldPanel } from '../components/challenge/LivingWorldPanel'
 import { useChallengeStore } from '../stores/challengeStore'
+import { ChallengeToolSurfaceManager } from '../webmcp/challengeToolSurfaceManager'
+import { createChallengeTool } from '../webmcp/challengeTools'
 import '../styles/challenge-page.css'
 
 interface LegacyDiagnosticsState {
@@ -72,12 +76,33 @@ export function ChallengePage() {
   const registrationState = useChallengeStore((state) => state.registrationState)
   const error = useChallengeStore((state) => state.error)
   const initialize = useChallengeStore((state) => state.initialize)
+  const investigate = useChallengeStore((state) => state.investigate)
   const reset = useChallengeStore((state) => state.reset)
+  const setRegistrationState = useChallengeStore(
+    (state) => state.setRegistrationState,
+  )
+  const [surfaceManager] = useState(() => new ChallengeToolSurfaceManager({
+    enabled: import.meta.env.VITE_WEBMCP_ENABLED === 'true',
+    createTool: (name) => createChallengeTool(name),
+  }))
   const diagnosticsEnabled = new URLSearchParams(location.search).get('diagnostics') === '1'
 
   useEffect(() => {
     void initialize().catch(() => undefined)
   }, [initialize])
+
+  useEffect(() => () => surfaceManager.destroy(), [surfaceManager])
+
+  useEffect(() => {
+    if (!session) return
+    let active = true
+    void surfaceManager.sync(session).then((state) => {
+      if (active) setRegistrationState(state)
+    })
+    return () => {
+      active = false
+    }
+  }, [session, setRegistrationState, surfaceManager])
 
   if (!session) {
     return (
@@ -142,7 +167,17 @@ export function ChallengePage() {
           </div>
         ) : null}
 
-        <LivingWorldPanel world={session.world} evidence={session.evidence} />
+        <div className="challenge-workspace">
+          <LivingWorldPanel world={session.world} evidence={session.evidence} />
+          <DecisionFlowPanel
+            session={session}
+            loading={loading}
+            onInvestigate={async (input) => {
+              await investigate(input)
+            }}
+          />
+          <AgentActivityPanel />
+        </div>
         {diagnosticsEnabled ? <LegacyDiagnostics /> : null}
       </div>
     </main>

@@ -30,6 +30,11 @@ export function LivingWorldPanel({ world, evidence }: LivingWorldPanelProps) {
           <h2 id="living-world-title">Harbor district</h2>
         </div>
         <div className="challenge-world-counts">
+          {evidence ? (
+            <span data-testid="evidence-world-version">
+              Evidence v{evidence.based_on_world_version}
+            </span>
+          ) : null}
           <span>{world.residents.length} residents</span>
           <span>{world.employers.length} employers</span>
           <time dateTime={world.world_time}>{world.world_time}</time>

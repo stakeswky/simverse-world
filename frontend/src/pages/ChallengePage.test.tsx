@@ -15,6 +15,7 @@ const store = vi.hoisted(() => ({
   registrationState: 'unsupported' as const,
   error: null as Error | null,
   initialize: vi.fn<() => Promise<void>>(),
+  investigate: vi.fn(),
   reset: vi.fn(),
   setRegistrationState: vi.fn(),
 }))
@@ -94,6 +95,9 @@ beforeEach(() => {
   store.registrationState = 'unsupported'
   store.error = null
   store.initialize.mockReset().mockResolvedValue(undefined)
+  store.investigate.mockReset().mockResolvedValue({
+    structuredContent: { state: 'EVIDENCE_READY' },
+  })
   store.reset.mockReset().mockResolvedValue({ structuredContent: { state: 'INITIAL' } })
   store.setRegistrationState.mockReset()
   vi.stubEnv('VITE_WEBMCP_ENABLED', 'true')
@@ -114,8 +118,8 @@ describe('ChallengePage', () => {
 
     await waitFor(() => expect(store.initialize).toHaveBeenCalledTimes(1))
     expect(screen.getByText('harbor-wage-crisis-v1')).toBeInTheDocument()
-    expect(screen.getByText('INITIAL')).toBeInTheDocument()
-    expect(screen.getByText('World v7')).toBeInTheDocument()
+    expect(screen.getAllByText('INITIAL').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('World v7').length).toBeGreaterThan(0)
     expect(screen.getAllByText(/2042-06-12/).length).toBeGreaterThan(0)
     expect(screen.getByText('Budget 300 SC')).toBeInTheDocument()
     expect(screen.getByText('1 active tool')).toBeInTheDocument()
@@ -162,6 +166,17 @@ describe('ChallengePage', () => {
     expect(screen.getByTestId('harbor-map')).toHaveAttribute('data-focused', 'true')
     expect(screen.getAllByTestId('affected-resident')).toHaveLength(6)
     expect(screen.getByText('Harbor focus active')).toBeInTheDocument()
+    expect(screen.getByText('Evidence snapshot')).toBeInTheDocument()
+    expect(screen.getByText('Priority 94')).toBeInTheDocument()
+  })
+
+  it('uses the same investigate store action from the visible ordinary-browser control', async () => {
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Investigate Harbor crisis' }))
+
+    await waitFor(() => expect(store.investigate).toHaveBeenCalledTimes(1))
+    expect(store.investigate).toHaveBeenCalledWith({ budget_cap_sc: 300 })
   })
 
   it('shows a safe retry control after API failure', () => {
@@ -190,16 +205,19 @@ describe('ChallengePage', () => {
     }))
   })
 
-  it('does not load or register the Day-0 tool on the regular page', async () => {
+  it('registers the dynamic investigate tool without loading the Day-0 tool', async () => {
     const registerTool = vi.fn()
+    const modelContext = Object.assign(new EventTarget(), { registerTool })
     Object.defineProperty(navigator, 'modelContext', {
       configurable: true,
-      value: { registerTool },
+      value: modelContext,
     })
     renderPage()
 
-    await waitFor(() => expect(store.initialize).toHaveBeenCalled())
-    expect(registerTool).not.toHaveBeenCalled()
+    await waitFor(() => expect(registerTool).toHaveBeenCalledTimes(1))
+    expect(registerTool.mock.calls[0]?.[0]).toMatchObject({
+      name: 'simverse_investigate_crisis',
+    })
     expect(screen.queryByText('0.1.0')).not.toBeInTheDocument()
     expect(screen.queryByText('simverse_get_challenge_status')).not.toBeInTheDocument()
   })
@@ -207,15 +225,16 @@ describe('ChallengePage', () => {
   it('loads the legacy status tool only for diagnostics=1', async () => {
     let registeredTool: WebMcpToolDefinition | undefined
     const registerTool = vi.fn((tool: WebMcpToolDefinition) => {
-      registeredTool = tool
+      if (tool.name === 'simverse_get_challenge_status') registeredTool = tool
     })
+    const modelContext = Object.assign(new EventTarget(), { registerTool })
     Object.defineProperty(navigator, 'modelContext', {
       configurable: true,
-      value: { registerTool },
+      value: modelContext,
     })
     renderPage('/challenge?diagnostics=1')
 
-    await waitFor(() => expect(registerTool).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(registeredTool?.name).toBe('simverse_get_challenge_status'))
     expect(screen.getByText('0.1.0')).toBeInTheDocument()
     expect(screen.getByText(registeredTool?.name ?? '')).toBeInTheDocument()
   })

@@ -619,3 +619,172 @@
   .challenge-status-grid .challenge-tools-cell { grid-column: auto; }
   .challenge-diagnostics { grid-template-columns: 1fr; }
 }
+
+/* Phase 2 evidence, decision flow, and visible WebMCP receipts. */
+.challenge-workspace {
+  grid-template-columns: minmax(0, 1.35fr) minmax(285px, 0.78fr) minmax(300px, 0.72fr);
+}
+
+.challenge-living-world,
+.challenge-decision-flow,
+.challenge-agent-activity {
+  min-width: 0;
+}
+
+.challenge-decision-flow,
+.challenge-agent-activity {
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 14px;
+  background: rgb(15 15 24 / 88%);
+  box-shadow: 0 28px 80px rgb(0 0 0 / 24%);
+}
+
+.challenge-decision-flow > header,
+.challenge-agent-activity > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 17px 18px;
+  border-bottom: 1px solid rgb(255 255 255 / 7%);
+}
+
+.challenge-decision-flow header p,
+.challenge-agent-activity header p {
+  margin: 0 0 5px;
+  color: #22d3ee;
+  font: 8px var(--mkt-mono, monospace);
+  letter-spacing: 0.15em;
+}
+
+.challenge-decision-flow h2,
+.challenge-agent-activity h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 560;
+}
+
+.challenge-decision-flow header > span,
+.challenge-agent-activity header > span {
+  color: #8d8fa2;
+  font: 9px var(--mkt-mono, monospace);
+}
+
+.challenge-flow-steps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+  padding: 15px 16px;
+  border-bottom: 1px solid rgb(255 255 255 / 7%);
+}
+
+.challenge-flow-steps div {
+  display: grid;
+  gap: 5px;
+  justify-items: center;
+  color: #67697c;
+  font-size: 8px;
+}
+
+.challenge-flow-steps i {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 50%;
+  font: 8px var(--mkt-mono, monospace);
+}
+
+.challenge-flow-steps div[data-active='true'] { color: #67e8f9; }
+.challenge-flow-steps div[data-active='true'] i { border-color: #22d3ee; background: rgb(34 211 238 / 12%); }
+
+.challenge-decision-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 13px 16px;
+}
+
+.challenge-decision-meta span,
+.challenge-decision-meta code {
+  padding: 5px 7px;
+  border: 1px solid rgb(255 255 255 / 7%);
+  border-radius: 6px;
+  color: #8d8fa2;
+  font: 8px var(--mkt-mono, monospace);
+}
+
+.challenge-evidence-empty {
+  margin: 0 16px 16px;
+  padding: 18px;
+  border: 1px dashed rgb(255 255 255 / 10%);
+  border-radius: 10px;
+  color: #898b9d;
+}
+
+.challenge-evidence-empty strong { color: #d7d9e3; font-size: 11px; }
+.challenge-evidence-empty p { margin: 8px 0 0; font-size: 9px; line-height: 1.55; }
+
+.challenge-evidence-snapshot { padding: 0 16px 16px; }
+.challenge-evidence-snapshot > div:first-child { display: flex; align-items: center; justify-content: space-between; }
+.challenge-evidence-snapshot > div:first-child span { color: #67e8f9; font: 9px var(--mkt-mono, monospace); }
+.challenge-evidence-snapshot > div:first-child strong { color: #fbbf24; font-size: 10px; }
+.challenge-evidence-snapshot h3 { margin: 12px 0 4px; font-size: 14px; }
+.challenge-evidence-snapshot > p { margin: 0 0 12px; color: #77798d; font-size: 9px; }
+.challenge-evidence-snapshot ul { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+
+.challenge-evidence-snapshot li {
+  padding: 10px;
+  border: 1px solid rgb(255 255 255 / 7%);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 2%);
+}
+
+.challenge-evidence-snapshot li > span { color: #a78bfa; font: 8px var(--mkt-mono, monospace); text-transform: uppercase; }
+.challenge-evidence-snapshot li strong { display: block; margin-top: 4px; font-size: 10px; }
+.challenge-evidence-snapshot li p { margin: 5px 0 0; color: #85879a; font-size: 9px; line-height: 1.45; }
+.challenge-evidence-snapshot li small { display: block; margin-top: 7px; color: #fbbf24; font: 7px var(--mkt-mono, monospace); }
+.challenge-evidence-snapshot li[data-untrusted='true'] { border-color: rgb(251 191 36 / 22%); }
+
+.challenge-constraints { display: grid; gap: 5px; margin-top: 12px; }
+.challenge-constraints span { color: #77798d; font-size: 8px; text-transform: uppercase; }
+.challenge-constraints code { overflow: hidden; color: #86ef98; font-size: 8px; text-overflow: ellipsis; }
+
+.challenge-decision-flow > button {
+  width: calc(100% - 32px);
+  margin: 0 16px 16px;
+  padding: 11px 12px;
+  border: 1px solid rgb(34 211 238 / 40%);
+  border-radius: 9px;
+  background: rgb(34 211 238 / 12%);
+  color: #cffafe;
+  cursor: pointer;
+  font: 600 10px var(--mkt-mono, monospace);
+}
+
+.challenge-decision-flow > button:disabled { cursor: wait; opacity: 0.55; }
+
+.challenge-agent-activity ol { display: grid; gap: 8px; margin: 0; padding: 12px; list-style: none; }
+.challenge-agent-activity li { padding: 11px; border: 1px solid rgb(83 215 105 / 16%); border-radius: 9px; background: rgb(83 215 105 / 4%); }
+.challenge-agent-activity li[data-outcome='failed'] { border-color: rgb(251 113 133 / 20%); background: rgb(251 113 133 / 4%); }
+.challenge-activity-entry-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.challenge-activity-entry-head strong { overflow: hidden; font: 600 9px var(--mkt-mono, monospace); text-overflow: ellipsis; }
+.challenge-activity-entry-head time { color: #626477; font: 8px var(--mkt-mono, monospace); }
+.challenge-agent-activity li > span { display: block; margin-top: 5px; color: #86ef98; font-size: 9px; }
+.challenge-agent-activity li[data-outcome='failed'] > span { color: #fb7185; }
+.challenge-agent-activity dl { display: grid; gap: 4px; margin: 10px 0 0; }
+.challenge-agent-activity dl div { display: flex; justify-content: space-between; gap: 8px; }
+.challenge-agent-activity dt { color: #6f7184; font-size: 8px; }
+.challenge-agent-activity dd { overflow: hidden; margin: 0; color: #a6a8b9; font: 8px var(--mkt-mono, monospace); text-overflow: ellipsis; }
+
+@media (max-width: 1120px) {
+  .challenge-workspace { grid-template-columns: minmax(0, 1fr) minmax(300px, 0.72fr); }
+  .challenge-living-world { grid-column: 1 / -1; }
+}
+
+@media (max-width: 760px) {
+  .challenge-workspace { grid-template-columns: 1fr; }
+  .challenge-living-world { grid-column: auto; }
+}

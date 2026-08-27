@@ -1,10 +1,26 @@
 export type AgentActivityOutcome = 'completed' | 'failed'
+export type AgentActivityPhase =
+  | 'status'
+  | 'investigate'
+  | 'preview'
+  | 'commit'
+  | 'verify'
+  | 'reset'
 
-export interface AgentActivityEntry {
-  readonly id: string
+export interface PublishAgentActivityInput {
   readonly toolName: string
+  readonly phase: AgentActivityPhase
   readonly outcome: AgentActivityOutcome
   readonly durationMs: number
+  readonly reasonCode: string
+  readonly worldVersionBefore: number
+  readonly worldVersionAfter: number
+  readonly receiptId: string | null
+  readonly fingerprint: string | null
+}
+
+export interface AgentActivityEntry extends PublishAgentActivityInput {
+  readonly id: string
   readonly occurredAt: string
 }
 
@@ -27,7 +43,7 @@ function getActivityStore(toolDocument: Document): ActivityStore {
 
 export function publishAgentActivity(
   toolDocument: Document,
-  activity: Omit<AgentActivityEntry, 'id' | 'occurredAt'>,
+  activity: PublishAgentActivityInput,
 ): AgentActivityEntry {
   activitySequence += 1
   const entry: AgentActivityEntry = Object.freeze({

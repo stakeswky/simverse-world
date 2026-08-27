@@ -115,6 +115,7 @@ function safeDuration(clock: () => number, startedAt: number): number {
 function recordActivity(
   toolDocument: Document | undefined,
   outcome: 'completed' | 'failed',
+  reasonCode: 'STATUS_READY' | 'INVALID_INPUT' | 'STATUS_UNAVAILABLE',
   clock: () => number,
   startedAt: number,
 ): void {
@@ -122,8 +123,14 @@ function recordActivity(
   try {
     publishAgentActivity(toolDocument, {
       toolName: CHALLENGE_STATUS_TOOL_NAME,
+      phase: 'status',
       outcome,
       durationMs: safeDuration(clock, startedAt),
+      reasonCode,
+      worldVersionBefore: 0,
+      worldVersionAfter: 0,
+      receiptId: null,
+      fingerprint: 'tool-v0.1.0',
     })
   } catch {
     // A visual receipt must never make the tool leak an internal browser error.
@@ -157,14 +164,14 @@ export function createChallengeStatusTool(options: ToolOptions = {}): WebMcpTool
       }
       try {
         if (!hasValidInput(input)) {
-          recordActivity(toolDocument, 'failed', clock, startedAt)
+          recordActivity(toolDocument, 'failed', 'INVALID_INPUT', clock, startedAt)
           return SAFE_INPUT_ERROR
         }
         const status = statusProvider()
-        recordActivity(toolDocument, 'completed', clock, startedAt)
+        recordActivity(toolDocument, 'completed', 'STATUS_READY', clock, startedAt)
         return status
       } catch {
-        recordActivity(toolDocument, 'failed', clock, startedAt)
+        recordActivity(toolDocument, 'failed', 'STATUS_UNAVAILABLE', clock, startedAt)
         return SAFE_TOOL_ERROR
       }
     },
