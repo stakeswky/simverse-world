@@ -301,3 +301,321 @@
   .challenge-map img { min-height: 360px; }
   .challenge-harbor-marker { right: 18px; bottom: 18px; width: calc(100% - 36px); }
 }
+
+/* Phase 1 isolated projection surface. The legacy map/activity selectors above
+   remain available only to the diagnostics chunk. */
+.challenge-shell {
+  padding-top: 0;
+}
+
+.challenge-shell > .challenge-header {
+  margin-bottom: 48px;
+  border-right: 1px solid rgb(255 255 255 / 8%);
+  border-left: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 0 0 14px 14px;
+}
+
+.challenge-status-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.challenge-status-grid .challenge-tools-cell {
+  grid-column: span 3;
+}
+
+.challenge-status-grid .challenge-tools-cell small {
+  overflow: hidden;
+  color: #22d3ee;
+  font-family: var(--mkt-mono, monospace);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.challenge-reset-row,
+.challenge-inline-loading,
+.challenge-inline-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 18px;
+  padding: 12px 16px;
+  border: 1px solid rgb(34 211 238 / 20%);
+  border-radius: 10px;
+  background: rgb(34 211 238 / 6%);
+  color: #9dddea;
+  font-size: 11px;
+}
+
+.challenge-reset-row button,
+.challenge-session-boundary button {
+  padding: 9px 14px;
+  border: 1px solid rgb(34 211 238 / 44%);
+  border-radius: 8px;
+  background: rgb(34 211 238 / 12%);
+  color: #c8f7ff;
+  cursor: pointer;
+  font: 600 11px var(--mkt-mono, monospace);
+}
+
+.challenge-reset-row button:hover,
+.challenge-session-boundary button:hover {
+  background: rgb(34 211 238 / 20%);
+}
+
+.challenge-inline-error {
+  border-color: rgb(251 113 133 / 24%);
+  background: rgb(251 113 133 / 7%);
+  color: #fda4af;
+}
+
+.challenge-living-world {
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 14px;
+  background: rgb(15 15 24 / 88%);
+  box-shadow: 0 28px 80px rgb(0 0 0 / 28%);
+}
+
+.challenge-living-world > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 20px;
+  border-bottom: 1px solid rgb(255 255 255 / 7%);
+}
+
+.challenge-living-world header p {
+  margin: 0 0 5px;
+  color: #22d3ee;
+  font: 9px var(--mkt-mono, monospace);
+  letter-spacing: 0.16em;
+}
+
+.challenge-living-world h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 560;
+}
+
+.challenge-world-counts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.challenge-world-counts span,
+.challenge-world-counts time {
+  padding: 6px 9px;
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 999px;
+  color: #9596a8;
+  font: 9px var(--mkt-mono, monospace);
+}
+
+.challenge-harbor-layout {
+  position: relative;
+  padding: 20px;
+  background:
+    linear-gradient(140deg, rgb(34 211 238 / 5%), transparent 38%),
+    #0b0f18;
+}
+
+.challenge-harbor-map {
+  display: block;
+  width: 100%;
+  min-height: 420px;
+  border: 1px solid rgb(255 255 255 / 7%);
+  border-radius: 12px;
+  transition: filter 180ms ease, transform 180ms ease;
+}
+
+.challenge-harbor-map[data-focused='true'] {
+  filter: saturate(1.18) contrast(1.05);
+}
+
+.challenge-shore {
+  fill: #172331;
+  stroke: #2a3a49;
+  stroke-width: 2;
+}
+
+.challenge-road {
+  fill: none;
+  stroke: #344553;
+  stroke-dasharray: 5 7;
+  stroke-width: 3;
+}
+
+.challenge-pier {
+  fill: none;
+  stroke: #647585;
+  stroke-width: 7;
+}
+
+.challenge-employers rect {
+  fill: #8b5cf6;
+  opacity: 0.55;
+  stroke: #c4b5fd;
+}
+
+.challenge-resident-marker circle {
+  fill: rgb(34 211 238 / 18%);
+  stroke: #22d3ee;
+  stroke-width: 1.5;
+}
+
+.challenge-resident-marker .challenge-resident-core {
+  fill: #a5f3fc;
+  stroke: none;
+}
+
+.challenge-resident-marker[data-affected='true'] {
+  filter: url('#harbor-glow');
+}
+
+.challenge-resident-marker[data-affected='true'] circle {
+  fill: rgb(251 113 133 / 28%);
+  stroke: #fb7185;
+}
+
+.challenge-harbor-map text {
+  fill: rgb(165 243 252 / 46%);
+  font: 700 12px var(--mkt-mono, monospace);
+  letter-spacing: 0.28em;
+}
+
+.challenge-harbor-focus {
+  position: absolute;
+  right: 38px;
+  bottom: 38px;
+  display: flex;
+  max-width: 310px;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 10px;
+  background: rgb(8 10 17 / 90%);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 42%);
+}
+
+.challenge-harbor-focus i {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: #fbbf24;
+  box-shadow: 0 0 0 6px rgb(251 191 36 / 12%);
+}
+
+.challenge-harbor-focus[data-focused='true'] i {
+  background: #fb7185;
+  box-shadow: 0 0 0 6px rgb(251 113 133 / 14%), 0 0 24px rgb(251 113 133 / 45%);
+}
+
+.challenge-harbor-focus strong,
+.challenge-harbor-focus span {
+  display: block;
+}
+
+.challenge-harbor-focus strong {
+  margin-bottom: 5px;
+  font-size: 12px;
+}
+
+.challenge-harbor-focus span {
+  color: #8e90a2;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.challenge-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border-top: 1px solid rgb(255 255 255 / 7%);
+}
+
+.challenge-metrics article {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 17px 18px;
+  border-right: 1px solid rgb(255 255 255 / 7%);
+}
+
+.challenge-metrics article:last-child { border-right: 0; }
+.challenge-metrics span { color: #77798d; font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; }
+.challenge-metrics strong { font-size: 24px; font-weight: 540; }
+
+.challenge-diagnostics {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 12px;
+  align-items: center;
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px dashed rgb(251 191 36 / 34%);
+  border-radius: 10px;
+  background: rgb(251 191 36 / 6%);
+  color: #d6d3c4;
+  font: 10px var(--mkt-mono, monospace);
+}
+
+.challenge-diagnostics > span { color: #fbbf24; }
+.challenge-diagnostics code { color: #fde68a; }
+.challenge-diagnostics small { color: #8f8b7d; }
+
+.challenge-session-boundary {
+  display: grid;
+  min-height: calc(100vh - 74px);
+  place-items: center;
+  padding: 40px 24px;
+}
+
+.challenge-session-boundary > div {
+  width: min(620px, 100%);
+  padding: 34px;
+  border: 1px solid rgb(255 255 255 / 9%);
+  border-radius: 16px;
+  background: rgb(15 15 24 / 88%);
+  text-align: center;
+}
+
+.challenge-session-boundary span {
+  color: #fb7185;
+  font: 10px var(--mkt-mono, monospace);
+  letter-spacing: 0.16em;
+}
+
+.challenge-session-boundary h1 { margin: 12px 0; font-size: 28px; }
+.challenge-session-boundary p { color: #8d8fa2; font-size: 13px; line-height: 1.6; }
+.challenge-loading i { display: inline-block; width: 22px; height: 22px; border: 2px solid rgb(34 211 238 / 20%); border-top-color: #22d3ee; border-radius: 50%; animation: challenge-spin 700ms linear infinite; }
+
+@keyframes challenge-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 880px) {
+  .challenge-shell > .challenge-header { margin-bottom: 36px; }
+  .challenge-status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .challenge-status-grid .challenge-tools-cell { grid-column: span 2; }
+  .challenge-world-counts { justify-content: flex-start; }
+  .challenge-living-world > header { align-items: flex-start; flex-direction: column; }
+  .challenge-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .challenge-metrics article { border-bottom: 1px solid rgb(255 255 255 / 7%); }
+  .challenge-metrics article:last-child { grid-column: span 2; }
+}
+
+@media (max-width: 600px) {
+  .challenge-shell > .challenge-header { border-radius: 0; }
+  .challenge-harbor-layout { padding: 12px; }
+  .challenge-harbor-map { min-height: 330px; }
+  .challenge-harbor-focus { right: 24px; bottom: 24px; left: 24px; }
+  .challenge-metrics { grid-template-columns: 1fr; }
+  .challenge-metrics article:last-child,
+  .challenge-status-grid .challenge-tools-cell { grid-column: auto; }
+  .challenge-diagnostics { grid-template-columns: 1fr; }
+}

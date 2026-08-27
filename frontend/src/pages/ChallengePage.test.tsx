@@ -1,13 +1,103 @@
 import '@testing-library/jest-dom/vitest'
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { StrictMode } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ChallengePage } from './ChallengePage'
-import { getChallengeStatus } from '../webmcp/challengeStatus'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import type { ChallengeProjection } from '../services/api/challenge'
 import { resetAgentActivityForTests } from '../webmcp/activity'
 import { resetWebMcpRegistrationsForTests } from '../webmcp/registerChallengeStatusTool'
-import type { WebMcpRegistrationOptions, WebMcpToolDefinition } from '../webmcp/types'
+import type { WebMcpToolDefinition } from '../webmcp/types'
+
+const store = vi.hoisted(() => ({
+  session: null as ChallengeProjection | null,
+  loading: false,
+  activeToolNames: [] as readonly string[],
+  registrationState: 'unsupported' as const,
+  error: null as Error | null,
+  initialize: vi.fn<() => Promise<void>>(),
+  reset: vi.fn(),
+  setRegistrationState: vi.fn(),
+}))
+
+vi.mock('../stores/challengeStore', () => ({
+  useChallengeStore: (selector: (state: typeof store) => unknown) => selector(store),
+}))
+
+import { ChallengePage } from './ChallengePage'
+
+function projection(overrides: Partial<ChallengeProjection> = {}): ChallengeProjection {
+  const residents = Array.from({ length: 6 }, (_, index) => ({
+    resident_id: `harbor-resident-${String(index + 1).padStart(2, '0')}`,
+    name: `Harbor Resident ${String(index + 1).padStart(2, '0')}`,
+    cash_sc: 10,
+    unpaid_wage_sc: 30,
+    food_risk: index < 2 ? 'HIGH' as const : 'MEDIUM' as const,
+    food_credit_sc: 0,
+    stabilized: false,
+  }))
+  return {
+    session_generation: 'generation-01',
+    state: 'INITIAL',
+    scenario_id: 'harbor-wage-crisis-v1',
+    fixture_version: 1,
+    world_version: 7,
+    world_hash: `sha256:${'a'.repeat(64)}`,
+    world_time: '2042-06-12T08:00:00Z',
+    budget_sc: 300,
+    tool_surface: ['simverse_investigate_crisis'],
+    expires_at: '2042-06-12T08:15:00Z',
+    csrf_token: 'csrf-01',
+    world: {
+      scenario_id: 'harbor-wage-crisis-v1',
+      fixture_version: 1,
+      world_version: 7,
+      world_time: '2042-06-12T08:00:00Z',
+      budget_sc: 300,
+      harbor_open: true,
+      residents,
+      employers: [
+        { employer_id: 'harbor-employer-a', name: 'Harbor Freight Cooperative', overdue_payroll_sc: 90, repayment_claim_sc: 0, escrow_status: 'NONE' },
+        { employer_id: 'harbor-employer-b', name: 'North Pier Logistics', overdue_payroll_sc: 90, repayment_claim_sc: 0, escrow_status: 'NONE' },
+      ],
+      relationships: [],
+      events: [],
+      metrics: {
+        unpaid_residents: 6,
+        high_food_risk_residents: 2,
+        social_tension: 68,
+        strike_risk_pct: 74,
+        stabilized_residents: 0,
+      },
+    },
+    evidence: null,
+    preview: null,
+    approval_fingerprint: null,
+    approval_expires_at: null,
+    receipt: null,
+    verification: null,
+    ...overrides,
+  }
+}
+
+function renderPage(path = '/challenge') {
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <ChallengePage />
+    </MemoryRouter>,
+  )
+}
+
+beforeEach(() => {
+  store.session = projection()
+  store.loading = false
+  store.activeToolNames = ['simverse_investigate_crisis']
+  store.registrationState = 'unsupported'
+  store.error = null
+  store.initialize.mockReset().mockResolvedValue(undefined)
+  store.reset.mockReset().mockResolvedValue({ structuredContent: { state: 'INITIAL' } })
+  store.setRegistrationState.mockReset()
+  vi.stubEnv('VITE_WEBMCP_ENABLED', 'true')
+})
 
 afterEach(() => {
   cleanup()
@@ -19,90 +109,119 @@ afterEach(() => {
 })
 
 describe('ChallengePage', () => {
-  it('shows a visible activity receipt after the agent calls the Site Tool', async () => {
-    vi.stubEnv('VITE_WEBMCP_ENABLED', 'true')
-    let registeredTool: WebMcpToolDefinition | undefined
-    const registerTool = vi.fn((tool: WebMcpToolDefinition) => {
-      registeredTool = tool
-    })
-    Object.defineProperty(document, 'modelContext', {
-      configurable: true,
-      value: { registerTool },
-    })
+  it('initializes once and renders the server projection header', async () => {
+    renderPage()
 
-    render(<StrictMode><MemoryRouter><ChallengePage /></MemoryRouter></StrictMode>)
-
-    expect(screen.getByRole('heading', { name: 'Co-govern a living AI town.' })).toBeInTheDocument()
-    expect(screen.getByText('0.1.0')).toBeInTheDocument()
-    expect(screen.getByText('Waiting for a Site Tool call')).toBeInTheDocument()
-    await waitFor(() => expect(screen.getByText('Site Tool ready')).toBeInTheDocument())
-    expect(registerTool).toHaveBeenCalledTimes(1)
-
-    let result: unknown
-    await act(async () => {
-      result = await registeredTool?.execute({})
-    })
-
-    expect(result).toEqual(getChallengeStatus())
-    expect(screen.getByText('simverse_get_challenge_status')).toBeInTheDocument()
-    expect(screen.getByText(/Completed in \d+ ms/)).toBeInTheDocument()
-    expect(screen.queryByText('Waiting for a Site Tool call')).not.toBeInTheDocument()
+    await waitFor(() => expect(store.initialize).toHaveBeenCalledTimes(1))
+    expect(screen.getByText('harbor-wage-crisis-v1')).toBeInTheDocument()
+    expect(screen.getByText('INITIAL')).toBeInTheDocument()
+    expect(screen.getByText('World v7')).toBeInTheDocument()
+    expect(screen.getAllByText(/2042-06-12/).length).toBeGreaterThan(0)
+    expect(screen.getByText('Budget 300 SC')).toBeInTheDocument()
+    expect(screen.getByText('1 active tool')).toBeInTheDocument()
+    expect(screen.getByText('simverse_investigate_crisis')).toBeInTheDocument()
+    expect(screen.getByText('Site Tools unavailable')).toBeInTheDocument()
+    expect(screen.getByText(/Expires/)).toBeInTheDocument()
   })
 
-  it('keeps the normal page usable when Site Tools are unsupported', async () => {
-    vi.stubEnv('VITE_WEBMCP_ENABLED', 'true')
+  it('renders the isolated Harbor map, fixture entities, and five key metrics', () => {
+    renderPage()
 
-    render(<MemoryRouter><ChallengePage /></MemoryRouter>)
-
-    await waitFor(() => {
-      expect(screen.getByText('Site Tools unavailable in this browser')).toBeInTheDocument()
-    })
-    expect(screen.getByText('WebMCP Challenge Town')).toBeInTheDocument()
-    expect(screen.getByText('Harbor district tension')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Harbor district challenge map' })).toBeInTheDocument()
+    expect(screen.getByText('6 residents')).toBeInTheDocument()
+    expect(screen.getByText('2 employers')).toBeInTheDocument()
+    expect(screen.getByText('Unpaid residents')).toBeInTheDocument()
+    expect(screen.getByText('High food risk')).toBeInTheDocument()
+    expect(screen.getByText('Social tension')).toBeInTheDocument()
+    expect(screen.getByText('Strike risk')).toBeInTheDocument()
+    expect(screen.getByText('Stabilized')).toBeInTheDocument()
+    expect(screen.getByTestId('metric-unpaid')).toHaveTextContent('6')
+    expect(screen.getByTestId('metric-high-risk')).toHaveTextContent('2')
+    expect(screen.getByTestId('metric-tension')).toHaveTextContent('68')
+    expect(screen.getByTestId('metric-strike')).toHaveTextContent('74%')
+    expect(screen.getByTestId('metric-stabilized')).toHaveTextContent('0')
   })
 
-  it('registers through Chrome 149 navigator.modelContext', async () => {
-    vi.stubEnv('VITE_WEBMCP_ENABLED', 'true')
+  it('focuses Harbor and highlights all six affected residents after investigation', () => {
+    const base = projection()
+    store.session = projection({
+      state: 'EVIDENCE_READY',
+      evidence: {
+        evidence_id: 'evidence-01',
+        based_on_world_version: 7,
+        crisis_id: 'harbor-wage-crisis',
+        priority_score: 94,
+        region_id: 'harbor',
+        affected_resident_ids: base.world.residents.map((resident) => resident.resident_id),
+        evidence: [],
+        enforced_constraints: ['budget_lte_300_sc'],
+      },
+    })
+    renderPage()
+
+    expect(screen.getByTestId('harbor-map')).toHaveAttribute('data-focused', 'true')
+    expect(screen.getAllByTestId('affected-resident')).toHaveLength(6)
+    expect(screen.getByText('Harbor focus active')).toBeInTheDocument()
+  })
+
+  it('shows a safe retry control after API failure', () => {
+    store.session = null
+    store.error = new Error('internal secret must not render')
+    renderPage()
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Challenge session is temporarily unavailable.')
+    expect(screen.queryByText('internal secret must not render')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry session' }))
+    expect(store.initialize).toHaveBeenCalledTimes(2)
+  })
+
+  it('works without modelContext and can reset the in-memory session', async () => {
+    store.session = projection({
+      state: 'VERIFIED',
+      tool_surface: ['simverse_reset_town'],
+    })
+    store.activeToolNames = ['simverse_reset_town']
+    renderPage()
+
+    expect(screen.getByText('Site Tools unavailable')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Reset town' }))
+    await waitFor(() => expect(store.reset).toHaveBeenCalledWith({
+      expected_generation: 'generation-01',
+    }))
+  })
+
+  it('does not load or register the Day-0 tool on the regular page', async () => {
     const registerTool = vi.fn()
     Object.defineProperty(navigator, 'modelContext', {
       configurable: true,
       value: { registerTool },
     })
+    renderPage()
 
-    render(<MemoryRouter><ChallengePage /></MemoryRouter>)
-
-    await waitFor(() => expect(screen.getByText('Site Tool ready')).toBeInTheDocument())
-    expect(registerTool).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(store.initialize).toHaveBeenCalled())
+    expect(registerTool).not.toHaveBeenCalled()
+    expect(screen.queryByText('0.1.0')).not.toBeInTheDocument()
+    expect(screen.queryByText('simverse_get_challenge_status')).not.toBeInTheDocument()
   })
 
-  it('aborts the host registration when the challenge surface unmounts', async () => {
-    vi.stubEnv('VITE_WEBMCP_ENABLED', 'true')
-    const hostSignals: AbortSignal[] = []
-    const registerTool = vi.fn((
-      _tool: WebMcpToolDefinition,
-      options?: WebMcpRegistrationOptions,
-    ) => {
-      if (options?.signal) hostSignals.push(options.signal)
+  it('loads the legacy status tool only for diagnostics=1', async () => {
+    let registeredTool: WebMcpToolDefinition | undefined
+    const registerTool = vi.fn((tool: WebMcpToolDefinition) => {
+      registeredTool = tool
     })
     Object.defineProperty(navigator, 'modelContext', {
       configurable: true,
       value: { registerTool },
     })
-    const rendered = render(
-      <StrictMode><MemoryRouter><ChallengePage /></MemoryRouter></StrictMode>,
-    )
+    renderPage('/challenge?diagnostics=1')
 
-    await waitFor(() => expect(screen.getByText('Site Tool ready')).toBeInTheDocument())
-    expect(registerTool).toHaveBeenCalledTimes(1)
-    expect(hostSignals).toHaveLength(1)
-    expect(hostSignals[0]?.aborted).toBe(false)
-    rendered.unmount()
-    await waitFor(() => expect(hostSignals[0]?.aborted).toBe(true))
+    await waitFor(() => expect(registerTool).toHaveBeenCalledTimes(1))
+    expect(screen.getByText('0.1.0')).toBeInTheDocument()
+    expect(screen.getByText(registeredTool?.name ?? '')).toBeInTheDocument()
   })
 
-  it('uses full-document links when leaving the challenge surface', () => {
-    render(<MemoryRouter><ChallengePage /></MemoryRouter>)
-
+  it('uses full-document links when leaving the isolated surface', () => {
+    renderPage()
     expect(screen.getByRole('link', { name: 'Live town' })).toHaveAttribute('href', '/town')
     expect(screen.getByRole('link', { name: 'Enter world' })).toHaveAttribute('href', '/login')
   })

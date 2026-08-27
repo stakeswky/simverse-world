@@ -333,16 +333,27 @@ const CHALLENGE_STATES = new Set<ChallengeState>([
 ])
 
 export class ChallengeApiError extends Error {
+  readonly code: ChallengeErrorCode
+  readonly status: number
+  readonly retryable: boolean
+  readonly currentState: ChallengeState | null
+  readonly nextAction: string | null
+
   constructor(
-    readonly code: ChallengeErrorCode,
+    code: ChallengeErrorCode,
     message = 'Challenge request failed.',
-    readonly status = 0,
-    readonly retryable = false,
-    readonly currentState: ChallengeState | null = null,
-    readonly nextAction: string | null = null,
+    status = 0,
+    retryable = false,
+    currentState: ChallengeState | null = null,
+    nextAction: string | null = null,
   ) {
     super(message)
     this.name = 'ChallengeApiError'
+    this.code = code
+    this.status = status
+    this.retryable = retryable
+    this.currentState = currentState
+    this.nextAction = nextAction
   }
 }
 

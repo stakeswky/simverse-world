@@ -1,61 +1,48 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
-import {
-  getAgentActivityHistory,
-  subscribeToAgentActivity,
-} from '../webmcp/activity'
-import { getChallengeStatus } from '../webmcp/challengeStatus'
-import {
-  registerChallengeStatusTool,
-  type WebMcpRegistrationState,
-} from '../webmcp/registerChallengeStatusTool'
+import { useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
+
+import { ChallengeHeader } from '../components/challenge/ChallengeHeader'
+import { LivingWorldPanel } from '../components/challenge/LivingWorldPanel'
+import { useChallengeStore } from '../stores/challengeStore'
 import '../styles/challenge-page.css'
 
-type PageRegistrationState = WebMcpRegistrationState | 'checking'
-
-const registrationCopy: Record<PageRegistrationState, string> = {
-  checking: 'Checking Site Tools support',
-  registered: 'Site Tool ready',
-  disabled: 'Disabled by build flag',
-  unsupported: 'Site Tools unavailable in this browser',
-  failed: 'Registration failed safely',
+interface LegacyDiagnosticsState {
+  toolName: string
+  toolVersion: string
+  registrationState: string
 }
 
-function readableActivityTime(value: string): string {
-  const date = new Date(value)
-  return Number.isNaN(date.getTime())
-    ? value
-    : new Intl.DateTimeFormat('en', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    }).format(date)
-}
-
-export function ChallengePage() {
-  const status = getChallengeStatus()
-  const [registrationState, setRegistrationState] = useState<PageRegistrationState>('checking')
-  const subscribeToActivity = useCallback(
-    (listener: () => void) => subscribeToAgentActivity(document, listener),
-    [],
-  )
-  const getActivitySnapshot = useCallback(() => getAgentActivityHistory(document), [])
-  const activities = useSyncExternalStore(
-    subscribeToActivity,
-    getActivitySnapshot,
-    getActivitySnapshot,
-  )
+function LegacyDiagnostics() {
+  const [diagnostics, setDiagnostics] = useState<LegacyDiagnosticsState | null>(null)
 
   useEffect(() => {
     let active = true
     const controller = new AbortController()
 
-    void registerChallengeStatusTool({ signal: controller.signal })
-      .then((state) => {
-        if (active) setRegistrationState(state)
+    void Promise.all([
+      import('../webmcp/challengeStatus'),
+      import('../webmcp/registerChallengeStatusTool'),
+    ]).then(async ([statusModule, registrationModule]) => {
+      const status = statusModule.getChallengeStatus()
+      const registrationState = await registrationModule.registerChallengeStatusTool({
+        signal: controller.signal,
       })
-      .catch(() => {
-        if (active) setRegistrationState('failed')
-      })
+      if (active) {
+        setDiagnostics({
+          toolName: registrationModule.CHALLENGE_STATUS_TOOL_NAME,
+          toolVersion: status.tool_version,
+          registrationState,
+        })
+      }
+    }).catch(() => {
+      if (active) {
+        setDiagnostics({
+          toolName: 'Legacy status probe unavailable',
+          toolVersion: 'unavailable',
+          registrationState: 'failed',
+        })
+      }
+    })
 
     return () => {
       active = false
@@ -64,98 +51,99 @@ export function ChallengePage() {
   }, [])
 
   return (
-    <main className="challenge-page">
-      <header className="challenge-header">
-        <a className="challenge-brand" href="/" aria-label="Simverse World home">
-          <span>S/</span> SIMVERSE
-        </a>
-        <nav aria-label="Challenge navigation">
-          <a aria-current="page" href="/challenge">Challenge</a>
-          <a href="/town">Live town</a>
-          <a href="/login">Enter world</a>
-        </nav>
-      </header>
+    <aside className="challenge-diagnostics" aria-label="Day-0 diagnostics">
+      <span>DAY-0 DIAGNOSTICS</span>
+      {diagnostics ? (
+        <>
+          <strong>{diagnostics.toolName}</strong>
+          <code>{diagnostics.toolVersion}</code>
+          <small>{diagnostics.registrationState}</small>
+        </>
+      ) : <strong>Loading diagnostic probe…</strong>}
+    </aside>
+  )
+}
 
-      <div className="challenge-shell">
-        <section className="challenge-hero">
-          <div>
-            <p>SIMVERSE CIVIC COPILOT · WEBMCP PROBE</p>
-            <h1>Co-govern a living AI town.</h1>
-            <span>
-              Humans and agents share one live page. The agent surfaces evidence; the human keeps final authority.
-            </span>
-          </div>
-          <div className="challenge-tool-state" data-state={registrationState}>
-            <i />
-            {registrationCopy[registrationState]}
-          </div>
-        </section>
+export function ChallengePage() {
+  const location = useLocation()
+  const session = useChallengeStore((state) => state.session)
+  const loading = useChallengeStore((state) => state.loading)
+  const activeToolNames = useChallengeStore((state) => state.activeToolNames)
+  const registrationState = useChallengeStore((state) => state.registrationState)
+  const error = useChallengeStore((state) => state.error)
+  const initialize = useChallengeStore((state) => state.initialize)
+  const reset = useChallengeStore((state) => state.reset)
+  const diagnosticsEnabled = new URLSearchParams(location.search).get('diagnostics') === '1'
 
-        <section className="challenge-status-grid" aria-label="Challenge Town status">
-          <article><span>Town</span><strong>{status.town}</strong></article>
-          <article><span>World time</span><strong>{status.world_time}</strong></article>
-          <article><span>Scenario</span><strong>{status.scenario}</strong></article>
-          <article><span>Tool version</span><strong>{status.tool_version}</strong></article>
-          <article><span>Resettable</span><strong>{status.resettable ? 'Yes' : 'No'}</strong></article>
-        </section>
+  useEffect(() => {
+    void initialize().catch(() => undefined)
+  }, [initialize])
 
-        <div className="challenge-workspace">
-          <section className="challenge-map-card" aria-labelledby="challenge-map-title">
-            <header>
-              <div><p>SHARED WORLD VIEW</p><h2 id="challenge-map-title">Challenge Town</h2></div>
-              <span>Day-0 read-only probe</span>
-            </header>
-            <div className="challenge-map">
-              <img src="/marketing/world-map.jpg" alt="Simverse town map" />
-              <div className="challenge-harbor-marker" aria-label="Harbor district scenario marker">
-                <i />
-                <strong>Harbor district</strong>
-                <span>Scenario ready for inspection</span>
-              </div>
+  if (!session) {
+    return (
+      <main className="challenge-page">
+        <header className="challenge-header challenge-header-minimal">
+          <a className="challenge-brand" href="/" aria-label="Simverse World home">
+            <span>S/</span> SIMVERSE
+          </a>
+          <nav aria-label="Challenge navigation">
+            <a aria-current="page" href="/challenge">Challenge</a>
+            <a href="/town">Live town</a>
+          </nav>
+        </header>
+        <section className="challenge-session-boundary" aria-live="polite">
+          {error ? (
+            <div role="alert">
+              <span>SESSION UNAVAILABLE</span>
+              <h1>Challenge session is temporarily unavailable.</h1>
+              <p>No internal error details were exposed. Retry the isolated anonymous session.</p>
+              <button type="button" onClick={() => void initialize().catch(() => undefined)}>
+                Retry session
+              </button>
             </div>
-            <footer>
-              This probe returns fixed, non-sensitive status data. It does not call an LLM, read a token, or mutate production state.
-            </footer>
-          </section>
+          ) : (
+            <div className="challenge-loading">
+              <i />
+              <h1>{loading ? 'Restoring Challenge Town…' : 'Preparing Challenge Town…'}</h1>
+            </div>
+          )}
+        </section>
+      </main>
+    )
+  }
 
-          <aside
-            className="challenge-activity"
-            aria-labelledby="agent-activity-title"
-            aria-live="polite"
-            aria-relevant="additions"
-            role="log"
-          >
-            <header>
-              <div><p>LIVE TOOL TRACE</p><h2 id="agent-activity-title">Agent Activity</h2></div>
-              <span>{activities.length}</span>
-            </header>
+  const canReset = ['VERIFIED', 'FAILED', 'EXPIRED'].includes(session.state)
 
-            {activities.length === 0 ? (
-              <div className="challenge-activity-empty">
-                <i />
-                <strong>Waiting for a Site Tool call</strong>
-                <span>Ask the agent to check the Challenge Town status.</span>
-              </div>
-            ) : (
-              <ol>
-                {activities.map((entry) => (
-                  <li key={entry.id} data-outcome={entry.outcome}>
-                    <span className="challenge-activity-icon" aria-hidden="true">
-                      {entry.outcome === 'completed' ? '✓' : '×'}
-                    </span>
-                    <div>
-                      <strong>{entry.toolName}</strong>
-                      <span>
-                        {entry.outcome === 'completed' ? 'Completed' : 'Failed safely'} in {entry.durationMs} ms
-                      </span>
-                    </div>
-                    <time dateTime={entry.occurredAt}>{readableActivityTime(entry.occurredAt)}</time>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </aside>
-        </div>
+  return (
+    <main className="challenge-page">
+      <div className="challenge-shell">
+        <ChallengeHeader
+          scenario={session.scenario_id}
+          state={session.state}
+          worldVersion={session.world_version}
+          worldTime={session.world_time}
+          budgetSc={session.budget_sc}
+          activeToolNames={activeToolNames}
+          activeToolCount={activeToolNames.length}
+          registrationState={registrationState}
+          expiresAt={session.expires_at}
+          canReset={canReset}
+          onReset={() => {
+            void reset({ expected_generation: session.session_generation }).catch(
+              () => undefined,
+            )
+          }}
+        />
+
+        {loading ? <div className="challenge-inline-loading">Syncing session projection…</div> : null}
+        {error ? (
+          <div className="challenge-inline-error" role="status">
+            The last action failed safely. The current projection remains visible.
+          </div>
+        ) : null}
+
+        <LivingWorldPanel world={session.world} evidence={session.evidence} />
+        {diagnosticsEnabled ? <LegacyDiagnostics /> : null}
       </div>
     </main>
   )
