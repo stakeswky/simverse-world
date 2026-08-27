@@ -91,7 +91,11 @@ describe('challenge benchmark telemetry', () => {
     recorder.record('verification_started', { core_tool_calls: 1 })
     recorder.completeTask()
 
-    expect(recorder.exportRows()[0]?.core_tool_calls).toBe(0)
+    const ordinary = recorder.exportRows()[0]
+    expect(ordinary?.core_tool_calls).toBe(0)
+    expect(
+      ordinary?.events.every(({ fields }) => fields.core_tool_calls === undefined),
+    ).toBe(true)
   })
 
   it('rejects unknown fields and values instead of retaining secrets or private text', () => {

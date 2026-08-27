@@ -263,6 +263,7 @@ export function createChallengeTelemetryRecorder(
     }
     if (!active) return
     const fields = sanitizeSafeFields(safeFields)
+    if (active.mode === 'ordinary') delete fields.core_tool_calls
     const elapsedMs = Math.max(0, clock() - active.started_at_ms)
     const previous = active.events[active.events.length - 1]
     if (previous?.event === event) {
