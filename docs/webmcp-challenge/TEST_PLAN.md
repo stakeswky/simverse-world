@@ -26,6 +26,84 @@ Focused tests cover:
 - Visible Agent Activity after actual execution.
 - Anonymous `/challenge` routing and isolation from authenticated gameplay overlays.
 
+## Option B Phase 6 backend contract and baseline comparison
+
+Recorded on `2026-08-27`. The authoritative pre-Option-B failure baseline is
+GitHub Actions source SHA
+`de98dc4b47c67cd30ff2c3809493489577a3e4cf`, run `32968059066`, job
+`98175015320`. Its exact 48 sorted node IDs are checked in at
+`docs/webmcp-challenge/BACKEND_BASELINE_FAILURES.txt`.
+
+| Gate | Actual result |
+|---|---|
+| `python -m pytest tests/challenge -q` | PASS — 255 passed, 4 environment-gated real-Redis skips, exit 0 |
+| `python -m pytest tests/test_env_example_consistency.py -q` | PASS — 23 passed, exit 0 |
+| Combined Challenge + environment-example replay | PASS — 278 passed, 4 environment-gated real-Redis skips, exit 0 |
+| `python -m pytest tests -q --timeout=120 --timeout-method=signal` | EXPECTED NONZERO — 48 failed, 4471 passed, 6 skipped, 57 deselected |
+| Baseline group | 48 nodes; SHA-256 `16967ca0fd38fa8a827014ff1dbc43eb043008139c8c5d2aa676ce1532504919` |
+| Current group | 48 nodes; SHA-256 `16967ca0fd38fa8a827014ff1dbc43eb043008139c8c5d2aa676ce1532504919` |
+| Removed group (`baseline - current`) | 0 nodes — empty |
+| New group (`current - baseline`) | 0 nodes — empty |
+
+The current group is reproduced below so the comparison remains reviewable
+without relying on the temporary pytest log:
+
+```text
+tests/test_lab_budgets_wiring.py::test_default_limits_do_not_terminate_happy_path
+tests/test_lab_budgets_wiring.py::test_egress_bytes_exhaustion_terminates_run
+tests/test_lab_budgets_wiring.py::test_egress_requests_exhaustion_terminates_run
+tests/test_lab_control_v2_regressions.py::test_durable_cancel_is_polled_after_redis_loss_and_runner_restart
+tests/test_lab_control_v2_regressions.py::test_global_epoch_rejects_every_stale_effect_class
+tests/test_lab_control_v2_regressions.py::test_global_kill_closes_admission_advances_epoch_and_fans_out_both_planes
+tests/test_lab_control_v2_regressions.py::test_global_kill_fault_quarantines_only_the_injected_target
+tests/test_lab_control_v2_regressions.py::test_global_kill_nominal_has_no_quarantine
+tests/test_lab_gateway_v2_supervision.py::test_http_adapter_v2_round_trip_never_uses_step_stream
+tests/test_lab_gateway_v2_supervision.py::test_oversized_broker_result_is_terminal_and_effect_runs_once
+tests/test_lab_gateway_v2_supervision.py::test_v2_approval_timeout_delivers_canonical_denied_result
+tests/test_lab_gateway_v2_supervision.py::test_v2_orchestrator_execute_full_sentinel_round_trip
+tests/test_lab_http_candidate.py::test_http_candidate_scores_live_reference_server
+tests/test_lab_oci_executor_spec.py::test_run_bounds_captured_output_to_cap
+tests/test_lab_orchestrator_oci_routing.py::test_fs_write_routes_to_mock_even_with_oci_enabled
+tests/test_lab_orchestrator_oci_routing.py::test_second_action_in_same_run_is_quarantined_after_teardown_failure
+tests/test_lab_outbox_runner_v2_regressions.py::test_runner_claims_only_owned_topics_and_publisher_receives_full_envelope
+tests/test_lab_outbox_runner_v2_regressions.py::test_runner_service_starts_only_runner_owned_dispatch_topics
+tests/test_lab_outbox_runner_v2_regressions.py::test_topic_registry_has_exactly_one_trust_plane_owner
+tests/test_lab_protocol_v2_regressions.py::test_broker_sentinel_reaches_final_artifact_with_result_provenance
+tests/test_lab_protocol_v2_regressions.py::test_real_broker_outcome_resumes_the_same_runtime_turn[denied]
+tests/test_lab_protocol_v2_regressions.py::test_real_broker_outcome_resumes_the_same_runtime_turn[failed]
+tests/test_lab_protocol_v2_regressions.py::test_real_broker_outcome_resumes_the_same_runtime_turn[succeeded]
+tests/test_lab_protocol_v2_regressions.py::test_runtime_pauses_on_intent_without_fake_observation_final_or_artifact
+tests/test_lab_protocol_v2_regressions.py::test_scoped_auth_exact_retry_is_idempotent_but_cross_binding_replay_is_denied
+tests/test_lab_release_gate.py::test_every_release_run_requires_disposable_and_image_identity_inputs
+tests/test_lab_release_gate.py::test_request_hash_is_canonical_and_unresolved_d0_is_rejected
+tests/test_lab_retention.py::test_cleanup_writes_outbox_event_with_full_payload
+tests/test_lab_runtime_ref.py::test_agent_loop_produces_steps_and_intends_tools
+tests/test_lab_runtime_ref_server.py::test_adapter_drives_server_end_to_end
+tests/test_lab_runtime_ref_server.py::test_server_protocol_roundtrip
+tests/test_lab_runtime_v2_http_auth.py::test_control_surfaces_require_runtime_control_before_lookup
+tests/test_lab_runtime_v2_http_auth.py::test_create_is_fail_closed_and_accepts_current_and_next_keys
+tests/test_lab_runtime_v2_http_auth.py::test_goal_and_result_loop_preserves_auth_before_lookup
+tests/test_lab_runtime_v2_loop.py::test_goal_receipt_and_paused_turn_survive_runtime_restart
+tests/test_lab_runtime_v2_loop.py::test_handshake_is_authenticated_and_hashes_the_frozen_protocol
+tests/test_lab_runtime_v2_loop.py::test_non_success_result_is_terminal_without_success_artifact[denied]
+tests/test_lab_runtime_v2_loop.py::test_non_success_result_is_terminal_without_success_artifact[failed]
+tests/test_lab_runtime_v2_loop.py::test_result_binding_redaction_and_receipt_survive_restart
+tests/test_lab_runtime_v2_loop.py::test_result_effect_recovers_when_receipt_commit_fails
+tests/test_lab_runtime_v2_loop.py::test_result_payload_uses_protocol_command_size_cap
+tests/test_lab_runtime_v2_loop.py::test_result_receipt_retry_does_not_consume_the_next_intent
+tests/test_lab_runtime_v2_loop.py::test_result_rejects_wrong_turn_and_second_action_binding
+tests/test_lab_runtime_v2_loop.py::test_runtime_store_migrates_phase2_durable_volume
+tests/test_lab_runtime_v2_supervision_contract.py::test_runtime_v2_artifact_decoder_accepts_exact_nullable_wire_fields
+tests/test_lab_terminal_writer_audit.py::test_d1a_comparison_preserves_one_financial_domain
+tests/test_lab_terminal_writer_audit.py::test_terminal_writer_inventory_has_no_unknown_or_missing_sites
+tests/test_map_integration.py::test_import_resident_emits_canonical_location_id
+```
+
+The removed and new groups are both intentionally empty. The first full run
+found one new environment-example consistency failure for the Challenge cookie
+and origin settings; documenting those production settings removed it before
+the recorded comparison above.
+
 ## Option B Phase 4 security-negative matrix
 
 Recorded on `2026-08-27`. Every required case has its own test node; no row is
