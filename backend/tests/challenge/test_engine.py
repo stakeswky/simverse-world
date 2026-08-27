@@ -1,4 +1,5 @@
 import inspect
+import re
 from datetime import UTC, datetime
 
 import pytest
@@ -13,6 +14,7 @@ from app.challenge.engine import (
     VERIFICATION_HOURS,
     apply_world_diff,
     build_intervention_preview,
+    commit_world,
     forecast_intervention,
     investigate_world,
     validate_world_diff,
@@ -302,6 +304,162 @@ def test_forecast_runs_all_fixed_seeds_and_has_locked_ranges() -> None:
     assert forecast.strike_risk_pct.model_dump() == {"min": 28, "max": 42}
     assert forecast.stabilized_residents.model_dump() == {"min": 5, "max": 6}
     assert forecast_intervention(world, preview.diff) == forecast
+
+
+def test_commit_world_applies_the_locked_diff_and_builds_a_complete_receipt() -> None:
+    world, preview = _build_preview()
+    before_dump = world.model_dump(mode="json")
+    before_hash = world_hash(world)
+    relationships_before = [
+        relationship.model_dump(mode="json") for relationship in world.relationships
+    ]
+
+    committed, receipt = commit_world(world, preview.diff, "appr-A1B2")
+
+    assert committed.world_version == 8
+    assert committed.budget_sc == 60
+    assert {resident.cash_sc for resident in committed.residents} == {40}
+    assert {resident.unpaid_wage_sc for resident in committed.residents} == {0}
+    assert [resident.food_credit_sc for resident in committed.residents] == [
+        20,
+        20,
+        0,
+        0,
+        0,
+        0,
+    ]
+    assert {
+        (
+            employer.overdue_payroll_sc,
+            employer.repayment_claim_sc,
+            employer.escrow_status,
+        )
+        for employer in committed.employers
+    } == {(0, 90, "PENDING")}
+    assert "employer-escrow-mediation" in {
+        event.event_id for event in committed.events
+    }
+    assert committed.harbor_open is True
+    assert [
+        relationship.model_dump(mode="json")
+        for relationship in committed.relationships
+    ] == relationships_before
+    assert committed.metrics.unpaid_residents == 0
+
+    assert re.fullmatch(r"SV-2042-[0-9A-F]{8}", receipt.receipt_id)
+    assert receipt.scenario_id == "harbor-wage-crisis-v1"
+    assert receipt.session_generation == "generation-01"
+    assert receipt.preview_id == "preview-01"
+    assert receipt.approval_fingerprint == "appr-A1B2"
+    assert receipt.approved_diff_hash == preview.diff_hash
+    assert receipt.world_before_version == 7
+    assert receipt.world_after_version == 8
+    assert receipt.world_before_hash == before_hash
+    assert receipt.world_after_hash == world_hash(committed)
+    assert receipt.budget_before_sc == 300
+    assert receipt.budget_delta_sc == -240
+    assert receipt.budget_after_sc == 60
+    assert receipt.affected_residents == [
+        f"harbor-resident-{index:02d}" for index in range(1, 7)
+    ]
+    assert receipt.created_events == ["employer-escrow-mediation"]
+    assert set(receipt.verified_invariants) == EXPECTED_CONSTRAINTS
+    assert world.model_dump(mode="json") == before_dump
+    assert world_hash(world) == before_hash
+
+
+def test_commit_receipt_metadata_never_changes_the_committed_world_hash() -> None:
+    world, preview = _build_preview()
+
+    first_world, first_receipt = commit_world(
+        world, preview.diff, "appr-A1B2"
+    )
+    second_world, second_receipt = commit_world(
+        world, preview.diff, "appr-C3D4"
+    )
+
+    assert world_hash(first_world) == world_hash(second_world)
+    assert first_receipt.approval_fingerprint != second_receipt.approval_fingerprint
+    assert first_receipt.receipt_id != second_receipt.receipt_id
+
+
+@pytest.mark.parametrize("budget_after_sc", [59, 61])
+def test_commit_rejects_one_sc_budget_drift_without_mutating_input(
+    budget_after_sc: int,
+) -> None:
+    world, preview = _build_preview()
+    before_dump = world.model_dump(mode="json")
+    bad_diff = preview.diff.model_copy(
+        update={"budget_after_sc": budget_after_sc},
+        deep=True,
+    )
+
+    with pytest.raises(ChallengeDomainError) as rejected:
+        commit_world(world, bad_diff, "appr-A1B2")
+
+    assert rejected.value.code is ChallengeErrorCode.POLICY_VIOLATION
+    assert world.model_dump(mode="json") == before_dump
+
+
+def test_commit_rejects_resident_version_and_policy_drift_without_mutation() -> None:
+    world, preview = _build_preview()
+    cases = []
+    wrong_resident_change = preview.diff.resident_cash_changes[0].model_copy(
+        update={"resident_id": "production-resident-01"}
+    )
+    cases.append(
+        (
+            preview.diff.model_copy(
+                update={
+                    "resident_cash_changes": [
+                        wrong_resident_change,
+                        *preview.diff.resident_cash_changes[1:],
+                    ]
+                },
+                deep=True,
+            ),
+            ChallengeErrorCode.POLICY_VIOLATION,
+        )
+    )
+    cases.append(
+        (
+            preview.diff.model_copy(
+                update={"based_on_world_version": 6},
+                deep=True,
+            ),
+            ChallengeErrorCode.STALE_WORLD_VERSION,
+        )
+    )
+    cases.append(
+        (
+            preview.diff.model_copy(
+                update={
+                    "explicitly_unchanged": preview.diff.explicitly_unchanged[:-1]
+                },
+                deep=True,
+            ),
+            ChallengeErrorCode.POLICY_VIOLATION,
+        )
+    )
+
+    for bad_diff, expected_code in cases:
+        before_dump = world.model_dump(mode="json")
+        with pytest.raises(ChallengeDomainError) as rejected:
+            commit_world(world, bad_diff, "appr-A1B2")
+        assert rejected.value.code is expected_code
+        assert world.model_dump(mode="json") == before_dump
+
+
+def test_commit_rejects_a_closed_harbor_without_mutating_input() -> None:
+    world, preview = _build_preview()
+    world.harbor_open = False
+    before_dump = world.model_dump(mode="json")
+
+    with pytest.raises(ChallengeDomainError) as rejected:
+        commit_world(world, preview.diff, "appr-A1B2")
+
+    assert rejected.value.code is ChallengeErrorCode.POLICY_VIOLATION
+    assert world.model_dump(mode="json") == before_dump
 
 
 def test_intervention_engine_is_local_and_has_no_external_llm_dependency() -> None:

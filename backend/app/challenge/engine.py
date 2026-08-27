@@ -1,6 +1,7 @@
+import hashlib
 from datetime import datetime
 
-from app.challenge.canonical import diff_hash
+from app.challenge.canonical import diff_hash, world_hash
 from app.challenge.errors import (
     ERROR_STATUS_BY_CODE,
     ChallengeDomainError,
@@ -11,6 +12,7 @@ from app.challenge.models import (
     ChallengeMetrics,
     ChallengeWorld,
     EmployerClaim,
+    ExecutionReceipt,
     EvidenceItem,
     EvidenceSnapshot,
     FoodCreditChange,
@@ -338,6 +340,97 @@ def apply_world_diff(world: ChallengeWorld, diff: WorldDiff) -> ChallengeWorld:
         resident.unpaid_wage_sc > 0 for resident in applied.residents
     )
     return applied
+
+
+def commit_world(
+    world: ChallengeWorld,
+    diff: WorldDiff,
+    approval_fingerprint: str,
+) -> tuple[ChallengeWorld, ExecutionReceipt]:
+    if (
+        len(approval_fingerprint) != 9
+        or not approval_fingerprint.startswith("appr-")
+        or any(
+            character not in "0123456789ABCDEF"
+            for character in approval_fingerprint[5:]
+        )
+    ):
+        raise _domain_error(
+            ChallengeErrorCode.APPROVAL_MISMATCH,
+            message="Approval fingerprint does not match the trusted format.",
+            next_action="Approve the current preview again.",
+        )
+
+    before_hash = world_hash(world)
+    relationships_before = [
+        relationship.model_dump(mode="json") for relationship in world.relationships
+    ]
+    resident_ids_before = [resident.resident_id for resident in world.residents]
+    event_ids_before = {event.event_id for event in world.events}
+    committed = apply_world_diff(world, diff)
+
+    relationships_after = [
+        relationship.model_dump(mode="json")
+        for relationship in committed.relationships
+    ]
+    resident_ids_after = [resident.resident_id for resident in committed.residents]
+    created_event_ids = sorted(
+        event.event_id
+        for event in committed.events
+        if event.event_id not in event_ids_before
+    )
+    postconditions_hold = (
+        committed.world_version == world.world_version + 1
+        and committed.budget_sc == diff.budget_after_sc == 60
+        and committed.harbor_open is True
+        and committed.scenario_id == world.scenario_id
+        and committed.fixture_version == world.fixture_version
+        and committed.world_time == world.world_time
+        and relationships_after == relationships_before
+        and resident_ids_after == resident_ids_before
+        and created_event_ids == ["employer-escrow-mediation"]
+        and committed.metrics.unpaid_residents == 0
+    )
+    if not postconditions_hold:
+        raise _policy_violation(
+            "The committed world failed an isolated intervention invariant."
+        )
+
+    after_hash = world_hash(committed)
+    approved_diff_hash = diff_hash(diff)
+    receipt_material = "\n".join(
+        (
+            "simverse-challenge-receipt-v1",
+            approved_diff_hash,
+            approval_fingerprint,
+            before_hash,
+            after_hash,
+        )
+    )
+    receipt_suffix = hashlib.sha256(
+        receipt_material.encode("utf-8")
+    ).hexdigest()[:8].upper()
+    receipt = ExecutionReceipt(
+        receipt_id=f"SV-{world.world_time.year}-{receipt_suffix}",
+        scenario_id=world.scenario_id,
+        session_generation=diff.session_generation,
+        preview_id=diff.preview_id,
+        approval_fingerprint=approval_fingerprint,
+        approved_diff_hash=approved_diff_hash,
+        world_before_version=world.world_version,
+        world_after_version=committed.world_version,
+        world_before_hash=before_hash,
+        world_after_hash=after_hash,
+        budget_before_sc=world.budget_sc,
+        budget_delta_sc=committed.budget_sc - world.budget_sc,
+        budget_after_sc=committed.budget_sc,
+        affected_residents=[
+            change.resident_id for change in diff.resident_cash_changes
+        ],
+        created_events=created_event_ids,
+        verified_invariants=list(ENFORCED_CONSTRAINTS),
+    )
+    return committed, receipt
 
 
 def _simulate_intervention_seed(
