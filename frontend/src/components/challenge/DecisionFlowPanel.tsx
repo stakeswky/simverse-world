@@ -1,14 +1,21 @@
 import type {
+  ApproveInput,
   ChallengeProjection,
   InvestigateInput,
   PreviewInput,
 } from '../../services/api/challenge'
+import { HumanApprovalPanel } from './HumanApprovalPanel'
 
 interface DecisionFlowPanelProps {
   session: ChallengeProjection
   loading: boolean
   onInvestigate: (input: InvestigateInput) => Promise<void>
   onPreview: (input: PreviewInput) => Promise<void>
+  onApprove: (
+    input: ApproveInput,
+    event: Pick<MouseEvent, 'isTrusted'>,
+  ) => Promise<void>
+  onRevoke: () => Promise<void>
 }
 
 function shortHash(hash: string): string {
@@ -20,6 +27,8 @@ export function DecisionFlowPanel({
   loading,
   onInvestigate,
   onPreview,
+  onApprove,
+  onRevoke,
 }: DecisionFlowPanelProps) {
   const evidence = session.evidence
   const preview = session.preview
@@ -97,13 +106,14 @@ export function DecisionFlowPanel({
       )}
 
       {preview ? (
-        <div className="challenge-intervention-preview">
+        <>
+          <div className="challenge-intervention-preview">
           <header>
             <div>
               <span>Immutable World Diff</span>
               <strong>{preview.intervention_id}</strong>
             </div>
-            <b>{session.approval_fingerprint ? 'Approved once' : 'Review required'}</b>
+            <b>{session.approval_fingerprint ? 'Bound diff' : 'Review required'}</b>
           </header>
           <p>World v{preview.based_on_world_version} · {shortHash(preview.diff_hash)}</p>
 
@@ -166,7 +176,14 @@ export function DecisionFlowPanel({
               </article>
             ))}
           </section>
-        </div>
+          </div>
+          <HumanApprovalPanel
+            key={`${session.state}:${preview.preview_id}`}
+            session={session}
+            onApprove={onApprove}
+            onRevoke={onRevoke}
+          />
+        </>
       ) : null}
 
       {canInvestigate || canPreview ? (

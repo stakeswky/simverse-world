@@ -78,6 +78,8 @@ export function ChallengePage() {
   const initialize = useChallengeStore((state) => state.initialize)
   const investigate = useChallengeStore((state) => state.investigate)
   const preview = useChallengeStore((state) => state.preview)
+  const approve = useChallengeStore((state) => state.approve)
+  const revoke = useChallengeStore((state) => state.revoke)
   const reset = useChallengeStore((state) => state.reset)
   const setRegistrationState = useChallengeStore(
     (state) => state.setRegistrationState,
@@ -178,6 +180,12 @@ export function ChallengePage() {
             }}
             onPreview={async (input) => {
               await preview(input)
+            }}
+            onApprove={async (input, event) => {
+              await approve(input, event)
+            }}
+            onRevoke={async () => {
+              await revoke()
             }}
           />
           <AgentActivityPanel />

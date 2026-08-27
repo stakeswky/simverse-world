@@ -24,6 +24,8 @@ const store = vi.hoisted(() => ({
   initialize: vi.fn<() => Promise<void>>(),
   investigate: vi.fn(),
   preview: vi.fn(),
+  approve: vi.fn(),
+  revoke: vi.fn(),
   reset: vi.fn(),
   setRegistrationState: vi.fn(),
 }))
@@ -210,6 +212,8 @@ beforeEach(() => {
   store.preview.mockReset().mockResolvedValue({
     structuredContent: { state: 'PREVIEW_READY' },
   })
+  store.approve.mockReset().mockResolvedValue(undefined)
+  store.revoke.mockReset().mockResolvedValue(undefined)
   store.reset.mockReset().mockResolvedValue({ structuredContent: { state: 'INITIAL' } })
   store.setRegistrationState.mockReset()
   vi.stubEnv('VITE_WEBMCP_ENABLED', 'true')
@@ -323,6 +327,44 @@ describe('ChallengePage', () => {
     expect(screen.getByText('World v7 · sha256:bbbbbbbbbbbb…')).toBeInTheDocument()
     expect(screen.getByText('Review required')).toBeInTheDocument()
     expect(screen.getByText(/deterministic isolated simulation/i)).toBeInTheDocument()
+  })
+
+  it('renders the visible approval gate and rejects a programmatic DOM click', () => {
+    store.session = previewProjection()
+    store.activeToolNames = ['simverse_preview_intervention']
+    renderPage()
+
+    expect(screen.getByText(
+      'Commit capability is not available to the agent.',
+    )).toBeInTheDocument()
+    const approve = screen.getByRole('button', {
+      name: 'Create one-time approval',
+    })
+    expect(approve).toBeDisabled()
+    fireEvent.click(screen.getByRole('checkbox', {
+      name: 'I reviewed this exact World Diff.',
+    }))
+    expect(approve).toBeEnabled()
+    approve.click()
+    expect(store.approve).not.toHaveBeenCalled()
+    expect(document.body.innerHTML).not.toContain('csrf-01')
+    expect(document.body.innerHTML).not.toContain('sv_challenge_approval')
+  })
+
+  it('shows and revokes the safe one-time approval fingerprint', async () => {
+    store.session = previewProjection({
+      state: 'APPROVED_ONCE',
+      tool_surface: ['simverse_commit_approved'],
+      approval_fingerprint: 'appr-A1B2',
+      approval_expires_at: '2042-06-12T08:06:30Z',
+    })
+    store.activeToolNames = ['simverse_commit_approved']
+    renderPage()
+
+    expect(screen.getByText('appr-A1B2')).toBeInTheDocument()
+    expect(screen.getByText('2042-06-12T08:06:30Z')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Revoke approval' }))
+    await waitFor(() => expect(store.revoke).toHaveBeenCalledTimes(1))
   })
 
   it('rebuilds through the store and clears stale approval presentation', async () => {
