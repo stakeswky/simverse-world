@@ -20,6 +20,7 @@ class VerifyChallengeE2EEvidenceTest(unittest.TestCase):
         self.run_git("config", "user.name", "Challenge Test")
         self.run_git("config", "user.email", "challenge@example.invalid")
         self.write("frontend/src/pages/ChallengePage.tsx", "export const version = 1\n")
+        self.write("frontend/e2e/challenge-benchmark.spec.ts", "export const version = 1\n")
         self.write("README.md", "# Simverse\n")
         self.run_git("add", ".")
         self.run_git("commit", "-qm", "runtime")
@@ -46,6 +47,10 @@ class VerifyChallengeE2EEvidenceTest(unittest.TestCase):
             "docs/webmcp-challenge/E2E_EVIDENCE.md",
             f"# Evidence\n\nRuntime source HEAD `{source_head}` passed.\n",
         )
+        self.write(
+            "docs/webmcp-challenge/BENCHMARK.md",
+            f"# Benchmark\n\n- Source HEAD: `{source_head}`\n",
+        )
 
     def verify(self) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -63,7 +68,7 @@ class VerifyChallengeE2EEvidenceTest(unittest.TestCase):
         completed = self.verify()
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertIn("challenge_e2e_evidence_head=PASS", completed.stdout)
+        self.assertIn("challenge_evidence_heads=PASS", completed.stdout)
 
     def test_runtime_change_after_evidence_source_is_rejected(self) -> None:
         self.write("frontend/src/pages/ChallengePage.tsx", "export const version = 2\n")
@@ -74,6 +79,16 @@ class VerifyChallengeE2EEvidenceTest(unittest.TestCase):
 
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("frontend/src/pages/ChallengePage.tsx", completed.stderr)
+
+    def test_benchmark_spec_change_after_evidence_source_is_rejected(self) -> None:
+        self.write("frontend/e2e/challenge-benchmark.spec.ts", "export const version = 2\n")
+        self.run_git("add", ".")
+        self.run_git("commit", "-qm", "benchmark drift")
+
+        completed = self.verify()
+
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("frontend/e2e/challenge-benchmark.spec.ts", completed.stderr)
 
     def test_missing_or_unresolvable_source_head_is_rejected(self) -> None:
         self.write_evidence("f" * 40)
