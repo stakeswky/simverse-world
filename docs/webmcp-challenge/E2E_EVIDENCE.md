@@ -2,9 +2,9 @@
 
 ## Result
 
-The reproducible Chromium gate passed on 2026-08-27 at `08:47:20Z` from source
-HEAD `8365fb3e75acb60b89621e0f68e6f13c54ef4477` (`fix(challenge): reject
-benchmark evidence drift`). The run used Node `v22.23.2`, npm `10.9.8`,
+The reproducible Chromium gate passed on 2026-08-27 at `15:58:26Z` from source
+HEAD `158401eef52e412ec7cde2f65c5ffd22547d934b` (`test(challenge): isolate
+browser e2e infrastructure`). The run used Node `v22.23.2`, npm `10.9.8`,
 Playwright `1.62.1`, and Chromium `151.0.7922.34`.
 
 That hash is the reviewed runtime source commit. A later evidence-only commit
@@ -16,24 +16,29 @@ commit so `/tmp/simverse-option-b-e2e-evidence.log` reports that exact HEAD.
 
 ```text
 full_flow=10/10 reset_hash=10/10 replay_success=0 unauthorized_success=0 duplicate_tools=0
-1 passed (16.3s)
+1 passed (16.7s)
 playwright_exit=0 cleanup_exit=0
 api_health=ok frontend_health=ok
-api_drain=api drained pid=8860
-frontend_drain=frontend drained pid=9033
+api_drain=api drained pid=84523
+frontend_drain=frontend drained pid=84785
+infra_drain=isolated project=simversecloseoutflow158401er2 containers-and-volumes-removed
 ```
 
 The fixed machine-readable record path (overwritten by each later run) is
 `/tmp/simverse-option-b-e2e-evidence.log`; Playwright's JSON report is
-`/tmp/simverse-option-b-e2e-artifacts/report.json` (3,416 bytes).
+`/tmp/simverse-option-b-e2e-artifacts/report.json` (3,407 bytes). The immutable
+closeout copy is stored below
+`/tmp/simverse-option-b-closeout/e2e-flow-158401eef52e412ec7cde2f65c5ffd22547d934b/`.
 
 ## Real path exercised
 
-`bash scripts/run-challenge-e2e.sh` started the repository's pgvector database
-and Redis, applied every Alembic migration, started the real FastAPI process,
-built the enabled Vite production bundle, served it with Vite preview, and ran
-the flow in a real Chromium process. The test did not mock the API, store, DOM,
-cookies, or browser clicks.
+`bash scripts/run-challenge-e2e.sh` started an isolated, scoped Compose project
+with a new pgvector volume and Redis instance on dedicated host ports, applied
+every Alembic migration, started the real FastAPI process, built the enabled
+Vite production bundle, served it with Vite preview, and ran the flow in a real
+Chromium process. The test did not mock the API, store, DOM, cookies, or browser
+clicks. Cleanup removed only that scoped project's containers, network, and
+volume; the pre-existing Option B services on ports 5432/6379 were untouched.
 
 Stock Chromium does not provide the experimental `document.modelContext` API.
 The spec therefore injects only a minimal host adapter that records the real
@@ -68,7 +73,7 @@ The unauthorized request is asserted as HTTP `403` as well as
 - `/tmp/simverse-option-b-e2e-artifacts/challenge-outcome-control.png` —
   No-action control article (9,264 bytes)
 - `/tmp/simverse-option-b-e2e-artifacts/challenge-reset-10.png` — initial state
-  after ten same-context resets (303,741 bytes)
+  after ten same-context resets (303,518 bytes)
 
 The three outcome articles are separate screenshots because the shipped UI
 intentionally presents that comparison as a horizontally scrollable strip at
@@ -90,6 +95,14 @@ fixed four reproducibility defects:
 4. The first real Chromium run reached approval and then failed because a
    Node-side tool-name constant was referenced inside `page.evaluate`; the
    constant is now passed explicitly into the browser context.
+5. The closeout initially refused to reuse the pre-existing 5432/6379 services.
+   The runner now has an opt-in scoped isolation mode with configurable ports
+   and ownership-aware container, network, and volume cleanup.
+6. One exact-SHA rerun stalled in npm's duplicate online audit through the host
+   proxy. That attempt was terminated and cleanup completed. The accepted run
+   disabled only install-time audit, preferred the verified lockfile cache, and
+   relied on the separately executed `npm audit` gate, which reported zero
+   vulnerabilities.
 
 After those corrections, the complete fixed-runtime script passed repeatedly;
 the final run above is the evidence cited by this document.
