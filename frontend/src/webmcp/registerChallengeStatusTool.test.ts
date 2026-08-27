@@ -5,6 +5,7 @@ import type {
   WebMcpModelContext,
   WebMcpRegistrationOptions,
   WebMcpToolDefinition,
+  WebMcpToolExecutionOptions,
 } from './types'
 import {
   CHALLENGE_STATUS_TOOL_NAME,
@@ -35,6 +36,10 @@ function createToolNavigator(registerTool: WebMcpModelContext['registerTool']): 
 
 async function flushRegistrationCleanup(): Promise<void> {
   await new Promise<void>((resolve) => queueMicrotask(resolve))
+}
+
+function executionOptions(): WebMcpToolExecutionOptions {
+  return { signal: new AbortController().signal }
 }
 
 afterEach(() => {
@@ -284,9 +289,9 @@ describe('registerChallengeStatusTool', () => {
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true },
     })
-    await expect(registeredTool?.execute({})).resolves.toEqual(getChallengeStatus())
-    await expect(registeredTool?.execute({})).resolves.toEqual(getChallengeStatus())
-    await expect(registeredTool?.execute({ unexpected: true })).resolves.toEqual({
+    await expect(registeredTool?.execute({}, executionOptions())).resolves.toEqual(getChallengeStatus())
+    await expect(registeredTool?.execute({}, executionOptions())).resolves.toEqual(getChallengeStatus())
+    await expect(registeredTool?.execute({ unexpected: true }, executionOptions())).resolves.toEqual({
       error: {
         code: 'invalid_input',
         message: 'Tool input must be an empty object.',
@@ -305,7 +310,7 @@ describe('registerChallengeStatusTool', () => {
     })
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
 
-    const result = await tool.execute({})
+    const result = await tool.execute({}, executionOptions())
     const serialized = JSON.stringify({
       result,
       activity: getAgentActivityHistory(toolDocument),
@@ -325,7 +330,10 @@ describe('registerChallengeStatusTool', () => {
     const toolDocument = createToolDocument()
     const tool = createChallengeStatusTool({ document: toolDocument, clock: () => 10 })
 
-    await expect(tool.execute({ Authorization: 'Bearer input-secret' })).resolves.toEqual({
+    await expect(tool.execute(
+      { Authorization: 'Bearer input-secret' },
+      executionOptions(),
+    )).resolves.toEqual({
       error: {
         code: 'invalid_input',
         message: 'Tool input must be an empty object.',

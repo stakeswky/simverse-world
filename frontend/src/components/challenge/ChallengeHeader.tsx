@@ -20,6 +20,7 @@ const REGISTRATION_COPY: Record<WebMcpRegistrationState, string> = {
   disabled: 'Site Tools disabled',
   unsupported: 'Site Tools unavailable',
   failed: 'Site Tools failed safely',
+  stale: 'Site Tools refreshing',
 }
 
 export function ChallengeHeader({

@@ -5,6 +5,9 @@ import {
   type WebMcpModelContext,
   type WebMcpToolDefinition,
 } from './types'
+import type { WebMcpRegistrationState } from './challengeToolSurfaceManager'
+
+export type { WebMcpRegistrationState } from './challengeToolSurfaceManager'
 
 export const CHALLENGE_STATUS_TOOL_NAME = 'simverse_get_challenge_status'
 
@@ -16,8 +19,6 @@ export interface ChallengeStatusToolError {
 }
 
 export type ChallengeStatusToolResult = ChallengeStatus | ChallengeStatusToolError
-export type WebMcpRegistrationState = 'registered' | 'disabled' | 'unsupported' | 'failed'
-
 interface ToolOptions {
   readonly document?: Document
   readonly statusProvider?: () => ChallengeStatus
@@ -146,8 +147,8 @@ export function createChallengeStatusTool(options: ToolOptions = {}): WebMcpTool
       properties: {},
       additionalProperties: false,
     },
-    annotations: { readOnlyHint: true },
-    execute: async (input?: unknown) => {
+    annotations: { readOnlyHint: true, untrustedContentHint: false },
+    execute: async (input) => {
       let startedAt = 0
       try {
         startedAt = clock()
@@ -208,7 +209,7 @@ export async function registerChallengeStatusTool(
   if (!attachRegistrationConsumer(toolDocument, record, options.signal)) return 'failed'
 
   const registration = Promise.resolve()
-    .then(() => registerTool.call(
+    .then(() => Promise.resolve(registerTool.call(
       modelContext,
       createChallengeStatusTool({
         document: toolDocument,
@@ -216,7 +217,7 @@ export async function registerChallengeStatusTool(
         clock: options.clock,
       }),
       { signal: controller.signal },
-    ))
+    )))
     .then(() => 'registered' as const)
     .catch(() => {
       if (registrations.get(toolDocument) === record) registrations.delete(toolDocument)

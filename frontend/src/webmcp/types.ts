@@ -1,28 +1,60 @@
-export interface WebMcpInputSchema {
-  readonly type: 'object'
-  readonly properties: Readonly<Record<string, unknown>>
-  readonly additionalProperties: false
-}
+export type WebMcpSchemaScalar = string | number | boolean
 
-export interface WebMcpToolDefinition {
-  readonly name: string
-  readonly description: string
-  readonly inputSchema: WebMcpInputSchema
-  readonly annotations?: {
-    readonly readOnlyHint?: boolean
-  }
-  readonly execute: (input?: unknown) => unknown | Promise<unknown>
+export interface WebMcpInputSchema {
+  readonly type: 'object' | 'string' | 'integer' | 'number' | 'boolean' | 'array'
+  readonly properties?: Readonly<Record<string, WebMcpInputSchema>>
+  readonly required?: readonly string[]
+  readonly additionalProperties?: boolean
+  readonly minimum?: number
+  readonly maximum?: number
+  readonly const?: WebMcpSchemaScalar
+  readonly enum?: readonly WebMcpSchemaScalar[]
+  readonly pattern?: string
+  readonly items?: WebMcpInputSchema
 }
 
 export interface WebMcpRegistrationOptions {
   readonly signal?: AbortSignal
+  readonly exposedTo?: readonly string[]
 }
 
-export interface WebMcpModelContext {
+export interface WebMcpToolExecutionOptions {
+  readonly signal: AbortSignal
+}
+
+export interface RegisteredWebMcpTool {
+  readonly name: string
+  readonly title?: string
+  readonly description: string
+  readonly inputSchema?: WebMcpInputSchema
+  readonly origin?: string
+  readonly annotations?: {
+    readonly readOnlyHint?: boolean
+    readonly untrustedContentHint?: boolean
+  }
+}
+
+export interface WebMcpToolDefinition {
+  readonly name: string
+  readonly title?: string
+  readonly description: string
+  readonly inputSchema: WebMcpInputSchema
+  readonly annotations?: {
+    readonly readOnlyHint?: boolean
+    readonly untrustedContentHint?: boolean
+  }
+  readonly execute: (
+    input: Record<string, unknown>,
+    options: WebMcpToolExecutionOptions,
+  ) => unknown | Promise<unknown>
+}
+
+export interface WebMcpModelContext extends EventTarget {
   registerTool(
     definition: WebMcpToolDefinition,
     options?: WebMcpRegistrationOptions,
   ): void | Promise<void>
+  getTools?(): Promise<readonly RegisteredWebMcpTool[]>
 }
 
 export type WebMcpDocument = Document & {
