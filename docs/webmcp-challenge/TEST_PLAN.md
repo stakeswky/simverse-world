@@ -62,6 +62,31 @@ frontend challengeTools + surface manager + HumanApprovalPanel: 26 passed
 ordinary-browser UI fixed node: 1 passed
 ```
 
+### Real Redis CAS evidence
+
+Recorded on `2026-08-27` against `redis://127.0.0.1:6379/15` with Redis
+`8.10.1`. Colima could not start because its existing VZ disk was reported as
+already attached, so the required gate used a temporary Homebrew Redis process
+bound only to `127.0.0.1`, with persistence disabled. This remains real Redis
+server evidence; fakeredis is not used by these nodes.
+
+| Node id | Required invariant | Actual result |
+|---|---|---|
+| `tests/challenge/test_concurrency_real_redis.py::test_real_redis_two_concurrent_commits_consume_approval_once` | one commit success, loser `APPROVAL_REPLAYED`, one receipt, one budget delta, one commit audit | PASS |
+| `tests/challenge/test_concurrency_real_redis.py::test_real_redis_commit_racing_revoke_has_one_winner` | exactly one race winner; committed or revoked state is internally complete; replay has zero successes | PASS |
+| `tests/challenge/test_concurrency_real_redis.py::test_real_redis_commit_racing_reset_has_one_winner` | exactly one race winner; old session/approval are both retained or both replaced; replay has zero successes | PASS |
+| `tests/challenge/test_concurrency_real_redis.py::test_real_redis_watch_retry_rereads_state_and_reinvokes_mutator` | Redis server raises the real `WATCH` conflict; retry observes budgets `[300, 250]` and commits `249` | PASS |
+
+Required-gate evidence is stored in
+`/tmp/simverse-option-b-real-redis.log` and
+`/tmp/simverse-option-b-real-redis.exit`: `4 passed`, exit `0`, and no
+`skipped` marker. The fixture rejects non-loopback hosts, URL/query database
+overrides, and any client whose resolved database is not 15. Each test
+pre-registers random `real-<uuid>` keys and deletes only those exact DB 15
+keys; namespace and `DBSIZE` snapshots must return to their pre-test values,
+while DB 0 must remain unchanged. The recorded isolated run began and ended
+with DB 15 and DB 0 both at `DBSIZE 0`.
+
 ## Production build
 
 `VITE_WEBMCP_ENABLED` is a Vite build-time value. Enable it while building the exact artifact deployed to Cloudflare:
