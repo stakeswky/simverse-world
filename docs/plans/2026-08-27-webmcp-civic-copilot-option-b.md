@@ -1913,7 +1913,7 @@ npx tsc --noEmit
 
 **提交：** `feat(challenge): expose approved commit to ordinary UI`
 
-### Task 6.4B.2：真实执行五组 ordinary UI 与 WebMCP paired runs
+### Task 6.4B.2：实现并验证 paired benchmark harness
 
 **文件：**
 
@@ -1921,7 +1921,6 @@ npx tsc --noEmit
 - 修改 `scripts/run-challenge-e2e.sh`
 - 新增 `scripts/render-challenge-benchmark.py`
 - 新增 `scripts/test-render-challenge-benchmark.py`
-- 新增 `docs/webmcp-challenge/BENCHMARK.md`
 
 **Red gate：** 首次运行 benchmark spec 时，缺 benchmark marker 安装出的 telemetry export 或原始行数不是 ordinary 5 + WebMCP 5 应失败；renderer contract test 对缺行、重复 run id、任一模式少于五行、必需事件顺序不完整、未知 event、ordinary core tool calls 非零、WebMCP core tool calls 不等于 4、unauthorized success 非零、或不存在 slowest row 时 exit 1。runner 必须在执行前删除旧 raw，benchmark 只可用临时文件原子替换最终 raw，防止失败后读取旧十行形成假绿。
 
@@ -1937,12 +1936,37 @@ npx tsc --noEmit
 cd /Volumes/data/dev/simverse-world-option-b
 bash scripts/run-challenge-e2e.sh e2e/challenge-benchmark.spec.ts
 python3.12 scripts/test-render-challenge-benchmark.py
-python3.12 scripts/render-challenge-benchmark.py --input /tmp/simverse-option-b-benchmark-raw.json --output docs/webmcp-challenge/BENCHMARK.md
-rg -q 'ordinary_runs=5 webmcp_runs=5 paired_runs=5 unauthorized_success=0' docs/webmcp-challenge/BENCHMARK.md
+python3.12 scripts/render-challenge-benchmark.py --input /tmp/simverse-option-b-benchmark-raw.json --output /tmp/simverse-option-b-benchmark-preview.md
+rg -q 'ordinary_runs=5 webmcp_runs=5 paired_runs=5 unauthorized_success=0' /tmp/simverse-option-b-benchmark-preview.md
 git diff --check
 ```
 
-**提交：** `test(challenge): record paired task benchmark evidence`
+**提交：** `test(challenge): add paired benchmark harness`
+
+### Task 6.4B.3：从 exact clean HEAD 生成 paired benchmark evidence
+
+**为什么独立提交：** benchmark raw 必须记录实际被测试的 clean source HEAD。若在 harness 未提交时生成报告，`git rev-parse HEAD` 只会指向不含 harness 的父提交；若试图让报告提交引用自身则形成不可能的自引用。先提交 harness，再从该 exact clean HEAD 重跑，最后只提交生成文档。
+
+**文件：**
+
+- 新增 `docs/webmcp-challenge/BENCHMARK.md`
+
+**Green gate：**
+
+```bash
+cd /Volumes/data/dev/simverse-world-option-b
+test -z "$(git status --porcelain)"
+expected="$(git rev-parse HEAD)"
+bash scripts/run-challenge-e2e.sh e2e/challenge-benchmark.spec.ts
+python3.12 -c 'import json, subprocess; p=json.load(open("/tmp/simverse-option-b-benchmark-raw.json")); assert p["source_head"] == subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()'
+python3.12 scripts/test-render-challenge-benchmark.py
+python3.12 scripts/render-challenge-benchmark.py --input /tmp/simverse-option-b-benchmark-raw.json --output docs/webmcp-challenge/BENCHMARK.md
+rg -q 'ordinary_runs=5 webmcp_runs=5 paired_runs=5 unauthorized_success=0' docs/webmcp-challenge/BENCHMARK.md
+test "$(git rev-parse HEAD)" = "$expected"
+git diff --check
+```
+
+**提交：** `docs(challenge): record paired task benchmark evidence`
 
 ### Task 6.5：更新 judging/security/demo 文档并锁 demo fixture
 

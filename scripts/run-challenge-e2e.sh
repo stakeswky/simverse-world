@@ -13,6 +13,8 @@ simverse_api_drain=/tmp/simverse-option-b-api.drained
 simverse_frontend_drain=/tmp/simverse-option-b-frontend.drained
 simverse_preexisting=/tmp/simverse-option-b-preexisting-services.txt
 simverse_artifacts=/tmp/simverse-option-b-e2e-artifacts
+simverse_benchmark_raw=/tmp/simverse-option-b-benchmark-raw.json
+simverse_benchmark_temporary=/tmp/simverse-option-b-benchmark-raw.json.tmp
 simverse_api_pid=""
 simverse_frontend_pid=""
 
@@ -51,6 +53,8 @@ rm -f \
   "$simverse_api_drain" \
   "$simverse_frontend_drain" \
   "$simverse_preexisting" \
+  "$simverse_benchmark_raw" \
+  "$simverse_benchmark_temporary" \
   "$simverse_artifacts/challenge-full-flow-10.png" \
   "$simverse_artifacts/challenge-reset-10.png" \
   "$simverse_artifacts/challenge-outcome-prediction.png" \
@@ -230,15 +234,24 @@ if [[ "$simverse_test_rc" != 0 || "$simverse_cleanup_rc" != 0 ]]; then
 fi
 test -s "$simverse_api_drain"
 test -s "$simverse_frontend_drain"
-test -s "$simverse_artifacts/challenge-full-flow-10.png"
-test -s "$simverse_artifacts/challenge-reset-10.png"
-test -s "$simverse_artifacts/challenge-outcome-prediction.png"
-test -s "$simverse_artifacts/challenge-outcome-actual.png"
-test -s "$simverse_artifacts/challenge-outcome-control.png"
-test -s "$simverse_artifacts/report.json"
-rg -Fx \
-  'full_flow=10/10 reset_hash=10/10 replay_success=0 unauthorized_success=0 duplicate_tools=0' \
-  "$simverse_playwright_log" >/dev/null
-
-printf '%s\n' \
-  'full_flow=10/10 reset_hash=10/10 replay_success=0 unauthorized_success=0 duplicate_tools=0'
+case "$simverse_spec" in
+  e2e/challenge-flow.spec.ts)
+    test -s "$simverse_artifacts/challenge-full-flow-10.png"
+    test -s "$simverse_artifacts/challenge-reset-10.png"
+    test -s "$simverse_artifacts/challenge-outcome-prediction.png"
+    test -s "$simverse_artifacts/challenge-outcome-actual.png"
+    test -s "$simverse_artifacts/challenge-outcome-control.png"
+    test -s "$simverse_artifacts/report.json"
+    simverse_summary='full_flow=10/10 reset_hash=10/10 replay_success=0 unauthorized_success=0 duplicate_tools=0'
+    ;;
+  e2e/challenge-benchmark.spec.ts)
+    test -s "$simverse_benchmark_raw"
+    test ! -e "$simverse_benchmark_temporary"
+    simverse_summary='ordinary_runs=5 webmcp_runs=5 paired_runs=5 unauthorized_success=0'
+    ;;
+  *)
+    simverse_summary='challenge_e2e=PASS'
+    ;;
+esac
+rg -Fx "$simverse_summary" "$simverse_playwright_log" >/dev/null
+printf '%s\n' "$simverse_summary"
