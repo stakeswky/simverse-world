@@ -1871,10 +1871,15 @@ git show -s --format='%H %s' HEAD
 - 新增 `frontend/src/services/challengeTelemetry.ts`
 - 新增 `frontend/src/services/challengeTelemetry.test.ts`
 - 修改 `frontend/src/stores/challengeStore.ts`
+- 修改 `frontend/src/stores/challengeStore.test.ts`
 
 **Red test：** 规格第 20 节 13 个 event name 全部可记录且 enum 不多不少：`task_started`、`panel_opened`、`wrong_target_selected`、`crisis_identified`、`preview_requested`、`preview_ready`、`approval_viewed`、`approval_granted`、`commit_attempted`、`commit_succeeded`、`verification_started`、`verification_ready`、`task_completed`。只记录 duration/clicks/panel/route/wrong selection/success/tool calls/unauthorized counts/rebuild count；不记录 cookie/csrf/approval id/resident private text；session 内存 only，export 经人工下载，不写 production API。
 
-**实现：** telemetry recorder 是 Challenge-local module；每个 store action 与 UI panel event 写固定 enum；核心任务调用数只计 investigate/preview/commit/verify，reset 不计。recorder 提供 `startTask(mode)`、`record(event, safeFields)`、`completeTask()` 与 `exportRows()`；export 只返回结构化内存数据，不自动上传或写生产 API。
+**实现：** telemetry recorder 是 Challenge-local module；每个 store action 与 UI panel event 写固定 enum；核心任务调用数只计 investigate/preview/commit/verify，reset 不计。recorder 提供 `startTask(mode)`、`record(event, safeFields)`、`completeTask()` 与 `exportRows()`；export 只返回结构化内存数据，不自动上传或写 production API。普通页面不安装 telemetry global；只有 benchmark runner 在页面脚本加载前设置显式 session marker 时，才安装只含上述四个方法的窄桥，且永不暴露 test reset。失败请求的补充字段与相邻同名事件合并，保证一次提交尝试只产生一个 `commit_attempted`。
+
+**接口核对发现：** 当前 store 没有 panel open、approval viewed 或 wrong target 的 UI signal，且本 Task 不修改组件；recorder 必须支持这三个固定事件，由 Task 6.4B benchmark harness 在真实 DOM 信号点显式记录。store 只记录它能真实观察的 action start/success，禁止伪造不存在的 UI 事件。
+
+**安全计数边界：** store 中的 `unauthorized_successes` 只代表客户端可观察到的下界；Task 6.4B 必须另发真实 HTTP 未授权提交探针，以服务端响应作为 `unauthorized_successes = 0` 的权威证据，禁止仅凭客户端 state 推断。
 
 **Green gate：**
 

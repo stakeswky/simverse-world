@@ -20,6 +20,7 @@ vi.mock('../services/api/challenge', async () => {
 })
 
 import { ChallengeApiError, type ChallengeProjection } from '../services/api/challenge'
+import { challengeTelemetry } from '../services/challengeTelemetry'
 import { useChallengeStore } from './challengeStore'
 
 function projection(overrides: Record<string, unknown> = {}): ChallengeProjection {
@@ -49,6 +50,7 @@ function projection(overrides: Record<string, unknown> = {}): ChallengeProjectio
 describe('challenge store', () => {
   beforeEach(() => {
     localStorage.clear()
+    challengeTelemetry.resetForTests()
     useChallengeStore.getState().clearForTests()
     for (const mock of Object.values(apiMocks)) mock.mockReset()
   })
@@ -193,5 +195,198 @@ describe('challenge store', () => {
     expect(useChallengeStore.getState().session?.session_generation).toBe('generation-02')
     expect(result.structuredContent).toMatchObject({ state: 'INITIAL' })
     expect(localStorage.length).toBe(0)
+  })
+
+  it('records the real store action lifecycle and only four WebMCP core calls', async () => {
+    const investigateInput = { budget_cap_sc: 300 }
+    const previewInput = {
+      crisis_id: 'harbor-wage-crisis' as const,
+      budget_cap_sc: 300 as const,
+    }
+    const approvalInput = {
+      preview_id: 'preview-01',
+      expected_world_version: 7,
+      diff_hash: `sha256:${'b'.repeat(64)}`,
+    }
+    apiMocks.getChallengeSession.mockResolvedValue(projection())
+    apiMocks.investigateChallenge.mockResolvedValue(projection({
+      state: 'EVIDENCE_READY',
+      tool_surface: ['simverse_investigate_crisis', 'simverse_preview_intervention'],
+    }))
+    apiMocks.previewChallenge.mockResolvedValue(projection({
+      state: 'PREVIEW_READY',
+      preview: { preview_id: 'preview-01' },
+      tool_surface: ['simverse_preview_intervention'],
+    }))
+    apiMocks.approveChallenge.mockResolvedValue(projection({
+      state: 'APPROVED_ONCE',
+      approval_fingerprint: 'approval-secret-fingerprint',
+      preview: { preview_id: 'preview-01' },
+      tool_surface: ['simverse_commit_approved'],
+    }))
+    apiMocks.commitChallenge.mockResolvedValue(projection({
+      state: 'COMMITTED',
+      world_version: 8,
+      budget_sc: 60,
+      receipt: { receipt_id: 'receipt-01' },
+      tool_surface: ['simverse_verify_outcome'],
+    }))
+    apiMocks.verifyChallenge.mockResolvedValue(projection({
+      state: 'VERIFIED',
+      world_version: 9,
+      budget_sc: 60,
+      receipt: { receipt_id: 'receipt-01' },
+      verification: { receipt_id: 'receipt-01' },
+      tool_surface: ['simverse_reset_town'],
+    }))
+
+    await useChallengeStore.getState().initialize()
+    challengeTelemetry.startTask('webmcp')
+    await useChallengeStore.getState().investigate(investigateInput)
+    await useChallengeStore.getState().preview(previewInput)
+    await useChallengeStore.getState().approve(approvalInput, { isTrusted: true })
+    await useChallengeStore.getState().commit(approvalInput)
+    await useChallengeStore.getState().verify({
+      receipt_id: 'receipt-01',
+      advance_hours: 72,
+    })
+
+    const [row] = challengeTelemetry.exportRows()
+    expect(row?.events.map(({ event }) => event)).toEqual([
+      'task_started',
+      'crisis_identified',
+      'preview_requested',
+      'preview_ready',
+      'approval_granted',
+      'commit_attempted',
+      'commit_succeeded',
+      'verification_started',
+      'verification_ready',
+      'task_completed',
+    ])
+    expect(row).toMatchObject({
+      mode: 'webmcp',
+      success: true,
+      core_tool_calls: 4,
+      preview_rebuild_count: 0,
+      unauthorized_attempts: 0,
+      unauthorized_successes: 0,
+    })
+    expect(JSON.stringify(row)).not.toContain('csrf-01')
+    expect(JSON.stringify(row)).not.toContain('approval-secret-fingerprint')
+  })
+
+  it('counts a second preview as one rebuild without completing the task', async () => {
+    apiMocks.getChallengeSession.mockResolvedValue(projection({
+      state: 'EVIDENCE_READY',
+      tool_surface: ['simverse_preview_intervention'],
+    }))
+    apiMocks.previewChallenge
+      .mockResolvedValueOnce(projection({
+        state: 'PREVIEW_READY',
+        preview: { preview_id: 'preview-01' },
+        tool_surface: ['simverse_preview_intervention'],
+      }))
+      .mockResolvedValueOnce(projection({
+        state: 'PREVIEW_READY',
+        preview: { preview_id: 'preview-02' },
+        tool_surface: ['simverse_preview_intervention'],
+      }))
+    await useChallengeStore.getState().initialize()
+    challengeTelemetry.startTask('webmcp')
+
+    const input = {
+      crisis_id: 'harbor-wage-crisis' as const,
+      budget_cap_sc: 300 as const,
+    }
+    await useChallengeStore.getState().preview(input)
+    await useChallengeStore.getState().preview(input)
+    const row = challengeTelemetry.completeTask()
+
+    expect(row).toMatchObject({
+      core_tool_calls: 2,
+      preview_rebuild_count: 1,
+    })
+    expect(row?.events.map(({ event }) => event)).toEqual([
+      'task_started',
+      'preview_requested',
+      'preview_ready',
+      'preview_requested',
+      'preview_ready',
+      'task_completed',
+    ])
+  })
+
+  it('counts a commit from an unapproved client state as an unauthorized attempt', async () => {
+    const input = {
+      preview_id: 'preview-01',
+      expected_world_version: 7,
+      diff_hash: `sha256:${'b'.repeat(64)}`,
+    }
+    apiMocks.getChallengeSession.mockResolvedValue(projection({
+      state: 'PREVIEW_READY',
+      preview: { preview_id: 'preview-01' },
+      tool_surface: ['simverse_commit_approved'],
+    }))
+    apiMocks.commitChallenge.mockResolvedValue(projection({
+      state: 'COMMITTED',
+      receipt: { receipt_id: 'receipt-01' },
+      tool_surface: ['simverse_verify_outcome'],
+    }))
+    await useChallengeStore.getState().initialize()
+    challengeTelemetry.startTask('webmcp')
+
+    await useChallengeStore.getState().commit(input)
+    const row = challengeTelemetry.completeTask()
+
+    expect(row?.events.map(({ event }) => event)).toEqual([
+      'task_started',
+      'commit_attempted',
+      'commit_succeeded',
+      'task_completed',
+    ])
+    expect(row).toMatchObject({
+      core_tool_calls: 1,
+      unauthorized_attempts: 1,
+      unauthorized_successes: 1,
+    })
+  })
+
+  it('keeps one commit event when the server rejects an apparently approved attempt', async () => {
+    const input = {
+      preview_id: 'preview-01',
+      expected_world_version: 7,
+      diff_hash: `sha256:${'b'.repeat(64)}`,
+    }
+    apiMocks.getChallengeSession.mockResolvedValue(projection({
+      state: 'APPROVED_ONCE',
+      preview: { preview_id: 'preview-01' },
+      tool_surface: ['simverse_commit_approved'],
+    }))
+    apiMocks.commitChallenge.mockRejectedValue(new ChallengeApiError(
+      'APPROVAL_EXPIRED',
+      'Approval expired.',
+      409,
+      false,
+      'PREVIEW_READY',
+    ))
+    await useChallengeStore.getState().initialize()
+    challengeTelemetry.startTask('webmcp')
+
+    await expect(useChallengeStore.getState().commit(input)).rejects.toMatchObject({
+      code: 'APPROVAL_EXPIRED',
+    })
+    const row = challengeTelemetry.completeTask()
+
+    expect(row?.events.map(({ event }) => event)).toEqual([
+      'task_started',
+      'commit_attempted',
+      'task_completed',
+    ])
+    expect(row).toMatchObject({
+      core_tool_calls: 1,
+      unauthorized_attempts: 1,
+      unauthorized_successes: 0,
+    })
   })
 })
