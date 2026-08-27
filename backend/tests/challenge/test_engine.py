@@ -1,5 +1,6 @@
 import inspect
 import re
+from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
 
 import pytest
@@ -13,11 +14,14 @@ from app.challenge.engine import (
     TICK_HOURS,
     VERIFICATION_HOURS,
     apply_world_diff,
+    build_external_event_stream,
     build_intervention_preview,
     commit_world,
     forecast_intervention,
     investigate_world,
+    simulate_world,
     validate_world_diff,
+    verify_intervention,
 )
 from app.challenge.errors import ChallengeDomainError, ChallengeErrorCode
 from app.challenge.fixture import build_initial_world
@@ -293,8 +297,30 @@ def test_apply_world_diff_returns_an_isolated_clone_and_preserves_invariants() -
     assert world_hash(world) == before_hash
 
 
-def test_forecast_runs_all_fixed_seeds_and_has_locked_ranges() -> None:
+def test_forecast_runs_all_fixed_seeds_and_has_locked_ranges(monkeypatch) -> None:
     world, preview = _build_preview()
+    original_simulate = engine_module.simulate_world
+    simulated_seeds: list[int] = []
+
+    def track_simulation(
+        simulated_world,
+        *,
+        seed,
+        intervention_applied,
+        external_events,
+    ):
+        simulated_seeds.append(seed)
+        assert intervention_applied is True
+        assert external_events == build_external_event_stream(seed)
+        assert not any(slot.escrow_miss for slot in external_events)
+        return original_simulate(
+            simulated_world,
+            seed=seed,
+            intervention_applied=intervention_applied,
+            external_events=external_events,
+        )
+
+    monkeypatch.setattr(engine_module, "simulate_world", track_simulation)
 
     forecast = forecast_intervention(world, preview.diff)
 
@@ -304,6 +330,183 @@ def test_forecast_runs_all_fixed_seeds_and_has_locked_ranges() -> None:
     assert forecast.strike_risk_pct.model_dump() == {"min": 28, "max": 42}
     assert forecast.stabilized_residents.model_dump() == {"min": 5, "max": 6}
     assert forecast_intervention(world, preview.diff) == forecast
+    assert simulated_seeds == [*FORECAST_SEEDS, *FORECAST_SEEDS]
+
+
+def test_verify_intervention_builds_paired_13_point_repeatable_outcome() -> None:
+    baseline, preview = _build_preview()
+    committed, receipt = commit_world(baseline, preview.diff, "appr-A1B2")
+    baseline_hash = world_hash(baseline)
+
+    verified, result = verify_intervention(
+        committed,
+        build_initial_world(),
+        baseline_hash,
+        preview,
+        receipt,
+    )
+
+    assert verified.world_version == 9
+    assert verified.world_time == baseline.world_time.replace(day=15)
+    assert verified.budget_sc == 60
+    assert result.receipt_id == receipt.receipt_id
+    assert result.advance_hours == 72
+    assert result.baseline_snapshot.tick_index == 0
+    assert result.baseline_snapshot.elapsed_hours == 0
+    assert result.baseline_snapshot.world_time == baseline.world_time
+    assert result.baseline_snapshot.metrics.model_dump() == {
+        "high_food_risk_residents": 2,
+        "social_tension": 68,
+        "strike_risk_pct": 74,
+        "stabilized_residents": 0,
+    }
+    assert len(result.tick_snapshots) == 12
+    assert [tick.tick_index for tick in result.tick_snapshots] == list(range(1, 13))
+    assert [tick.elapsed_hours for tick in result.tick_snapshots] == [
+        hour for hour in range(6, 73, 6)
+    ]
+    assert result.tick_snapshots[-1].world_time == baseline.world_time.replace(day=15)
+    assert result.actual.model_dump() == {
+        "high_food_risk_residents": 1,
+        "social_tension": 54,
+        "strike_risk_pct": 38,
+        "stabilized_residents": 5,
+    }
+    assert result.no_action.model_dump() == {
+        "high_food_risk_residents": 3,
+        "social_tension": 81,
+        "strike_risk_pct": 100,
+        "stabilized_residents": 0,
+        "strike_event_triggered": True,
+    }
+    assert "escrow miss" in result.notable_deviation.lower()
+    assert result.forecast == preview.forecast
+    assert ACTUAL_SEED not in result.forecast.seeds
+    forecast_midpoint = (
+        sum(result.forecast.high_food_risk_residents.model_dump().values()) / 2,
+        sum(result.forecast.social_tension.model_dump().values()) / 2,
+        sum(result.forecast.strike_risk_pct.model_dump().values()) / 2,
+        sum(result.forecast.stabilized_residents.model_dump().values()) / 2,
+    )
+    actual_tuple = tuple(result.actual.model_dump().values())
+    assert actual_tuple != forecast_midpoint
+    assert verified.metrics.high_food_risk_residents == 1
+    assert verified.metrics.social_tension == 54
+    assert verified.metrics.strike_risk_pct == 38
+    assert verified.metrics.stabilized_residents == 5
+
+    repeated_world, repeated_result = verify_intervention(
+        committed,
+        build_initial_world(),
+        baseline_hash,
+        preview,
+        receipt,
+    )
+    assert repeated_world == verified
+    assert repeated_result == result
+
+
+def test_simulation_pairs_immutable_external_events_and_strike_control() -> None:
+    baseline, preview = _build_preview()
+    committed, _ = commit_world(baseline, preview.diff, "appr-A1B2")
+    events = build_external_event_stream(ACTUAL_SEED)
+
+    assert len(events) == 12
+    assert [slot.tick_index for slot in events] == list(range(1, 13))
+    assert sum(slot.escrow_miss for slot in events) == 1
+    with pytest.raises(FrozenInstanceError):
+        events[0].event_id = "mutated"
+
+    actual = simulate_world(
+        committed,
+        seed=ACTUAL_SEED,
+        intervention_applied=True,
+        external_events=events,
+    )
+    control = simulate_world(
+        baseline,
+        seed=ACTUAL_SEED,
+        intervention_applied=False,
+        external_events=events,
+    )
+
+    assert [tick.external_event_ids for tick in actual.tick_snapshots] == [
+        tick.external_event_ids for tick in control.tick_snapshots
+    ]
+    assert actual.final_metrics.model_dump() == {
+        "high_food_risk_residents": 1,
+        "social_tension": 54,
+        "strike_risk_pct": 38,
+        "stabilized_residents": 5,
+    }
+    assert control.final_metrics.model_dump() == {
+        "high_food_risk_residents": 3,
+        "social_tension": 81,
+        "strike_risk_pct": 100,
+        "stabilized_residents": 0,
+    }
+    assert actual.created_event_ids == ()
+    assert control.created_event_ids == ("harbor-general-strike",)
+
+
+@pytest.mark.parametrize("tamper", ["baseline", "locked_hash", "receipt"])
+def test_verify_rejects_incomplete_baseline_binding_without_mutation(
+    tamper: str,
+) -> None:
+    baseline, preview = _build_preview()
+    committed, receipt = commit_world(baseline, preview.diff, "appr-A1B2")
+    before = committed.model_dump(mode="json")
+    locked_hash = world_hash(baseline)
+    supplied_baseline = build_initial_world()
+    supplied_receipt = receipt
+    if tamper == "baseline":
+        supplied_baseline.budget_sc -= 1
+    elif tamper == "locked_hash":
+        locked_hash = "sha256:" + "f" * 64
+    else:
+        supplied_receipt = receipt.model_copy(
+            update={"world_before_hash": "sha256:" + "f" * 64}
+        )
+
+    with pytest.raises(ChallengeDomainError) as rejected:
+        verify_intervention(
+            committed,
+            supplied_baseline,
+            locked_hash,
+            preview,
+            supplied_receipt,
+        )
+
+    assert rejected.value.code is ChallengeErrorCode.OUTCOME_INCOMPLETE
+    assert rejected.value.status == 409
+    assert committed.model_dump(mode="json") == before
+
+
+def test_verify_rejects_a_self_consistent_non_v8_commit() -> None:
+    baseline, preview = _build_preview()
+    committed, receipt = commit_world(baseline, preview.diff, "appr-A1B2")
+    tampered_world = committed.model_copy(
+        update={"world_version": 9},
+        deep=True,
+    )
+    tampered_receipt = receipt.model_copy(
+        update={
+            "world_after_version": 9,
+            "world_after_hash": world_hash(tampered_world),
+        }
+    )
+
+    with pytest.raises(ChallengeDomainError) as rejected:
+        verify_intervention(
+            tampered_world,
+            build_initial_world(),
+            world_hash(baseline),
+            preview,
+            tampered_receipt,
+        )
+
+    assert rejected.value.code is ChallengeErrorCode.OUTCOME_INCOMPLETE
+    assert rejected.value.status == 409
 
 
 def test_commit_world_applies_the_locked_diff_and_builds_a_complete_receipt() -> None:

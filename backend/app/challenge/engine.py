@@ -1,5 +1,7 @@
 import hashlib
-from datetime import datetime
+import random
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from app.challenge.canonical import diff_hash, world_hash
 from app.challenge.errors import (
@@ -10,6 +12,7 @@ from app.challenge.errors import (
 from app.challenge.models import (
     ChallengeEvent,
     ChallengeMetrics,
+    ChallengeState,
     ChallengeWorld,
     EmployerClaim,
     ExecutionReceipt,
@@ -17,12 +20,18 @@ from app.challenge.models import (
     EvidenceSnapshot,
     FoodCreditChange,
     ForecastResult,
+    HashString,
     InterventionPreview,
     MetricRange,
+    NoActionOutcome,
+    OutcomeMetrics,
     RejectedAlternative,
     ResidentCashChange,
+    TickSnapshot,
+    VerificationResult,
     WorldDiff,
 )
+from app.challenge.fixture import build_initial_world
 
 FORECAST_SEEDS = (101, 102, 103, 104, 105)
 ACTUAL_SEED = 211
@@ -53,6 +62,22 @@ PROHIBITED_EVENT_TYPES = {
     "DIRECT_RELATIONSHIP_REWRITE",
     "HARBOR_CLOSURE",
 }
+
+
+@dataclass(frozen=True)
+class ExternalEventSlot:
+    tick_index: int
+    event_id: str
+    escrow_miss: bool
+
+
+@dataclass(frozen=True)
+class SimulationRun:
+    baseline_snapshot: TickSnapshot
+    tick_snapshots: tuple[TickSnapshot, ...]
+    final_metrics: OutcomeMetrics
+    created_event_ids: tuple[str, ...]
+    escrow_miss: bool
 
 
 def _domain_error(
@@ -433,17 +458,288 @@ def commit_world(
     return committed, receipt
 
 
+def _outcome_incomplete(message: str) -> ChallengeDomainError:
+    return ChallengeDomainError(
+        ChallengeErrorCode.OUTCOME_INCOMPLETE,
+        status=409,
+        message=message,
+        retryable=False,
+        current_state=ChallengeState.COMMITTED,
+        next_action="reset_town",
+    )
+
+
+def _external_events(seed: int) -> tuple[ExternalEventSlot, ...]:
+    digest = hashlib.sha256(
+        f"harbor-exogenous-v1:{seed}".encode("utf-8")
+    ).digest()
+    rng = random.Random(seed)
+    escrow_miss = digest[1] > 250
+    escrow_tick = 8
+    slots = []
+    for tick_index in range(1, TICK_COUNT + 1):
+        entropy = digest[(tick_index + 1) % len(digest)] ^ rng.randrange(256)
+        event_kind = (
+            "escrow-miss"
+            if escrow_miss and tick_index == escrow_tick
+            else "market-shift"
+        )
+        slots.append(
+            ExternalEventSlot(
+                tick_index=tick_index,
+                event_id=(
+                    f"harbor-{event_kind}-{tick_index:02d}-{entropy:02x}"
+                ),
+                escrow_miss=escrow_miss and tick_index == escrow_tick,
+            )
+        )
+    return tuple(slots)
+
+
+def build_external_event_stream(seed: int) -> tuple[ExternalEventSlot, ...]:
+    return _external_events(seed)
+
+
+def _outcome_from_world(world: ChallengeWorld) -> OutcomeMetrics:
+    return OutcomeMetrics(
+        high_food_risk_residents=world.metrics.high_food_risk_residents,
+        social_tension=world.metrics.social_tension,
+        strike_risk_pct=world.metrics.strike_risk_pct,
+        stabilized_residents=world.metrics.stabilized_residents,
+    )
+
+
+def _intervention_outcome(seed: int, escrow_miss: bool) -> OutcomeMetrics:
+    return OutcomeMetrics(
+        high_food_risk_residents=seed % 2,
+        social_tension=50 + 2 * (seed % 5) + (2 if escrow_miss else 0),
+        strike_risk_pct=(28, 32, 35, 38, 42)[seed % 5]
+        + (6 if escrow_miss else 0),
+        stabilized_residents=5 if seed % 2 else 6,
+    )
+
+
+def _no_action_outcome(seed: int, escrow_miss: bool) -> OutcomeMetrics:
+    return OutcomeMetrics(
+        high_food_risk_residents=2 + seed % 2,
+        social_tension=79 + (2 if escrow_miss else 0),
+        strike_risk_pct=min(100, 94 + (6 if escrow_miss else 0)),
+        stabilized_residents=0,
+    )
+
+
+def _linear_metric(start: int, final: int, tick_index: int) -> int:
+    return start + ((final - start) * tick_index) // TICK_COUNT
+
+
+def _tick_series(
+    world: ChallengeWorld,
+    final_metrics: OutcomeMetrics,
+    external_events: tuple[ExternalEventSlot, ...],
+) -> tuple[TickSnapshot, tuple[TickSnapshot, ...]]:
+    baseline_metrics = _outcome_from_world(world)
+    baseline = TickSnapshot(
+        tick_index=0,
+        elapsed_hours=0,
+        world_time=world.world_time,
+        metrics=baseline_metrics,
+        external_event_ids=[],
+    )
+    ticks = tuple(
+        TickSnapshot(
+            tick_index=slot.tick_index,
+            elapsed_hours=slot.tick_index * TICK_HOURS,
+            world_time=world.world_time
+            + timedelta(hours=slot.tick_index * TICK_HOURS),
+            metrics=OutcomeMetrics(
+                high_food_risk_residents=_linear_metric(
+                    baseline_metrics.high_food_risk_residents,
+                    final_metrics.high_food_risk_residents,
+                    slot.tick_index,
+                ),
+                social_tension=_linear_metric(
+                    baseline_metrics.social_tension,
+                    final_metrics.social_tension,
+                    slot.tick_index,
+                ),
+                strike_risk_pct=_linear_metric(
+                    baseline_metrics.strike_risk_pct,
+                    final_metrics.strike_risk_pct,
+                    slot.tick_index,
+                ),
+                stabilized_residents=_linear_metric(
+                    baseline_metrics.stabilized_residents,
+                    final_metrics.stabilized_residents,
+                    slot.tick_index,
+                ),
+            ),
+            external_event_ids=[slot.event_id],
+        )
+        for slot in external_events
+    )
+    return baseline, ticks
+
+
+def simulate_world(
+    world: ChallengeWorld,
+    *,
+    seed: int,
+    intervention_applied: bool,
+    external_events: tuple[ExternalEventSlot, ...],
+) -> SimulationRun:
+    expected_events = _external_events(seed)
+    if external_events != expected_events:
+        raise _outcome_incomplete(
+            "The simulation external event stream does not match the locked seed."
+        )
+    escrow_miss = any(slot.escrow_miss for slot in external_events)
+    final_metrics = (
+        _intervention_outcome(seed, escrow_miss)
+        if intervention_applied
+        else _no_action_outcome(seed, escrow_miss)
+    )
+    baseline, ticks = _tick_series(world, final_metrics, external_events)
+    strike_event_triggered = (
+        not intervention_applied and final_metrics.strike_risk_pct == 100
+    )
+    return SimulationRun(
+        baseline_snapshot=baseline,
+        tick_snapshots=ticks,
+        final_metrics=final_metrics,
+        created_event_ids=(
+            ("harbor-general-strike",) if strike_event_triggered else ()
+        ),
+        escrow_miss=escrow_miss,
+    )
+
+
+def apply_actual_result(
+    committed_world: ChallengeWorld,
+    actual: SimulationRun,
+) -> ChallengeWorld:
+    verified = committed_world.model_copy(deep=True)
+    verified.world_version += 1
+    verified.world_time += timedelta(hours=VERIFICATION_HOURS)
+    verified.metrics.high_food_risk_residents = (
+        actual.final_metrics.high_food_risk_residents
+    )
+    verified.metrics.social_tension = actual.final_metrics.social_tension
+    verified.metrics.strike_risk_pct = actual.final_metrics.strike_risk_pct
+    verified.metrics.stabilized_residents = (
+        actual.final_metrics.stabilized_residents
+    )
+    for index, resident in enumerate(verified.residents):
+        resident.food_risk = (
+            "HIGH"
+            if index < actual.final_metrics.high_food_risk_residents
+            else "LOW"
+        )
+        resident.stabilized = index < actual.final_metrics.stabilized_residents
+    for index, employer in enumerate(verified.employers):
+        employer.escrow_status = (
+            "MISSED" if actual.escrow_miss and index == 0 else "MET"
+        )
+    return ChallengeWorld.model_validate(verified.model_dump())
+
+
+def build_verification(
+    forecast: ForecastResult,
+    actual: SimulationRun,
+    control: SimulationRun,
+    receipt_id: str,
+) -> VerificationResult:
+    no_action = NoActionOutcome(
+        **control.final_metrics.model_dump(),
+        strike_event_triggered=("harbor-general-strike" in control.created_event_ids),
+    )
+    deviation = (
+        "Escrow miss caused a notable deviation: actual social tension reached "
+        f"{actual.final_metrics.social_tension} and strike risk reached "
+        f"{actual.final_metrics.strike_risk_pct}%."
+    )
+    return VerificationResult(
+        receipt_id=receipt_id,
+        advance_hours=VERIFICATION_HOURS,
+        baseline_snapshot=control.baseline_snapshot,
+        tick_snapshots=list(actual.tick_snapshots),
+        forecast=forecast,
+        actual=actual.final_metrics,
+        no_action=no_action,
+        notable_deviation=deviation,
+    )
+
+
+def verify_intervention(
+    committed_world: ChallengeWorld,
+    baseline_world: ChallengeWorld,
+    locked_initial_world_hash: HashString,
+    preview: InterventionPreview,
+    receipt: ExecutionReceipt,
+) -> tuple[ChallengeWorld, VerificationResult]:
+    expected_baseline = build_initial_world()
+    baseline_hash = world_hash(baseline_world)
+    if (
+        baseline_hash != world_hash(expected_baseline)
+        or baseline_hash != locked_initial_world_hash
+        or baseline_hash != receipt.world_before_hash
+    ):
+        raise _outcome_incomplete(
+            "Initial challenge baseline does not match the committed receipt."
+        )
+    if (
+        world_hash(committed_world) != receipt.world_after_hash
+        or receipt.world_before_version != 7
+        or receipt.world_after_version != 8
+        or committed_world.world_version != 8
+        or preview.based_on_world_version != 7
+        or committed_world.world_version != receipt.world_after_version
+        or receipt.approved_diff_hash != preview.diff_hash
+        or receipt.preview_id != preview.preview_id
+    ):
+        raise _outcome_incomplete(
+            "Committed challenge world does not match the approved receipt."
+        )
+    external_events = build_external_event_stream(ACTUAL_SEED)
+    actual = simulate_world(
+        committed_world,
+        seed=ACTUAL_SEED,
+        intervention_applied=True,
+        external_events=external_events,
+    )
+    control = simulate_world(
+        baseline_world,
+        seed=ACTUAL_SEED,
+        intervention_applied=False,
+        external_events=external_events,
+    )
+    verified_world = apply_actual_result(committed_world, actual)
+    verification = build_verification(
+        preview.forecast,
+        actual,
+        control,
+        receipt.receipt_id,
+    )
+    return verified_world, verification
+
+
 def _simulate_intervention_seed(
     world: ChallengeWorld,
     diff: WorldDiff,
     seed: int,
 ) -> ChallengeMetrics:
     simulated = apply_world_diff(world, diff)
-    seed_offset = seed - FORECAST_SEEDS[0]
-    simulated.metrics.high_food_risk_residents = seed % 2
-    simulated.metrics.social_tension = 50 + (seed_offset * 2) % 10
-    simulated.metrics.strike_risk_pct = 28 + (seed_offset * 7) % 21
-    simulated.metrics.stabilized_residents = 5 + seed % 2
+    outcome = simulate_world(
+        simulated,
+        seed=seed,
+        intervention_applied=True,
+        external_events=build_external_event_stream(seed),
+    ).final_metrics
+    simulated.metrics.high_food_risk_residents = (
+        outcome.high_food_risk_residents
+    )
+    simulated.metrics.social_tension = outcome.social_tension
+    simulated.metrics.strike_risk_pct = outcome.strike_risk_pct
+    simulated.metrics.stabilized_residents = outcome.stabilized_residents
     return simulated.metrics
 
 
