@@ -323,7 +323,6 @@ async function runBenchmarkRow(
     })
 
     if (mode === 'ordinary') {
-      await recordTelemetry(page, 'crisis_identified', { clicks: 1 })
       await page.getByRole('button', { name: 'Investigate Harbor crisis' }).click()
     } else {
       const investigated = await executeTool(page, INVESTIGATE, { budget_cap_sc: 300 })
@@ -331,10 +330,13 @@ async function runBenchmarkRow(
     }
     await expectState(page, 'EVIDENCE_READY')
     await expect(page.getByText('Harbor focus active')).toBeVisible()
+    if (mode === 'ordinary') {
+      await recordTelemetry(page, 'crisis_identified', { clicks: 1 })
+    }
 
     if (mode === 'ordinary') {
-      await recordTelemetry(page, 'preview_requested', { clicks: 1 })
       await page.getByRole('button', { name: 'Preview intervention' }).click()
+      await recordTelemetry(page, 'preview_requested', { clicks: 1 })
     } else {
       await expectTools(page, [INVESTIGATE, PREVIEW])
       const previewed = await executeTool(page, PREVIEW, {
@@ -359,12 +361,12 @@ async function runBenchmarkRow(
       panel: 'approval',
       unauthorized_attempts: 1,
     })
-    await recordTelemetry(page, 'approval_granted', { clicks: 2 })
     await page.getByRole('checkbox', {
       name: 'I reviewed this exact World Diff.',
     }).check()
     await page.getByRole('button', { name: 'Create one-time approval' }).click()
     await expectState(page, 'APPROVED_ONCE')
+    await recordTelemetry(page, 'approval_granted', { clicks: 2 })
 
     const approved = await projection(page)
     expect(approved.preview).not.toBeNull()
@@ -374,8 +376,8 @@ async function runBenchmarkRow(
       diff_hash: approved.preview!.diff_hash,
     }
     if (mode === 'ordinary') {
-      await recordTelemetry(page, 'commit_attempted', { clicks: 1 })
       await page.getByRole('button', { name: 'Commit approved intervention' }).click()
+      await recordTelemetry(page, 'commit_attempted', { clicks: 1 })
     } else {
       await expectTools(page, [COMMIT])
       const committedResult = await executeTool(page, COMMIT, commitInput)
@@ -389,8 +391,8 @@ async function runBenchmarkRow(
     expect(committed.budget_sc).toBe(60)
 
     if (mode === 'ordinary') {
-      await recordTelemetry(page, 'verification_started', { clicks: 1 })
       await page.getByRole('button', { name: 'Verify 72-hour outcome' }).click()
+      await recordTelemetry(page, 'verification_started', { clicks: 1 })
     } else {
       await expectTools(page, [VERIFY])
       const verifiedResult = await executeTool(page, VERIFY, {
