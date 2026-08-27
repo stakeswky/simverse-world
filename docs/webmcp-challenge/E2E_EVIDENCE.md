@@ -2,9 +2,9 @@
 
 ## Result
 
-The reproducible Chromium gate passed on 2026-08-27 at `08:36:09Z` from source
-HEAD `aa1453bacf66f5637aaa4680176168e1660c5755` (`fix(challenge): record
-lifecycle after real DOM actions`). The run used Node `v22.23.2`, npm `10.9.8`,
+The reproducible Chromium gate passed on 2026-08-27 at `08:47:20Z` from source
+HEAD `8365fb3e75acb60b89621e0f68e6f13c54ef4477` (`fix(challenge): reject
+benchmark evidence drift`). The run used Node `v22.23.2`, npm `10.9.8`,
 Playwright `1.62.1`, and Chromium `151.0.7922.34`.
 
 That hash is the reviewed runtime source commit. A later evidence-only commit
@@ -68,7 +68,7 @@ The unauthorized request is asserted as HTTP `403` as well as
 - `/tmp/simverse-option-b-e2e-artifacts/challenge-outcome-control.png` —
   No-action control article (9,264 bytes)
 - `/tmp/simverse-option-b-e2e-artifacts/challenge-reset-10.png` — initial state
-  after ten same-context resets (303,529 bytes)
+  after ten same-context resets (303,741 bytes)
 
 The three outcome articles are separate screenshots because the shipped UI
 intentionally presents that comparison as a horizontally scrollable strip at
