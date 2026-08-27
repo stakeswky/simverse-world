@@ -24,6 +24,7 @@ from app.lab.runtime_ref.store import (
     RuntimeStore,
     RuntimeStoreBackpressure,
     RuntimeStoreConflict,
+    STORE_VERSION,
 )
 from tests.test_lab_protocol_v2_regressions import (
     AUDIENCE,
@@ -151,11 +152,21 @@ async def test_runtime_store_migrates_phase2_durable_volume(tmp_path):
     assert restored.next_event_cursor == 2
     check = sqlite3.connect(path)
     try:
-        assert check.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert check.execute("PRAGMA user_version").fetchone()[0] == STORE_VERSION
         event_columns = {
             row[1] for row in check.execute("PRAGMA table_info(runtime_events)")
         }
         assert {"tool_name", "tool_args_json", "tool_args_digest", "event_bytes"} <= event_columns
+        artifact_columns = {
+            row[1] for row in check.execute("PRAGMA table_info(runtime_artifacts)")
+        }
+        assert {
+            "content_type",
+            "declared_byte_size",
+            "expected_sha256",
+            "upload_state",
+            "upload_receipt_json",
+        } <= artifact_columns
         migrated_bytes = check.execute(
             "SELECT event_bytes FROM runtime_events "
             "WHERE session_id = 'phase2-session' AND cursor = 1"

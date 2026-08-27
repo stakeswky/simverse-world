@@ -93,12 +93,18 @@ class _ResponseClient:
 
 def _artifact(**overrides) -> dict:
     value = {
-        "artifact_id": "artifact-1",
+        "schema_version": 1,
+        "provider_artifact_id": "artifact-1",
         "kind": "text",
         "title": "verified report",
-        "uri": None,
-        "text_md": "sentinel-backed result",
-        "meta": {"result_digest": "a" * 64},
+        "content_type": "text/markdown",
+        "original_filename": None,
+        "declared_byte_size": None,
+        "expected_sha256": None,
+        "required": True,
+        "producer_action_id": None,
+        "upload_state": "pending",
+        "upload_receipt": None,
     }
     value.update(overrides)
     return value
@@ -256,12 +262,11 @@ async def test_runtime_v2_artifact_decoder_accepts_exact_nullable_wire_fields(
         "artifacts": [
             _artifact(),
             _artifact(
-                artifact_id="artifact-2",
+                provider_artifact_id="artifact-2",
                 kind="link",
                 title="primary source",
-                uri="https://example.test/source",
-                text_md=None,
-                meta={},
+                content_type="text/html",
+                required=False,
             ),
         ]
     }
@@ -275,8 +280,11 @@ async def test_runtime_v2_artifact_decoder_accepts_exact_nullable_wire_fields(
         ("text", "verified report"),
         ("link", "primary source"),
     ]
-    assert artifacts[0].uri is None
-    assert artifacts[1].text_md is None
+    assert artifacts[0].original_filename is None
+    assert artifacts[0].declared_byte_size is None
+    assert artifacts[0].expected_sha256 is None
+    assert artifacts[0].producer_action_id is None
+    assert artifacts[1].required is False
 
 
 @pytest.mark.anyio
@@ -290,15 +298,16 @@ async def test_runtime_v2_artifact_decoder_accepts_exact_nullable_wire_fields(
         {"artifacts": ["not-an-object"]},
         {"artifacts": [{key: value for key, value in _artifact().items() if key != "title"}]},
         {"artifacts": [{**_artifact(), "unexpected": True}]},
-        {"artifacts": [_artifact(artifact_id=None)]},
+        {"artifacts": [_artifact(provider_artifact_id=None)]},
         {"artifacts": [_artifact(kind=7)]},
         {"artifacts": [_artifact(kind="executable")]},
         {"artifacts": [_artifact(title=None)]},
         {"artifacts": [_artifact(title="")]},
-        {"artifacts": [_artifact(uri=7)]},
-        {"artifacts": [_artifact(text_md=[])]},
-        {"artifacts": [_artifact(meta=None)]},
-        {"artifacts": [_artifact(meta="not-an-object")]},
+        {"artifacts": [_artifact(content_type=7)]},
+        {"artifacts": [_artifact(original_filename=[])]},
+        {"artifacts": [_artifact(declared_byte_size="12")]},
+        {"artifacts": [_artifact(expected_sha256="not-a-digest")]},
+        {"artifacts": [_artifact(upload_receipt={"unexpected": True})]},
     ],
 )
 async def test_runtime_v2_artifact_decoder_rejects_malformed_items(

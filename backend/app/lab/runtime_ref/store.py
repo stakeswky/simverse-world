@@ -319,6 +319,22 @@ _V1_TO_V2_STATEMENTS = (
 )
 
 
+_V2_RUNTIME_ARTIFACTS_STATEMENT = """
+CREATE TABLE IF NOT EXISTS runtime_artifacts (
+    session_id TEXT NOT NULL REFERENCES runtime_sessions(session_id) ON DELETE CASCADE,
+    artifact_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    uri TEXT,
+    text_md TEXT,
+    meta_json TEXT NOT NULL,
+    artifact_digest TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (session_id, artifact_id)
+)
+"""
+
+
 _V2_TO_V3_STATEMENTS = (
     "ALTER TABLE runtime_artifacts ADD COLUMN content_type "
     "TEXT NOT NULL DEFAULT 'application/octet-stream'",
@@ -484,6 +500,7 @@ class RuntimeStore:
                         )
                     version = 2
                 if version == 2:
+                    await db.execute(_V2_RUNTIME_ARTIFACTS_STATEMENT)
                     for statement in _V2_TO_V3_STATEMENTS:
                         await db.execute(statement)
                 for statement in _SCHEMA_STATEMENTS:
