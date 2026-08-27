@@ -55,6 +55,45 @@ export interface CommitToolOutput {
   readonly next_tool: string | null
 }
 
+interface CompactOutcomeMetrics {
+  readonly high_food_risk_residents: number
+  readonly social_tension: number
+  readonly strike_risk_pct: number
+  readonly stabilized_residents: number
+}
+
+export interface VerifyToolOutput {
+  readonly state: 'VERIFIED'
+  readonly receipt_id: string
+  readonly world: {
+    readonly version_before: number
+    readonly version_after: number
+    readonly time_before: string
+    readonly time_after: string
+  }
+  readonly prediction: {
+    readonly high_food_risk_residents: CompactMetricRange
+    readonly social_tension: CompactMetricRange
+    readonly strike_risk_pct: CompactMetricRange
+    readonly stabilized_residents: CompactMetricRange
+  }
+  readonly actual: CompactOutcomeMetrics
+  readonly no_action_control: CompactOutcomeMetrics & {
+    readonly strike_event_triggered: boolean
+  }
+  readonly deviation: string
+  readonly tick_count: number
+  readonly next_tool: string | null
+}
+
+export interface ResetToolOutput {
+  readonly state: 'INITIAL'
+  readonly session_generation: string
+  readonly world_version: 7
+  readonly world_hash: string
+  readonly next_tool: string | null
+}
+
 export function buildInvestigateToolOutput(
   projection: ChallengeProjection,
 ): InvestigateToolOutput {
@@ -147,6 +186,65 @@ export function buildCommitToolOutput(
   }
   if (JSON.stringify(output).length >= 1500) {
     throw new Error('Commit tool output exceeded its safety budget.')
+  }
+  return output
+}
+
+export function buildVerifyToolOutput(
+  projection: ChallengeProjection,
+): VerifyToolOutput {
+  const receipt = projection.receipt
+  const verification = projection.verification
+  if (
+    projection.state !== 'VERIFIED'
+    || !receipt
+    || !verification
+    || receipt.receipt_id !== verification.receipt_id
+  ) {
+    throw new Error('Verification did not produce a bound paired outcome.')
+  }
+  const output: VerifyToolOutput = {
+    state: 'VERIFIED',
+    receipt_id: receipt.receipt_id,
+    world: {
+      version_before: receipt.world_after_version,
+      version_after: projection.world_version,
+      time_before: verification.baseline_snapshot.world_time,
+      time_after: projection.world_time,
+    },
+    prediction: {
+      high_food_risk_residents: verification.forecast.high_food_risk_residents,
+      social_tension: verification.forecast.social_tension,
+      strike_risk_pct: verification.forecast.strike_risk_pct,
+      stabilized_residents: verification.forecast.stabilized_residents,
+    },
+    actual: { ...verification.actual },
+    no_action_control: { ...verification.no_action },
+    deviation: verification.notable_deviation,
+    tick_count: verification.tick_snapshots.length + 1,
+    next_tool: projection.tool_surface[0] ?? null,
+  }
+  if (JSON.stringify(output).length >= 1500) {
+    throw new Error('Verify tool output exceeded its safety budget.')
+  }
+  return output
+}
+
+export function buildResetToolOutput(
+  projection: ChallengeProjection,
+): ResetToolOutput {
+  if (projection.state !== 'INITIAL' || projection.world_version !== 7) {
+    throw new Error('Reset did not restore the locked initial projection.')
+  }
+  const output: ResetToolOutput = {
+    state: 'INITIAL',
+    session_generation: projection.session_generation,
+    world_version: 7,
+    world_hash: projection.world_hash,
+    next_tool: projection.tool_surface[0] ?? null,
+  }
+  if (JSON.stringify(output).length >= 1500) {
+    throw new Error('Reset tool output exceeded its safety budget.')
   }
   return output
 }

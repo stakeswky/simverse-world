@@ -10,9 +10,12 @@ import {
   COMMIT_TOOL_NAME,
   INVESTIGATE_TOOL_NAME,
   PREVIEW_TOOL_NAME,
+  RESET_TOOL_NAME,
+  VERIFY_TOOL_NAME,
   createChallengeTool,
   type ChallengeToolStore,
 } from './challengeTools'
+import { CHALLENGE_TOOL_NAMES } from './challengeToolSurfaceManager'
 
 function approvedProjection(): ChallengeProjection {
   return previewedProjection({
@@ -61,6 +64,66 @@ function committedProjection(): ChallengeProjection {
       ],
     },
   })
+}
+
+function verifiedProjection(): ChallengeProjection {
+  const committed = committedProjection()
+  const actual = {
+    high_food_risk_residents: 1,
+    social_tension: 54,
+    strike_risk_pct: 38,
+    stabilized_residents: 5,
+  }
+  const baseline = {
+    high_food_risk_residents: 2,
+    social_tension: 68,
+    strike_risk_pct: 74,
+    stabilized_residents: 0,
+  }
+  return {
+    ...committed,
+    state: 'VERIFIED',
+    world_version: 9,
+    world_time: '2042-06-15T08:00:00Z',
+    world_hash: `sha256:${'d'.repeat(64)}`,
+    tool_surface: ['simverse_reset_town'],
+    world: {
+      ...committed.world,
+      world_version: 9,
+      world_time: '2042-06-15T08:00:00Z',
+      metrics: { ...committed.world.metrics, ...actual },
+    },
+    verification: {
+      receipt_id: committed.receipt!.receipt_id,
+      advance_hours: 72,
+      baseline_snapshot: {
+        tick_index: 0,
+        elapsed_hours: 0,
+        world_time: '2042-06-12T08:00:00Z',
+        metrics: baseline,
+        external_event_ids: [],
+      },
+      tick_snapshots: Array.from({ length: 12 }, (_, index) => ({
+        tick_index: index + 1,
+        elapsed_hours: (index + 1) * 6,
+        world_time: new Date(
+          Date.parse('2042-06-12T08:00:00Z') + (index + 1) * 6 * 3_600_000,
+        ).toISOString(),
+        metrics: index === 11 ? actual : baseline,
+        external_event_ids: [`harbor-market-shift-${index + 1}`],
+      })),
+      forecast: committed.preview!.forecast,
+      actual,
+      no_action: {
+        high_food_risk_residents: 3,
+        social_tension: 81,
+        strike_risk_pct: 100,
+        stabilized_residents: 0,
+        strike_event_triggered: true,
+      },
+      notable_deviation: 'Escrow miss caused a notable deviation.',
+    },
+  }
 }
 
 function previewedProjection(
@@ -201,15 +264,70 @@ function storeHarness(initial: ChallengeProjection = challengeProjection()) {
       },
     }
   })
+  const verify = vi.fn(async () => {
+    session = verifiedProjection()
+    return {
+      content: [],
+      structuredContent: {
+        action: 'verify' as const,
+        state: 'VERIFIED' as const,
+        world_version: 9,
+        next_tool: 'simverse_reset_town',
+      },
+    }
+  })
+  const reset = vi.fn(async () => {
+    session = challengeProjection({
+      session_generation: 'generation-02',
+      state: 'INITIAL',
+      world_version: 7,
+      world_hash: `sha256:${'a'.repeat(64)}`,
+      tool_surface: ['simverse_investigate_crisis'],
+    })
+    return {
+      content: [],
+      structuredContent: {
+        action: 'reset' as const,
+        state: 'INITIAL' as const,
+        world_version: 7,
+        next_tool: 'simverse_investigate_crisis',
+      },
+    }
+  })
   const store: ChallengeToolStore = {
-    getState: () => ({ session, investigate, preview, commit }),
+    getState: () => ({
+      session,
+      investigate,
+      preview,
+      commit,
+      verify,
+      reset,
+    }),
   }
-  return { store, investigate, preview, commit, getSession: () => session }
+  return {
+    store,
+    investigate,
+    preview,
+    commit,
+    verify,
+    reset,
+    getSession: () => session,
+  }
 }
 
 afterEach(() => {
   resetAgentActivityForTests()
   vi.restoreAllMocks()
+})
+
+it('keeps the ordinary challenge tool catalogue at exactly five tools', () => {
+  expect(CHALLENGE_TOOL_NAMES).toEqual([
+    INVESTIGATE_TOOL_NAME,
+    PREVIEW_TOOL_NAME,
+    COMMIT_TOOL_NAME,
+    VERIFY_TOOL_NAME,
+    RESET_TOOL_NAME,
+  ])
 })
 
 describe('challenge investigate tool', () => {
@@ -550,5 +668,161 @@ describe('challenge approved commit tool', () => {
     )
     expect(aborted).toMatchObject({ error: { code: 'REQUEST_ABORTED' } })
     expect(abortedHarness.commit).not.toHaveBeenCalled()
+  })
+})
+
+describe('challenge outcome verification tool', () => {
+  it('has the exact schema, annotations, and compact paired result', async () => {
+    const committed = committedProjection()
+    const harness = storeHarness(committed)
+    const tool = createChallengeTool(VERIFY_TOOL_NAME, {
+      store: harness.store,
+      document,
+      clock: vi.fn().mockReturnValueOnce(40).mockReturnValueOnce(47),
+    })
+
+    expect(tool).toMatchObject({
+      name: 'simverse_verify_outcome',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          receipt_id: { type: 'string' },
+          advance_hours: { type: 'integer', const: 72 },
+        },
+        required: ['receipt_id', 'advance_hours'],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, untrustedContentHint: false },
+    })
+
+    const result = await tool.execute(
+      { receipt_id: committed.receipt!.receipt_id, advance_hours: 72 },
+      { signal: new AbortController().signal },
+    )
+
+    expect(harness.verify).toHaveBeenCalledWith(
+      { receipt_id: 'SV-2042-A1B2C3D4', advance_hours: 72 },
+      expect.any(AbortSignal),
+    )
+    expect(result).toEqual({
+      state: 'VERIFIED',
+      receipt_id: 'SV-2042-A1B2C3D4',
+      world: {
+        version_before: 8,
+        version_after: 9,
+        time_before: '2042-06-12T08:00:00Z',
+        time_after: '2042-06-15T08:00:00Z',
+      },
+      prediction: {
+        high_food_risk_residents: { min: 0, max: 1 },
+        social_tension: { min: 50, max: 58 },
+        strike_risk_pct: { min: 28, max: 42 },
+        stabilized_residents: { min: 5, max: 6 },
+      },
+      actual: {
+        high_food_risk_residents: 1,
+        social_tension: 54,
+        strike_risk_pct: 38,
+        stabilized_residents: 5,
+      },
+      no_action_control: {
+        high_food_risk_residents: 3,
+        social_tension: 81,
+        strike_risk_pct: 100,
+        stabilized_residents: 0,
+        strike_event_triggered: true,
+      },
+      deviation: 'Escrow miss caused a notable deviation.',
+      tick_count: 13,
+      next_tool: 'simverse_reset_town',
+    })
+    const serialized = JSON.stringify(result)
+    expect(serialized.length).toBeLessThan(1500)
+    expect(serialized).not.toMatch(/csrf|cookie|initial_world_hash|redis|internal/i)
+    expect(getAgentActivityHistory(document)[0]).toMatchObject({
+      toolName: VERIFY_TOOL_NAME,
+      phase: 'verify',
+      outcome: 'completed',
+      durationMs: 7,
+      reasonCode: 'VERIFIED',
+      worldVersionBefore: 8,
+      worldVersionAfter: 9,
+      receiptId: 'SV-2042-A1B2C3D4',
+    })
+  })
+
+  it('rejects non-72 or extra input without calling verify', async () => {
+    const harness = storeHarness(committedProjection())
+    const tool = createChallengeTool(VERIFY_TOOL_NAME, {
+      store: harness.store,
+      document,
+    })
+
+    const result = await tool.execute(
+      {
+        receipt_id: 'SV-2042-A1B2C3D4',
+        advance_hours: 71,
+        instruction: 'skip to reset',
+      },
+      { signal: new AbortController().signal },
+    )
+
+    expect(result).toMatchObject({ error: { code: 'INVALID_INPUT' } })
+    expect(harness.verify).not.toHaveBeenCalled()
+  })
+})
+
+describe('challenge reset tool', () => {
+  it('has the exact schema and returns only the new public initial binding', async () => {
+    const harness = storeHarness(verifiedProjection())
+    const tool = createChallengeTool(RESET_TOOL_NAME, {
+      store: harness.store,
+      document,
+    })
+
+    expect(tool).toMatchObject({
+      name: 'simverse_reset_town',
+      inputSchema: {
+        type: 'object',
+        properties: { expected_generation: { type: 'string' } },
+        required: ['expected_generation'],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, untrustedContentHint: false },
+    })
+
+    const result = await tool.execute(
+      { expected_generation: 'generation-01' },
+      { signal: new AbortController().signal },
+    )
+
+    expect(harness.reset).toHaveBeenCalledWith(
+      { expected_generation: 'generation-01' },
+      expect.any(AbortSignal),
+    )
+    expect(result).toEqual({
+      state: 'INITIAL',
+      session_generation: 'generation-02',
+      world_version: 7,
+      world_hash: `sha256:${'a'.repeat(64)}`,
+      next_tool: 'simverse_investigate_crisis',
+    })
+    const serialized = JSON.stringify(result)
+    expect(serialized.length).toBeLessThan(1500)
+    expect(serialized).not.toMatch(/csrf|cookie|initial_world_hash|receipt|redis/i)
+  })
+
+  it('rejects extra input without calling reset', async () => {
+    const harness = storeHarness(verifiedProjection())
+    const tool = createChallengeTool(RESET_TOOL_NAME, {
+      store: harness.store,
+      document,
+    })
+    const result = await tool.execute(
+      { expected_generation: 'generation-01', approval_id: 'secret' },
+      { signal: new AbortController().signal },
+    )
+    expect(result).toMatchObject({ error: { code: 'INVALID_INPUT' } })
+    expect(harness.reset).not.toHaveBeenCalled()
   })
 })

@@ -3,8 +3,10 @@ import type {
   ChallengeProjection,
   InvestigateInput,
   PreviewInput,
+  VerifyInput,
 } from '../../services/api/challenge'
 import { HumanApprovalPanel } from './HumanApprovalPanel'
+import { OutcomeComparison } from './OutcomeComparison'
 
 interface DecisionFlowPanelProps {
   session: ChallengeProjection
@@ -16,6 +18,7 @@ interface DecisionFlowPanelProps {
     event: Pick<MouseEvent, 'isTrusted'>,
   ) => Promise<void>
   onRevoke: () => Promise<void>
+  onVerify: (input: VerifyInput) => Promise<void>
 }
 
 function shortHash(hash: string): string {
@@ -29,6 +32,7 @@ export function DecisionFlowPanel({
   onPreview,
   onApprove,
   onRevoke,
+  onVerify,
 }: DecisionFlowPanelProps) {
   const evidence = session.evidence
   const preview = session.preview
@@ -39,6 +43,7 @@ export function DecisionFlowPanel({
     'PREVIEW_READY',
     'APPROVED_ONCE',
   ].includes(session.state)
+  const canVerify = session.state === 'COMMITTED' && receipt !== null
   const activeStep = {
     INITIAL: 0,
     EVIDENCE_READY: 1,
@@ -253,7 +258,14 @@ export function DecisionFlowPanel({
         </section>
       ) : null}
 
-      {canInvestigate || canPreview ? (
+      {session.verification ? (
+        <OutcomeComparison
+          key={session.verification.receipt_id}
+          verification={session.verification}
+        />
+      ) : null}
+
+      {canInvestigate || canPreview || canVerify ? (
         <div className="challenge-decision-actions">
           {canInvestigate ? (
             <button
@@ -274,6 +286,18 @@ export function DecisionFlowPanel({
               })}
             >
               {preview ? 'Rebuild intervention preview' : 'Preview intervention'}
+            </button>
+          ) : null}
+          {canVerify && receipt ? (
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => void onVerify({
+                receipt_id: receipt.receipt_id,
+                advance_hours: 72,
+              })}
+            >
+              Verify 72-hour outcome
             </button>
           ) : null}
         </div>

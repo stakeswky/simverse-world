@@ -80,6 +80,7 @@ export function ChallengePage() {
   const preview = useChallengeStore((state) => state.preview)
   const approve = useChallengeStore((state) => state.approve)
   const revoke = useChallengeStore((state) => state.revoke)
+  const verify = useChallengeStore((state) => state.verify)
   const reset = useChallengeStore((state) => state.reset)
   const setRegistrationState = useChallengeStore(
     (state) => state.setRegistrationState,
@@ -202,6 +203,9 @@ export function ChallengePage() {
             }}
             onRevoke={async () => {
               await revoke()
+            }}
+            onVerify={async (input) => {
+              await verify(input)
             }}
           />
           <AgentActivityPanel />

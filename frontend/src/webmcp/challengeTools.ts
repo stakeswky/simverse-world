@@ -4,6 +4,8 @@ import {
   type CommitInput,
   type InvestigateInput,
   type PreviewInput,
+  type ResetInput,
+  type VerifyInput,
 } from '../services/api/challenge'
 import { useChallengeStore } from '../stores/challengeStore'
 import { publishAgentActivity } from './activity'
@@ -11,12 +13,16 @@ import {
   buildCommitToolOutput,
   buildInvestigateToolOutput,
   buildPreviewToolOutput,
+  buildResetToolOutput,
+  buildVerifyToolOutput,
 } from './challengeToolResults'
 import type { WebMcpToolDefinition } from './types'
 
 export const INVESTIGATE_TOOL_NAME = 'simverse_investigate_crisis'
 export const PREVIEW_TOOL_NAME = 'simverse_preview_intervention'
 export const COMMIT_TOOL_NAME = 'simverse_commit_approved'
+export const VERIFY_TOOL_NAME = 'simverse_verify_outcome'
+export const RESET_TOOL_NAME = 'simverse_reset_town'
 
 export interface ChallengeToolState {
   readonly session: ChallengeProjection | null
@@ -30,6 +36,14 @@ export interface ChallengeToolState {
   ) => Promise<unknown>
   readonly commit: (
     input: CommitInput,
+    signal?: AbortSignal,
+  ) => Promise<unknown>
+  readonly verify: (
+    input: VerifyInput,
+    signal?: AbortSignal,
+  ) => Promise<unknown>
+  readonly reset: (
+    input: ResetInput,
     signal?: AbortSignal,
   ) => Promise<unknown>
 }
@@ -103,6 +117,27 @@ function hasCommitInput(input: Record<string, unknown>): input is {
     && typeof input.expected_world_version === 'number'
     && typeof input.diff_hash === 'string'
     && /^sha256:[0-9a-f]{64}$/.test(input.diff_hash)
+  )
+}
+
+function hasVerifyInput(input: Record<string, unknown>): input is {
+  receipt_id: string
+  advance_hours: 72
+} {
+  return (
+    Object.keys(input).length === 2
+    && typeof input.receipt_id === 'string'
+    && Number.isInteger(input.advance_hours)
+    && input.advance_hours === 72
+  )
+}
+
+function hasResetInput(input: Record<string, unknown>): input is {
+  expected_generation: string
+} {
+  return (
+    Object.keys(input).length === 1
+    && typeof input.expected_generation === 'string'
   )
 }
 
@@ -421,6 +456,200 @@ export function createCommitTool(
   }
 }
 
+export function createVerifyTool(
+  options: ChallengeToolOptions = {},
+): WebMcpToolDefinition {
+  const store = options.store ?? useChallengeStore
+  const toolDocument = options.document ?? currentDocument()
+  const clock = options.clock ?? monotonicNow
+
+  return {
+    name: VERIFY_TOOL_NAME,
+    title: 'Verify 72-hour Harbor outcome',
+    description: 'Advance the committed isolated Challenge Town by exactly 72 hours and compare its actual result with the forecast and paired no-action control.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        receipt_id: { type: 'string' },
+        advance_hours: { type: 'integer', const: 72 },
+      },
+      required: ['receipt_id', 'advance_hours'],
+      additionalProperties: false,
+    },
+    annotations: {
+      readOnlyHint: false,
+      untrustedContentHint: false,
+    },
+    execute: async (input, executionOptions) => {
+      let startedAt = 0
+      try {
+        startedAt = clock()
+      } catch {
+        // Timing is diagnostic and never changes tool behavior.
+      }
+      const before = store.getState().session
+
+      const record = (
+        outcome: 'completed' | 'failed',
+        reasonCode: string,
+        after: ChallengeProjection | null,
+      ) => {
+        if (!toolDocument) return
+        publishAgentActivity(toolDocument, {
+          toolName: VERIFY_TOOL_NAME,
+          phase: 'verify',
+          outcome,
+          durationMs: safeDuration(clock, startedAt),
+          reasonCode,
+          worldVersionBefore: before?.world_version ?? 0,
+          worldVersionAfter: after?.world_version ?? before?.world_version ?? 0,
+          receiptId: after?.verification?.receipt_id
+            ?? before?.receipt?.receipt_id
+            ?? null,
+          fingerprint: shortFingerprint(after ?? before),
+        })
+      }
+
+      if (executionOptions.signal.aborted) {
+        record('failed', 'REQUEST_ABORTED', before)
+        return safeError(
+          'REQUEST_ABORTED',
+          'Tool execution was cancelled before the request started.',
+          true,
+        )
+      }
+      if (!hasVerifyInput(input)) {
+        record('failed', 'INVALID_INPUT', before)
+        return safeError(
+          'INVALID_INPUT',
+          'Tool input must match the 72-hour verification schema.',
+        )
+      }
+
+      try {
+        await store.getState().verify(
+          {
+            receipt_id: input.receipt_id,
+            advance_hours: input.advance_hours,
+          },
+          executionOptions.signal,
+        )
+        const after = store.getState().session
+        if (!after) throw new Error('Missing challenge projection.')
+        const output = buildVerifyToolOutput(after)
+        record('completed', 'VERIFIED', after)
+        return output
+      } catch (error) {
+        const after = store.getState().session
+        const code = errorCode(error, executionOptions.signal.aborted)
+        record('failed', code, after)
+        return safeError(
+          code,
+          code === 'REQUEST_ABORTED'
+            ? 'Tool execution was cancelled.'
+            : 'Challenge outcome verification could not be completed.',
+          code === 'REQUEST_ABORTED'
+            || (error instanceof ChallengeApiError && error.retryable),
+        )
+      }
+    },
+  }
+}
+
+export function createResetTool(
+  options: ChallengeToolOptions = {},
+): WebMcpToolDefinition {
+  const store = options.store ?? useChallengeStore
+  const toolDocument = options.document ?? currentDocument()
+  const clock = options.clock ?? monotonicNow
+
+  return {
+    name: RESET_TOOL_NAME,
+    title: 'Reset isolated Challenge Town',
+    description: 'Discard the terminal challenge run and restore a new anonymous session at the locked public v7 fixture.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        expected_generation: { type: 'string' },
+      },
+      required: ['expected_generation'],
+      additionalProperties: false,
+    },
+    annotations: {
+      readOnlyHint: false,
+      untrustedContentHint: false,
+    },
+    execute: async (input, executionOptions) => {
+      let startedAt = 0
+      try {
+        startedAt = clock()
+      } catch {
+        // Timing is diagnostic and never changes tool behavior.
+      }
+      const before = store.getState().session
+
+      const record = (
+        outcome: 'completed' | 'failed',
+        reasonCode: string,
+        after: ChallengeProjection | null,
+      ) => {
+        if (!toolDocument) return
+        publishAgentActivity(toolDocument, {
+          toolName: RESET_TOOL_NAME,
+          phase: 'reset',
+          outcome,
+          durationMs: safeDuration(clock, startedAt),
+          reasonCode,
+          worldVersionBefore: before?.world_version ?? 0,
+          worldVersionAfter: after?.world_version ?? before?.world_version ?? 0,
+          receiptId: before?.receipt?.receipt_id ?? null,
+          fingerprint: shortFingerprint(after ?? before),
+        })
+      }
+
+      if (executionOptions.signal.aborted) {
+        record('failed', 'REQUEST_ABORTED', before)
+        return safeError(
+          'REQUEST_ABORTED',
+          'Tool execution was cancelled before the request started.',
+          true,
+        )
+      }
+      if (!hasResetInput(input)) {
+        record('failed', 'INVALID_INPUT', before)
+        return safeError(
+          'INVALID_INPUT',
+          'Tool input must match the reset generation schema.',
+        )
+      }
+
+      try {
+        await store.getState().reset(
+          { expected_generation: input.expected_generation },
+          executionOptions.signal,
+        )
+        const after = store.getState().session
+        if (!after) throw new Error('Missing challenge projection.')
+        const output = buildResetToolOutput(after)
+        record('completed', 'INITIAL', after)
+        return output
+      } catch (error) {
+        const after = store.getState().session
+        const code = errorCode(error, executionOptions.signal.aborted)
+        record('failed', code, after)
+        return safeError(
+          code,
+          code === 'REQUEST_ABORTED'
+            ? 'Tool execution was cancelled.'
+            : 'Challenge Town reset could not be completed.',
+          code === 'REQUEST_ABORTED'
+            || (error instanceof ChallengeApiError && error.retryable),
+        )
+      }
+    },
+  }
+}
+
 export function createChallengeTool(
   name: string,
   options: ChallengeToolOptions = {},
@@ -428,5 +657,7 @@ export function createChallengeTool(
   if (name === INVESTIGATE_TOOL_NAME) return createInvestigateTool(options)
   if (name === PREVIEW_TOOL_NAME) return createPreviewTool(options)
   if (name === COMMIT_TOOL_NAME) return createCommitTool(options)
+  if (name === VERIFY_TOOL_NAME) return createVerifyTool(options)
+  if (name === RESET_TOOL_NAME) return createResetTool(options)
   throw new Error(`Tool ${name} is not implemented for this phase.`)
 }

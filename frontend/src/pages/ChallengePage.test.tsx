@@ -27,6 +27,7 @@ const store = vi.hoisted(() => ({
   preview: vi.fn(),
   approve: vi.fn(),
   revoke: vi.fn(),
+  verify: vi.fn(),
   reset: vi.fn(),
   setRegistrationState: vi.fn(),
 }))
@@ -192,6 +193,105 @@ function previewProjection(
   })
 }
 
+function committedProjection(): ChallengeProjection {
+  const approved = previewProjection()
+  return previewProjection({
+    state: 'COMMITTED',
+    world_version: 8,
+    world_hash: `sha256:${'c'.repeat(64)}`,
+    budget_sc: 60,
+    tool_surface: ['simverse_verify_outcome'],
+    approval_fingerprint: null,
+    approval_expires_at: null,
+    receipt: {
+      receipt_id: 'SV-2042-A1B2C3D4',
+      scenario_id: 'harbor-wage-crisis-v1',
+      session_generation: approved.session_generation,
+      preview_id: approved.preview!.preview_id,
+      approval_fingerprint: 'appr-A1B2',
+      approved_diff_hash: approved.preview!.diff_hash,
+      world_before_version: 7,
+      world_after_version: 8,
+      world_before_hash: `sha256:${'a'.repeat(64)}`,
+      world_after_hash: `sha256:${'c'.repeat(64)}`,
+      budget_before_sc: 300,
+      budget_delta_sc: -240,
+      budget_after_sc: 60,
+      affected_residents: approved.world.residents.map(
+        (resident) => resident.resident_id,
+      ),
+      created_events: ['employer-escrow-mediation'],
+      verified_invariants: [
+        'budget_lte_300_sc',
+        'challenge_town_isolated',
+        'harbor_must_remain_open',
+        'no_direct_preference_rewrite',
+        'no_direct_relationship_rewrite',
+      ],
+    },
+  })
+}
+
+function verifiedProjection(): ChallengeProjection {
+  const committed = committedProjection()
+  const baseline = {
+    high_food_risk_residents: 2,
+    social_tension: 68,
+    strike_risk_pct: 74,
+    stabilized_residents: 0,
+  }
+  const actual = {
+    high_food_risk_residents: 1,
+    social_tension: 54,
+    strike_risk_pct: 38,
+    stabilized_residents: 5,
+  }
+  return {
+    ...committed,
+    state: 'VERIFIED',
+    world_version: 9,
+    world_time: '2042-06-15T08:00:00Z',
+    world_hash: `sha256:${'d'.repeat(64)}`,
+    tool_surface: ['simverse_reset_town'],
+    world: {
+      ...committed.world,
+      world_version: 9,
+      world_time: '2042-06-15T08:00:00Z',
+      metrics: { ...committed.world.metrics, ...actual },
+    },
+    verification: {
+      receipt_id: committed.receipt!.receipt_id,
+      advance_hours: 72,
+      baseline_snapshot: {
+        tick_index: 0,
+        elapsed_hours: 0,
+        world_time: '2042-06-12T08:00:00Z',
+        metrics: baseline,
+        external_event_ids: [],
+      },
+      tick_snapshots: Array.from({ length: 12 }, (_, index) => ({
+        tick_index: index + 1,
+        elapsed_hours: (index + 1) * 6,
+        world_time: new Date(
+          Date.parse('2042-06-12T08:00:00Z') + (index + 1) * 6 * 3_600_000,
+        ).toISOString(),
+        metrics: index === 11 ? actual : baseline,
+        external_event_ids: [`harbor-market-shift-${index + 1}`],
+      })),
+      forecast: committed.preview!.forecast,
+      actual,
+      no_action: {
+        high_food_risk_residents: 3,
+        social_tension: 81,
+        strike_risk_pct: 100,
+        stabilized_residents: 0,
+        strike_event_triggered: true,
+      },
+      notable_deviation: 'Escrow miss caused a notable deviation.',
+    },
+  }
+}
+
 function renderPage(path = '/challenge') {
   return render(
     <MemoryRouter initialEntries={[path]}>
@@ -215,6 +315,9 @@ beforeEach(() => {
   })
   store.approve.mockReset().mockResolvedValue(undefined)
   store.revoke.mockReset().mockResolvedValue(undefined)
+  store.verify.mockReset().mockResolvedValue({
+    structuredContent: { state: 'VERIFIED' },
+  })
   store.reset.mockReset().mockResolvedValue({ structuredContent: { state: 'INITIAL' } })
   store.setRegistrationState.mockReset()
   vi.stubEnv('VITE_WEBMCP_ENABLED', 'true')
@@ -464,6 +567,32 @@ describe('ChallengePage', () => {
     })).not.toBeInTheDocument()
     expect(document.body.innerHTML).not.toContain('csrf-01')
     expect(document.body.innerHTML).not.toContain('sv_challenge_approval')
+  })
+
+  it('uses the same verify store action from the visible ordinary-browser control', async () => {
+    store.session = committedProjection()
+    store.activeToolNames = ['simverse_verify_outcome']
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Verify 72-hour outcome' }))
+
+    await waitFor(() => expect(store.verify).toHaveBeenCalledWith({
+      receipt_id: 'SV-2042-A1B2C3D4',
+      advance_hours: 72,
+    }))
+  })
+
+  it('renders the verified three-column outcome and 13-point timeline', () => {
+    store.session = verifiedProjection()
+    store.activeToolNames = ['simverse_reset_town']
+    renderPage()
+
+    expect(screen.getByRole('article', { name: 'Prediction' })).toBeInTheDocument()
+    expect(screen.getByRole('article', { name: 'Actual after 72h' })).toBeInTheDocument()
+    expect(screen.getByRole('article', { name: 'No-action control' })).toBeInTheDocument()
+    expect(screen.getAllByTestId('outcome-timeline-point')).toHaveLength(13)
+    expect(screen.getByText('Escrow miss caused a notable deviation.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reset town' })).toBeInTheDocument()
   })
 
   it('rebuilds through the store and clears stale approval presentation', async () => {
