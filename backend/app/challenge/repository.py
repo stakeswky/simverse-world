@@ -232,6 +232,13 @@ class ChallengeRepository:
                         approval,
                         now,
                     )
+                    if session.state in {
+                        ChallengeState.COMMITTED,
+                        ChallengeState.VERIFIED,
+                    } or (
+                        approval is not None and approval.status == "CONSUMED"
+                    ):
+                        raise self._approval_replayed_error(session.state)
                     if approval is None:
                         raise self._missing_approval_error(session, now)
                     if approval.status == "APPROVED_ONCE" and now >= approval.expires_at:
@@ -259,6 +266,16 @@ class ChallengeRepository:
                         self._validated_session(updated_session), now
                     )
                     updated_approval = self._validated_approval(updated_approval)
+                    if (
+                        updated_session.absolute_expires_at
+                        != session.absolute_expires_at
+                        or updated_approval.approval_id != approval_id
+                        or updated_approval.status != "CONSUMED"
+                    ):
+                        raise TypeError(
+                            "commit mutator must preserve the absolute deadline "
+                            "and consume the watched approval"
+                        )
                     ttl = self._session_ttl(updated_session, now)
                     pipe.multi()
                     pipe.set(
@@ -267,7 +284,7 @@ class ChallengeRepository:
                         ex=ttl,
                     )
                     pipe.set(
-                        self._approval_key(updated_approval.approval_id),
+                        approval_key,
                         canonical_json(updated_approval),
                         ex=ttl,
                     )
@@ -390,11 +407,14 @@ class ChallengeRepository:
     ) -> None:
         old_key = self._session_key(old_session_id)
         new_key = self._session_key(new_session_id)
+        baseline_session_json: str | bytes | None = None
+        baseline_approval_json: str | bytes | None = None
         for _ in range(MAX_WATCH_RETRIES):
             async with self._redis.pipeline(transaction=True) as pipe:
                 try:
                     await pipe.watch(old_key)
-                    old_session = self._required_session(await pipe.get(old_key))
+                    old_session_json = await pipe.get(old_key)
+                    old_session = self._required_session(old_session_json)
                     approval_key = (
                         self._approval_key(old_session.active_approval_id)
                         if old_session.active_approval_id
@@ -402,7 +422,17 @@ class ChallengeRepository:
                     )
                     if approval_key:
                         await pipe.watch(approval_key)
-                        await pipe.get(approval_key)
+                        approval_json = await pipe.get(approval_key)
+                    else:
+                        approval_json = None
+                    if baseline_session_json is None:
+                        baseline_session_json = old_session_json
+                        baseline_approval_json = approval_json
+                    elif (
+                        old_session_json != baseline_session_json
+                        or approval_json != baseline_approval_json
+                    ):
+                        raise self._watch_retry_error()
                     if old_session.session_generation != expected_generation:
                         raise _domain_error(
                             ChallengeErrorCode.STALE_TOOL_SURFACE,
@@ -597,6 +627,20 @@ class ChallengeRepository:
             retryable=False,
             current_state=session.state,
             next_action="approve",
+        )
+
+    @staticmethod
+    def _approval_replayed_error(
+        current_state: ChallengeState,
+    ) -> ChallengeDomainError:
+        return _domain_error(
+            ChallengeErrorCode.APPROVAL_REPLAYED,
+            "The one-time approval capability has already been consumed.",
+            retryable=False,
+            current_state=current_state,
+            next_action=(
+                "verify" if current_state is ChallengeState.COMMITTED else "reset"
+            ),
         )
 
     @staticmethod

@@ -438,6 +438,16 @@ class _RetryPipeline:
                 self._owner.replacement_json,
                 ex=ABSOLUTE_TTL_SECONDS,
             )
+        if (
+            self._owner.approval_key is not None
+            and self._owner.replacement_approval_json is not None
+            and self._owner.execute_calls == 1
+        ):
+            await self._owner.real.set(
+                self._owner.approval_key,
+                self._owner.replacement_approval_json,
+                ex=ABSOLUTE_TTL_SECONDS,
+            )
         raise WatchError("injected conflict")
 
 
@@ -448,11 +458,15 @@ class _RetryRedis:
         *,
         session_key: str,
         replacement_json: str | None,
+        approval_key: str | None = None,
+        replacement_approval_json: str | None = None,
         always_conflict: bool = False,
     ) -> None:
         self.real = real
         self.session_key = session_key
         self.replacement_json = replacement_json
+        self.approval_key = approval_key
+        self.replacement_approval_json = replacement_approval_json
         self.always_conflict = always_conflict
         self.execute_calls = 0
 
@@ -494,6 +508,84 @@ async def test_watch_retry_rereads_state_and_reinvokes_mutator() -> None:
     assert (await ChallengeRepository(real, lambda: NOW).load_session("session-01")).world.budget_sc == 249
 
 
+async def test_double_key_watch_retry_rereads_session_and_approval() -> None:
+    real = get_redis()
+    initial_session = _session(NOW, active_approval_id="approval-01")
+    initial_approval = _approval(NOW)
+    base_repository = ChallengeRepository(real, lambda: NOW)
+    await base_repository.create_session("session-01", initial_session)
+    await base_repository.save_approval(initial_approval)
+    replacement_session = initial_session.model_copy(
+        update={"world": initial_session.world.model_copy(update={"budget_sc": 250})},
+        deep=True,
+    )
+    replacement_approval = initial_approval.model_copy(
+        update={"world_version": 8}
+    )
+    wrapped = _RetryRedis(
+        real,
+        session_key=f"{SESSION_PREFIX}session-01",
+        replacement_json=canonical_json(replacement_session),
+        approval_key=f"{APPROVAL_PREFIX}approval-01",
+        replacement_approval_json=canonical_json(replacement_approval),
+    )
+    repository = ChallengeRepository(wrapped, lambda: NOW)
+    seen: list[tuple[int, int]] = []
+
+    def mutate(
+        session: ChallengeSession,
+        approval: ApprovalRecord,
+        now: datetime,
+    ) -> tuple[ChallengeSession, ApprovalRecord]:
+        seen.append((session.world.budget_sc, approval.world_version))
+        return (
+            session.model_copy(update={"state": ChallengeState.COMMITTED}),
+            approval.model_copy(update={"status": "CONSUMED"}),
+        )
+
+    result = await repository.mutate_session_and_approval(
+        "session-01", "approval-01", mutate
+    )
+
+    assert seen == [(300, 7), (250, 8)]
+    assert result.state is ChallengeState.COMMITTED
+    assert (await base_repository.load_approval("approval-01")).status == "CONSUMED"
+
+
+@pytest.mark.parametrize(
+    ("state", "approval_status"),
+    [
+        (ChallengeState.COMMITTED, "APPROVED_ONCE"),
+        (ChallengeState.APPROVED_ONCE, "CONSUMED"),
+    ],
+)
+async def test_consumed_or_committed_transaction_is_stable_replay(
+    state: ChallengeState,
+    approval_status: str,
+) -> None:
+    repository = ChallengeRepository(clock=lambda: NOW)
+    session = _session(NOW, active_approval_id="approval-01").model_copy(
+        update={"state": state}
+    )
+    await repository.create_session("session-01", session)
+    await repository.save_approval(_approval(NOW, status=approval_status))
+    called = False
+
+    def should_not_run(session, approval, now):
+        nonlocal called
+        called = True
+        return session, approval
+
+    with pytest.raises(ChallengeDomainError) as replayed:
+        await repository.mutate_session_and_approval(
+            "session-01", "approval-01", should_not_run
+        )
+
+    assert replayed.value.code is ChallengeErrorCode.APPROVAL_REPLAYED
+    assert replayed.value.status == 409
+    assert called is False
+
+
 async def test_four_watch_conflicts_return_stable_stale_world_error() -> None:
     real = get_redis()
     await ChallengeRepository(real, lambda: NOW).create_session(
@@ -518,6 +610,40 @@ async def test_four_watch_conflicts_return_stable_stale_world_error() -> None:
     assert stale.value.code is ChallengeErrorCode.STALE_WORLD_VERSION
     assert calls == MAX_WATCH_RETRIES
     assert wrapped.execute_calls == MAX_WATCH_RETRIES
+
+
+async def test_four_double_key_conflicts_return_stable_stale_world_error() -> None:
+    real = get_redis()
+    base_repository = ChallengeRepository(real, lambda: NOW)
+    await base_repository.create_session(
+        "session-01", _session(NOW, active_approval_id="approval-01")
+    )
+    await base_repository.save_approval(_approval(NOW))
+    wrapped = _RetryRedis(
+        real,
+        session_key=f"{SESSION_PREFIX}session-01",
+        replacement_json=None,
+        approval_key=f"{APPROVAL_PREFIX}approval-01",
+        replacement_approval_json=None,
+        always_conflict=True,
+    )
+    repository = ChallengeRepository(wrapped, lambda: NOW)
+    calls = 0
+
+    def mutate(session, approval, now):
+        nonlocal calls
+        calls += 1
+        return session, approval.model_copy(update={"status": "CONSUMED"})
+
+    with pytest.raises(ChallengeDomainError) as stale:
+        await repository.mutate_session_and_approval(
+            "session-01", "approval-01", mutate
+        )
+
+    assert stale.value.code is ChallengeErrorCode.STALE_WORLD_VERSION
+    assert calls == MAX_WATCH_RETRIES
+    assert wrapped.execute_calls == MAX_WATCH_RETRIES
+    assert (await base_repository.load_approval("approval-01")).status == "APPROVED_ONCE"
 
 
 async def test_replace_session_checks_generation_and_deletes_old_capability() -> None:
