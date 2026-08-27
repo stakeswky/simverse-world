@@ -230,6 +230,96 @@ async def test_investigate_api_exposes_evidence_and_rejects_extra_fields(
     assert extra.json()["error"]["code"] == "INVALID_INPUT"
 
 
+async def test_preview_api_exposes_immutable_diff_and_rejects_wrong_schema(
+    client, public_challenge_origin
+) -> None:
+    created = await client.post(
+        "/challenge/session", headers={"Origin": PUBLIC_ORIGIN}
+    )
+    headers = {
+        "Origin": PUBLIC_ORIGIN,
+        "X-CSRF-Token": created.json()["csrf_token"],
+    }
+    before_hash = created.json()["world_hash"]
+    investigated = await client.post(
+        "/challenge/investigate", headers=headers, json={"budget_cap_sc": 300}
+    )
+    assert investigated.status_code == 200
+
+    for invalid_body in (
+        {"crisis_id": "wrong-crisis", "budget_cap_sc": 300},
+        {"crisis_id": "harbor-wage-crisis", "budget_cap_sc": 299},
+        {
+            "crisis_id": "harbor-wage-crisis",
+            "budget_cap_sc": 300,
+            "unexpected": True,
+        },
+    ):
+        rejected = await client.post(
+            "/challenge/preview", headers=headers, json=invalid_body
+        )
+        assert rejected.status_code == 422
+        assert rejected.json()["error"]["code"] == "INVALID_INPUT"
+
+    client.cookies.set(
+        "sv_challenge_approval", "untrusted-client-cookie", path="/challenge/commit"
+    )
+    previewed = await client.post(
+        "/challenge/preview",
+        headers=headers,
+        json={"crisis_id": "harbor-wage-crisis", "budget_cap_sc": 300},
+    )
+
+    assert previewed.status_code == 200
+    payload = previewed.json()
+    assert payload["state"] == "PREVIEW_READY"
+    assert payload["preview"]["based_on_world_version"] == 7
+    assert payload["preview"]["total_cost_sc"] == 240
+    assert payload["preview"]["remaining_budget_sc"] == 60
+    assert payload["world_hash"] == before_hash
+    assert payload["world_version"] == 7
+    assert payload["budget_sc"] == 300
+    set_cookie = previewed.headers.get_list("set-cookie")
+    assert any(
+        "sv_challenge_approval=" in value and "Max-Age=0" in value
+        for value in set_cookie
+    )
+
+
+async def test_preview_requires_origin_cookie_and_constant_time_csrf(
+    client, public_challenge_origin
+) -> None:
+    created = await client.post(
+        "/challenge/session", headers={"Origin": PUBLIC_ORIGIN}
+    )
+    csrf = created.json()["csrf_token"]
+    await client.post(
+        "/challenge/investigate",
+        headers={"Origin": PUBLIC_ORIGIN, "X-CSRF-Token": csrf},
+        json={"budget_cap_sc": 300},
+    )
+    body = {"crisis_id": "harbor-wage-crisis", "budget_cap_sc": 300}
+
+    missing_origin = await client.post(
+        "/challenge/preview", headers={"X-CSRF-Token": csrf}, json=body
+    )
+    missing_csrf = await client.post(
+        "/challenge/preview", headers={"Origin": PUBLIC_ORIGIN}, json=body
+    )
+    wrong_csrf = await client.post(
+        "/challenge/preview",
+        headers={"Origin": PUBLIC_ORIGIN, "X-CSRF-Token": "wrong"},
+        json=body,
+    )
+    for response in (missing_origin, missing_csrf, wrong_csrf):
+        assert response.status_code == 422
+        assert response.json()["error"]["code"] == "INVALID_INPUT"
+
+    unchanged = await client.get("/challenge/session")
+    assert unchanged.json()["state"] == "EVIDENCE_READY"
+    assert unchanged.json()["preview"] is None
+
+
 async def test_reset_rotates_session_cookie_and_deletes_approval_cookie(
     client, public_challenge_origin
 ) -> None:

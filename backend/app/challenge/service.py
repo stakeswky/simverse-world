@@ -5,7 +5,7 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timedelta
 
 from app.challenge.canonical import world_hash
-from app.challenge.engine import investigate_world
+from app.challenge.engine import build_intervention_preview, investigate_world
 from app.challenge.errors import (
     ERROR_STATUS_BY_CODE,
     ChallengeDomainError,
@@ -13,11 +13,13 @@ from app.challenge.errors import (
 )
 from app.challenge.fixture import build_initial_world
 from app.challenge.models import (
+    ApprovalRecord,
     AuditEvent,
     ChallengeProjection,
     ChallengeSession,
     ChallengeState,
     InvestigateRequest,
+    PreviewRequest,
     ResetRequest,
     SessionResult,
 )
@@ -197,6 +199,88 @@ class ChallengeService:
             return updated
 
         session = await self._repository.mutate_session(session_id, mutate)
+        return self._result(session_id, session)
+
+    async def preview(
+        self, session_id: str, request: PreviewRequest
+    ) -> SessionResult:
+        preview_id = secrets.token_urlsafe(16)
+        audit_event_id = secrets.token_urlsafe(16)
+
+        def mutate(
+            session: ChallengeSession,
+            approval: ApprovalRecord | None,
+            now: datetime,
+        ) -> tuple[ChallengeSession, ApprovalRecord | None]:
+            state_before = session.state
+            state_after = validate_transition(state_before, "preview")
+            if session.evidence is None:
+                raise _error(
+                    ChallengeErrorCode.EVIDENCE_STALE,
+                    "Current Harbor evidence is missing or stale.",
+                    retryable=True,
+                    current_state=state_before,
+                    next_action="investigate",
+                )
+            if session.evidence.crisis_id != request.crisis_id:
+                raise _error(
+                    ChallengeErrorCode.EVIDENCE_STALE,
+                    "Current evidence does not match the requested crisis.",
+                    retryable=True,
+                    current_state=state_before,
+                    next_action="investigate",
+                )
+            if state_before is ChallengeState.APPROVED_ONCE:
+                if (
+                    approval is None
+                    or session.preview is None
+                    or approval.approval_id != session.active_approval_id
+                    or approval.session_generation != session.session_generation
+                    or approval.preview_id != session.preview.preview_id
+                    or approval.diff_hash != session.preview.diff_hash
+                    or approval.world_version != session.world.world_version
+                    or approval.status != "APPROVED_ONCE"
+                ):
+                    raise _error(
+                        ChallengeErrorCode.APPROVAL_MISMATCH,
+                        "Active approval does not match the server-side preview.",
+                        retryable=False,
+                        current_state=state_before,
+                        next_action="preview",
+                    )
+                approval = approval.model_copy(update={"status": "INVALIDATED"})
+
+            preview = build_intervention_preview(
+                session.world,
+                session.evidence,
+                session_generation=session.session_generation,
+                preview_id=preview_id,
+                created_at=now,
+            )
+            updated = session.model_copy(deep=True)
+            updated.state = state_after
+            updated.preview = preview
+            updated.active_approval_id = None
+            updated.approval_fingerprint = None
+            updated.approval_expires_at = None
+            updated.audit_events.append(
+                AuditEvent(
+                    event_id=audit_event_id,
+                    action="preview",
+                    state_before=state_before,
+                    state_after=state_after,
+                    reason_code=None,
+                    world_version_before=session.world.world_version,
+                    world_version_after=session.world.world_version,
+                    occurred_at=now,
+                )
+            )
+            return updated, approval
+
+        session = await self._repository.mutate_session_with_active_approval(
+            session_id,
+            mutate,
+        )
         return self._result(session_id, session)
 
     async def reset(

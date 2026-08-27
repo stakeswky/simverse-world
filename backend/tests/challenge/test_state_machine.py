@@ -5,8 +5,8 @@ import pytest
 
 import app.challenge.service as service_module
 from app.challenge.errors import ChallengeDomainError, ChallengeErrorCode
-from app.challenge.models import ChallengeState, InvestigateRequest
-from app.challenge.canonical import world_hash
+from app.challenge.models import ChallengeState, InvestigateRequest, PreviewRequest
+from app.challenge.canonical import diff_hash, world_hash
 from app.challenge.repository import ChallengeRepository, SESSION_PREFIX
 from app.challenge.service import (
     FINAL_TOOL_SURFACE,
@@ -195,6 +195,87 @@ async def test_investigate_rejects_a_non_investigable_state_without_mutation() -
     assert stored.state is ChallengeState.PREVIEW_READY
     assert stored.evidence is None
     assert stored.audit_events == []
+
+
+async def test_preview_transitions_rebuilds_hash_without_world_changes() -> None:
+    repository = ChallengeRepository(clock=lambda: NOW)
+    service = ChallengeService(repository=repository, clock=lambda: NOW)
+    created = await service.create_or_resume(None)
+    investigated = await service.investigate(
+        created.session_id, InvestigateRequest(budget_cap_sc=300)
+    )
+    before_hash = investigated.projection.world_hash
+
+    first = await service.preview(
+        created.session_id,
+        PreviewRequest(crisis_id="harbor-wage-crisis", budget_cap_sc=300),
+    )
+
+    assert first.projection.state is ChallengeState.PREVIEW_READY
+    assert first.projection.tool_surface == ["simverse_preview_intervention"]
+    assert first.projection.preview is not None
+    assert first.projection.preview.based_on_world_version == 7
+    assert first.projection.preview.diff_hash == diff_hash(first.projection.preview.diff)
+    assert first.projection.world_version == 7
+    assert first.projection.world_hash == before_hash
+    first_preview_id = first.projection.preview.preview_id
+    first_diff_hash = first.projection.preview.diff_hash
+
+    rebuilt = await service.preview(
+        created.session_id,
+        PreviewRequest(crisis_id="harbor-wage-crisis", budget_cap_sc=300),
+    )
+
+    assert rebuilt.projection.state is ChallengeState.PREVIEW_READY
+    assert rebuilt.projection.preview is not None
+    assert rebuilt.projection.preview.preview_id != first_preview_id
+    assert rebuilt.projection.preview.diff_hash != first_diff_hash
+    assert rebuilt.projection.preview.based_on_world_version == 7
+    assert rebuilt.projection.world_hash == before_hash
+    stored = await repository.load_session(created.session_id)
+    assert stored is not None
+    assert world_hash(stored.world) == before_hash
+    assert [event.action for event in stored.audit_events].count("investigate") == 1
+    assert [event.action for event in stored.audit_events].count("preview") == 2
+    assert all(
+        event.world_version_before == event.world_version_after == 7
+        for event in stored.audit_events
+    )
+
+
+async def test_preview_rejects_stale_evidence_without_partial_mutation() -> None:
+    repository = ChallengeRepository(clock=lambda: NOW)
+    service = ChallengeService(repository=repository, clock=lambda: NOW)
+    created = await service.create_or_resume(None)
+    await service.investigate(
+        created.session_id, InvestigateRequest(budget_cap_sc=300)
+    )
+    await repository.mutate_session(
+        created.session_id,
+        lambda session, now: session.model_copy(
+            update={
+                "world": session.world.model_copy(
+                    update={"world_version": session.world.world_version + 1},
+                    deep=True,
+                )
+            }
+        ),
+    )
+
+    with pytest.raises(ChallengeDomainError) as rejected:
+        await service.preview(
+            created.session_id,
+            PreviewRequest(crisis_id="harbor-wage-crisis", budget_cap_sc=300),
+        )
+
+    assert rejected.value.code is ChallengeErrorCode.EVIDENCE_STALE
+    assert rejected.value.status == 412
+    stored = await repository.load_session(created.session_id)
+    assert stored is not None
+    assert stored.state is ChallengeState.EVIDENCE_READY
+    assert stored.world.world_version == 8
+    assert stored.preview is None
+    assert [event.action for event in stored.audit_events] == ["investigate"]
 
 
 def test_challenge_service_is_isolated_from_production_state_and_llm() -> None:

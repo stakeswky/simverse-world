@@ -14,7 +14,12 @@ from app.challenge.errors import (
     ChallengeDomainError,
     ChallengeErrorCode,
 )
-from app.challenge.models import ChallengeProjection, InvestigateRequest, ResetRequest
+from app.challenge.models import (
+    ChallengeProjection,
+    InvestigateRequest,
+    PreviewRequest,
+    ResetRequest,
+)
 from app.challenge.service import ChallengeService
 from app.config import settings
 
@@ -194,6 +199,17 @@ async def investigate(
     service = ChallengeService()
     session_id = await require_mutation_context(request, service)
     result = await service.investigate(session_id, body)
+    return result.projection
+
+
+@router.post("/preview", response_model=ChallengeProjection)
+async def preview(
+    body: PreviewRequest, request: Request, response: Response
+) -> ChallengeProjection:
+    service = ChallengeService()
+    session_id = await require_mutation_context(request, service)
+    result = await service.preview(session_id, body)
+    delete_approval_cookie(response)
     return result.projection
 
 
