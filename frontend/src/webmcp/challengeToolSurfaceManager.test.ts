@@ -91,7 +91,7 @@ describe('ChallengeToolSurfaceManager', () => {
     expect(surface.currentEpoch()).toBe(1)
   })
 
-  it('makes a captured old-epoch handler return the fixed stale result', async () => {
+  it('test_old_epoch_handler_returns_stale_surface', async () => {
     const originalExecute = vi.fn(async () => ({ ok: true }))
     const harness = new ChallengeWebMcpHarness()
     const surface = manager(harness, (name) => definition(name, originalExecute))
@@ -218,7 +218,7 @@ describe('ChallengeToolSurfaceManager', () => {
     expect(harness.registrationCalls).toHaveLength(1)
   })
 
-  it('exposes commit only while approved and invalidates it immediately after success', async () => {
+  it('test_commit_tool_absent_before_approval', async () => {
     const harness = new ChallengeWebMcpHarness()
     const surface = manager(harness)
     await surface.sync(challengeProjection({

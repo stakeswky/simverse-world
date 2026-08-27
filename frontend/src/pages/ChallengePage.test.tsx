@@ -500,7 +500,7 @@ describe('ChallengePage', () => {
     expect(store.initialize).toHaveBeenCalledTimes(2)
   })
 
-  it('works without modelContext and can reset the in-memory session', async () => {
+  it('test_no_webmcp_keeps_ordinary_ui_complete', async () => {
     store.session = projection({
       state: 'VERIFIED',
       tool_surface: ['simverse_reset_town'],

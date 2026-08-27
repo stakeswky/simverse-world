@@ -7,9 +7,10 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import event
 
-from app.challenge.repository import ChallengeRepository
+from app.challenge.repository import SESSION_PREFIX, ChallengeRepository
 from app.config import Settings, settings
 from app.main import app
+from app.redis_client import get_redis
 
 pytestmark = pytest.mark.anyio
 
@@ -541,7 +542,7 @@ async def test_path_scoped_cookie_keeps_preview_and_reset_on_server_pointer(
     assert reset.json()["state"] == "INITIAL"
 
 
-async def test_commit_requires_approval_cookie_without_mutating_approved_session(
+async def test_commit_without_approval_cookie(
     client, public_challenge_origin
 ) -> None:
     headers, body, _ = await _http_approved(client)
@@ -662,6 +663,97 @@ async def test_commit_auth_and_schema_failures_never_enter_commit_or_delete_cook
     assert "secrets.compare_digest" in source
 
 
+async def test_commit_rejects_approved_extra_field(
+    client, public_challenge_origin, monkeypatch
+) -> None:
+    from app.routers import challenge as challenge_router
+
+    headers, body, _ = await _http_approved(client)
+    calls = 0
+
+    async def forbidden_commit(self, session_id, approval_id, request):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("commit service must not run")
+
+    monkeypatch.setattr(challenge_router.ChallengeService, "commit", forbidden_commit)
+
+    rejected = await client.post(
+        "/challenge/commit",
+        headers=headers,
+        json={**body, "approved": True},
+    )
+
+    assert rejected.status_code == 422
+    assert rejected.json()["error"]["code"] == "INVALID_INPUT"
+    assert calls == 0
+    unchanged = await client.get("/challenge/session")
+    assert unchanged.json()["state"] == "APPROVED_ONCE"
+    assert unchanged.json()["world_version"] == 7
+    assert unchanged.json()["receipt"] is None
+
+
+async def test_mutation_without_csrf_is_rejected(
+    client, public_challenge_origin, monkeypatch
+) -> None:
+    from app.routers import challenge as challenge_router
+
+    _, body, _ = await _http_approved(client)
+    calls = 0
+
+    async def forbidden_commit(self, session_id, approval_id, request):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("commit service must not run")
+
+    monkeypatch.setattr(challenge_router.ChallengeService, "commit", forbidden_commit)
+
+    rejected = await client.post(
+        "/challenge/commit",
+        headers={"Origin": PUBLIC_ORIGIN},
+        json=body,
+    )
+
+    assert rejected.status_code == 422
+    assert rejected.json()["error"]["code"] == "INVALID_INPUT"
+    assert calls == 0
+    unchanged = await client.get("/challenge/session")
+    assert unchanged.json()["state"] == "APPROVED_ONCE"
+    assert unchanged.json()["world_version"] == 7
+
+
+async def test_mutation_with_wrong_origin_is_rejected(
+    client, public_challenge_origin, monkeypatch
+) -> None:
+    from app.routers import challenge as challenge_router
+
+    headers, body, _ = await _http_approved(client)
+    calls = 0
+
+    async def forbidden_commit(self, session_id, approval_id, request):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("commit service must not run")
+
+    monkeypatch.setattr(challenge_router.ChallengeService, "commit", forbidden_commit)
+
+    rejected = await client.post(
+        "/challenge/commit",
+        headers={
+            "Origin": "https://attacker.invalid",
+            "X-CSRF-Token": headers["X-CSRF-Token"],
+        },
+        json=body,
+    )
+
+    assert rejected.status_code == 422
+    assert rejected.json()["error"]["code"] == "INVALID_INPUT"
+    assert calls == 0
+    unchanged = await client.get("/challenge/session")
+    assert unchanged.json()["state"] == "APPROVED_ONCE"
+    assert unchanged.json()["world_version"] == 7
+
+
 @pytest.mark.parametrize(
     ("status", "expected_status", "expected_code"),
     [
@@ -699,7 +791,7 @@ async def test_terminal_commit_failure_deletes_approval_cookie(
     assert unchanged.receipt is None
 
 
-async def test_second_commit_is_replay_and_cannot_apply_twice(
+async def test_consumed_approval_cannot_replay(
     client, public_challenge_origin
 ) -> None:
     headers, body, approval_id = await _http_approved(client)
@@ -754,6 +846,111 @@ async def test_reset_rotates_session_cookie_and_deletes_approval_cookie(
     resumed = await client.get("/challenge/session")
     assert resumed.status_code == 200
     assert resumed.json()["session_generation"] == reset.json()["session_generation"]
+
+
+async def test_reset_invalidates_old_approval(
+    client, public_challenge_origin
+) -> None:
+    headers, body, approval_id = await _http_approved(client)
+    approved = await client.get("/challenge/session")
+    old_session_id = client.cookies.get("sv_challenge_session")
+    assert old_session_id is not None
+
+    reset = await client.post(
+        "/challenge/reset",
+        headers=headers,
+        json={"expected_generation": approved.json()["session_generation"]},
+    )
+    assert reset.status_code == 200
+    assert reset.json()["state"] == "INITIAL"
+    client.cookies.set(
+        "sv_challenge_approval",
+        approval_id,
+        path="/challenge/commit",
+    )
+
+    replayed = await client.post(
+        "/challenge/commit",
+        headers={
+            "Origin": PUBLIC_ORIGIN,
+            "X-CSRF-Token": reset.json()["csrf_token"],
+        },
+        json=body,
+    )
+
+    assert replayed.status_code == 403
+    assert replayed.json()["error"]["code"] == "APPROVAL_REQUIRED"
+    repository = ChallengeRepository()
+    assert await repository.load_session(old_session_id) is None
+    assert await repository.load_approval(approval_id) is None
+    current = await client.get("/challenge/session")
+    assert current.json()["state"] == "INITIAL"
+    assert current.json()["world_version"] == 7
+    assert current.json()["receipt"] is None
+
+
+async def test_expired_session_rejects_old_receipt(
+    client, public_challenge_origin
+) -> None:
+    headers, body, _ = await _http_approved(client)
+    committed = await client.post(
+        "/challenge/commit",
+        headers=headers,
+        json=body,
+    )
+    assert committed.status_code == 200
+    old_receipt_id = committed.json()["receipt"]["receipt_id"]
+    old_session_id = client.cookies.get("sv_challenge_session")
+    assert old_session_id is not None
+    await get_redis().delete(f"{SESSION_PREFIX}{old_session_id}")
+
+    rejected = await client.get("/challenge/session")
+
+    assert rejected.status_code == 410
+    assert rejected.json()["error"]["code"] == "CHALLENGE_SESSION_EXPIRED"
+    assert old_receipt_id not in rejected.text
+    repository = ChallengeRepository()
+    assert await repository.load_session(old_session_id) is None
+
+
+async def test_production_town_id_is_rejected(
+    client, public_challenge_origin, monkeypatch
+) -> None:
+    from app.routers import challenge as challenge_router
+
+    created = await client.post(
+        "/challenge/session",
+        headers={"Origin": PUBLIC_ORIGIN},
+    )
+    calls = 0
+
+    async def forbidden_investigate(self, session_id, request):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("investigate service must not run")
+
+    monkeypatch.setattr(
+        challenge_router.ChallengeService,
+        "investigate",
+        forbidden_investigate,
+    )
+
+    rejected = await client.post(
+        "/challenge/investigate",
+        headers={
+            "Origin": PUBLIC_ORIGIN,
+            "X-CSRF-Token": created.json()["csrf_token"],
+        },
+        json={"budget_cap_sc": 300, "town_id": "production-town"},
+    )
+
+    assert rejected.status_code == 422
+    assert rejected.json()["error"]["code"] == "INVALID_INPUT"
+    assert calls == 0
+    unchanged = await client.get("/challenge/session")
+    assert unchanged.json()["state"] == "INITIAL"
+    assert unchanged.json()["scenario_id"] == "harbor-wage-crisis-v1"
+    assert unchanged.json()["world_version"] == 7
 
 
 async def test_reset_rejects_extra_body_and_returns_stable_domain_error(

@@ -26,6 +26,42 @@ Focused tests cover:
 - Visible Agent Activity after actual execution.
 - Anonymous `/challenge` routing and isolation from authenticated gameplay overlays.
 
+## Option B Phase 4 security-negative matrix
+
+Recorded on `2026-08-27`. Every required case has its own test node; no row is
+represented only by a broad shared assertion.
+
+| # | Node id | Expected code / outcome | Actual result |
+|---:|---|---|---|
+| 1 | `frontend/src/webmcp/challengeToolSurfaceManager.test.ts > ChallengeToolSurfaceManager > test_commit_tool_absent_before_approval` | `ABSENT_BEFORE_APPROVAL`; old handler becomes `STALE_TOOL_SURFACE` | PASS |
+| 2 | `backend/tests/challenge/test_router.py::test_commit_without_approval_cookie` | `APPROVAL_REQUIRED` | PASS |
+| 3 | `backend/tests/challenge/test_router.py::test_commit_rejects_approved_extra_field` | `INVALID_INPUT` | PASS |
+| 4 | `backend/tests/challenge/test_authorization.py::test_approval_invalid_after_one_sc_change` | `PREVIEW_STALE`; no world change | PASS |
+| 5 | `backend/tests/challenge/test_authorization.py::test_approval_invalid_after_resident_replacement` | `PREVIEW_STALE`; no world change | PASS |
+| 6 | `backend/tests/challenge/test_authorization.py::test_approval_rejects_stale_world_version` | `STALE_WORLD_VERSION` | PASS |
+| 7 | `backend/tests/challenge/test_authorization.py::test_approval_rejects_cross_session_preview` | `APPROVAL_MISMATCH` | PASS |
+| 8 | `backend/tests/challenge/test_authorization.py::test_approval_expires_after_ninety_seconds` | `APPROVAL_EXPIRED`; state returns to `PREVIEW_READY` | PASS |
+| 9 | `backend/tests/challenge/test_authorization.py::test_revoked_approval_cannot_commit` | `APPROVAL_REVOKED` | PASS |
+| 10 | `backend/tests/challenge/test_router.py::test_consumed_approval_cannot_replay` | `APPROVAL_REPLAYED`; one receipt only | PASS |
+| 11 | `backend/tests/challenge/test_concurrency.py::test_concurrent_commits_have_one_success` | one success; loser `APPROVAL_REPLAYED` | PASS |
+| 12 | `frontend/src/webmcp/challengeTools.test.ts > challenge investigate tool > test_prompt_injection_does_not_change_surface` | `INVALID_INPUT`; surface unchanged | PASS |
+| 13 | `frontend/src/components/challenge/HumanApprovalPanel.test.tsx > HumanApprovalPanel > test_programmatic_click_cannot_approve` | untrusted DOM click produces no approval | PASS |
+| 14 | `backend/tests/challenge/test_router.py::test_mutation_without_csrf_is_rejected` | `INVALID_INPUT`; service not entered | PASS |
+| 15 | `backend/tests/challenge/test_router.py::test_mutation_with_wrong_origin_is_rejected` | `INVALID_INPUT`; service not entered | PASS |
+| 16 | `backend/tests/challenge/test_router.py::test_reset_invalidates_old_approval` | `APPROVAL_REQUIRED`; old session and approval deleted | PASS |
+| 17 | `backend/tests/challenge/test_router.py::test_expired_session_rejects_old_receipt` | `CHALLENGE_SESSION_EXPIRED`; receipt not disclosed | PASS |
+| 18 | `frontend/src/webmcp/challengeToolSurfaceManager.test.ts > ChallengeToolSurfaceManager > test_old_epoch_handler_returns_stale_surface` | `STALE_TOOL_SURFACE`; old action not called | PASS |
+| 19 | `frontend/src/pages/ChallengePage.test.tsx > ChallengePage > test_no_webmcp_keeps_ordinary_ui_complete` | ordinary UI remains complete and reset works | PASS |
+| 20 | `backend/tests/challenge/test_router.py::test_production_town_id_is_rejected` | `INVALID_INPUT`; service not entered | PASS |
+
+Task gate evidence:
+
+```text
+backend authorization + concurrency + router: 68 passed
+frontend challengeTools + surface manager + HumanApprovalPanel: 26 passed
+ordinary-browser UI fixed node: 1 passed
+```
+
 ## Production build
 
 `VITE_WEBMCP_ENABLED` is a Vite build-time value. Enable it while building the exact artifact deployed to Cloudflare:

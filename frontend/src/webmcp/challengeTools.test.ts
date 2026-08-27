@@ -294,7 +294,7 @@ describe('challenge investigate tool', () => {
     })
   })
 
-  it('rejects injected or out-of-range input without changing the surface', async () => {
+  it('test_prompt_injection_does_not_change_surface', async () => {
     const harness = storeHarness()
     const tool = createChallengeTool(INVESTIGATE_TOOL_NAME, {
       store: harness.store,

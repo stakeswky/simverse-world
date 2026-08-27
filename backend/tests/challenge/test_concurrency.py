@@ -243,7 +243,7 @@ async def test_commit_racing_revoke_or_reset_has_one_winner(
     assert len(failures) == 1
 
 
-async def test_two_concurrent_service_commits_return_one_stable_replay() -> None:
+async def test_concurrent_commits_have_one_success() -> None:
     base = ChallengeRepository(clock=lambda: NOW)
     session_id, approval_id = await _approved_session(base)
     stored = await base.load_session(session_id)

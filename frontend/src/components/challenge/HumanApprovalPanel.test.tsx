@@ -140,7 +140,7 @@ function approvalSession(
 }
 
 describe('HumanApprovalPanel', () => {
-  it('shows the complete immutable diff and keeps programmatic approval disabled', () => {
+  it('test_programmatic_click_cannot_approve', () => {
     const onApprove = vi.fn().mockResolvedValue(undefined)
     const { container } = render(
       <HumanApprovalPanel
