@@ -41,6 +41,12 @@ from tests.test_lab_protocol_v2_regressions import (
 )
 
 
+@pytest.fixture(autouse=True)
+def configured_test_egress(monkeypatch):
+    monkeypatch.setenv("LAB_EGRESS_ENABLED", "true")
+    monkeypatch.setenv("LAB_EGRESS_SEARCH_ENDPOINT", "http://search.test")
+
+
 def _app(path, completer):
     return create_app(
         completer_factory=lambda: completer,

@@ -32,6 +32,12 @@ KID = "runtime-current"
 KEY = "runtime-current-test-secret-at-least-32-bytes"
 
 
+@pytest.fixture(autouse=True)
+def configured_test_egress(monkeypatch):
+    monkeypatch.setenv("LAB_EGRESS_ENABLED", "true")
+    monkeypatch.setenv("LAB_EGRESS_SEARCH_ENDPOINT", "http://search.test")
+
+
 def _canonical(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
@@ -348,13 +354,12 @@ async def test_broker_sentinel_reaches_final_artifact_with_result_provenance(tmp
         artifacts = artifacts_response.json()["artifacts"]
         assert len(artifacts) == 1
         artifact = artifacts[0]
-        assert payload["sentinel"] in artifact["text_md"]
-        assert artifact["meta"]["broker_result_digest"] == body["result_digest"]
-        assert artifact["meta"]["broker_result_provenance"] == {
-            "command_id": body["command_id"],
-            "intent_id": body["intent_id"],
-            "action_id": body["action_id"],
-        }
+        assert artifact["provider_artifact_id"]
+        assert artifact["producer_action_id"] == body["action_id"]
+        assert artifact["declared_byte_size"] > 0
+        assert len(artifact["expected_sha256"]) == 64
+        assert artifact["upload_state"] == "pending"
+        assert "text_md" not in artifact
 
 
 @pytest.mark.anyio

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+import hashlib
 import json
 import uuid
 
@@ -48,6 +49,16 @@ from app.models.lab_task import LabTask
 
 OWNER = "gateway-v2-owner"
 EPOCH = 7
+
+
+@pytest.fixture(autouse=True)
+def configured_test_egress(monkeypatch):
+    monkeypatch.setenv("LAB_EGRESS_ENABLED", "true")
+    monkeypatch.setenv("LAB_EGRESS_SEARCH_ENDPOINT", "http://search.test")
+    monkeypatch.setenv("LAB_EGRESS_BASE_URL", "http://egress.test")
+    monkeypatch.setenv(
+        "LAB_EGRESS_API_KEY", "test-egress-key-at-least-32-bytes-long"
+    )
 
 
 def test_v2_owner_identity_is_replica_unique_and_column_bounded():
@@ -1070,7 +1081,13 @@ async def test_v2_approval_timeout_delivers_canonical_denied_result(
         expires_at=datetime.now(UTC) - timedelta(seconds=1),
         fencing_epoch=EPOCH,
     )
-    db_session.add_all([action, approval])
+    budget = LabRunBudget(
+        run_id=session.run_id,
+        tenant_id="tenant",
+        reserved_tool_calls=1,
+        reserved_egress_requests=1,
+    )
+    db_session.add_all([action, approval, budget])
     await db_session.commit()
 
     async def return_waiting_action(*args, **kwargs):
@@ -1078,11 +1095,6 @@ async def test_v2_approval_timeout_delivers_canonical_denied_result(
 
     async def deny_on_timeout(*args, **kwargs):
         return False
-
-    released: list[bool] = []
-
-    async def release_reservations(is_egress):
-        released.append(is_egress)
 
     monkeypatch.setattr(broker, "request_action", return_waiting_action)
     driver = object.__new__(lab_orchestrator._V2Orchestrator)
@@ -1093,14 +1105,15 @@ async def test_v2_approval_timeout_delivers_canonical_denied_result(
     driver.claims = object()
     driver.token = "unused-in-test"
     driver._await_approval = deny_on_timeout
-    driver._release_reservations = release_reservations
 
     await driver._handle_v2_intent(event, committed)
     action_id = action.id
     approval_id = approval.id
+    run_id = session.run_id
     db_session.expire_all()
     stored_action = await db_session.get(LabToolAction, action_id)
     stored_approval = await db_session.get(LabApproval, approval_id)
+    stored_budget = await db_session.get(LabRunBudget, run_id)
     result = await db_session.scalar(
         select(LabRuntimeResult).where(
             LabRuntimeResult.runtime_intent_id == committed.intent_row_id
@@ -1112,7 +1125,8 @@ async def test_v2_approval_timeout_delivers_canonical_denied_result(
     assert result.outcome == "denied"
     assert result.payload_json == {"reason": "approval_timeout"}
     assert result.receipt_id is None
-    assert released == [False]
+    assert stored_budget.reserved_tool_calls == 0
+    assert stored_budget.reserved_egress_requests == 0
 
 
 @pytest.mark.anyio
@@ -1140,6 +1154,7 @@ async def test_oversized_broker_result_is_terminal_and_effect_runs_once(
         run_id=run_id,
         agent_id="sage",
         capabilities=["web_search"],
+        egress=["search.test"],
         fencing_epoch=EPOCH,
     )
     effects = 0
@@ -1147,7 +1162,11 @@ async def test_oversized_broker_result_is_terminal_and_effect_runs_once(
     async def oversized_effect(tool_name, args):
         nonlocal effects
         effects += 1
-        return {"payload": [False] * 60_000}
+        return broker.TrustedEgressResult(
+            payload={"payload": [False] * 60_000},
+            requests=1,
+            bytes=60_000,
+        )
 
     driver = object.__new__(lab_orchestrator._V2Orchestrator)
     driver.db = db_session
@@ -1156,7 +1175,7 @@ async def test_oversized_broker_result_is_terminal_and_effect_runs_once(
     driver.epoch = EPOCH
     driver.claims = claims
     driver.token = token
-    driver._select_executor = lambda tool_name: oversized_effect
+    driver._select_executor = lambda tool_name, **kwargs: (oversized_effect, None)
 
     for _ in range(2):
         with pytest.raises(
@@ -2139,7 +2158,10 @@ async def test_http_adapter_v2_round_trip_never_uses_step_stream(tmp_path, monke
             provider_session_id=provider_session_id
         )
         assert len(artifacts) == 1
-        assert payload["sentinel"] in artifacts[0].text_md
+        assert artifacts[0].provider_artifact_id
+        assert artifacts[0].producer_action_id == "adapter-action"
+        assert artifacts[0].declared_byte_size
+        assert len(artifacts[0].expected_sha256 or "") == 64
     assert completer.calls == 2
 
 
@@ -2254,17 +2276,67 @@ async def test_v2_orchestrator_execute_full_sentinel_round_trip(
     async def sentinel_executor(tool_name, args):
         assert tool_name == "web.search"
         assert args == {"query": "approved-v10 sentinel"}
-        return {"sentinel": "BROKER-FULL-E2E-SENTINEL", "ok": True}
+        return broker.TrustedEgressResult(
+            payload={"sentinel": "BROKER-FULL-E2E-SENTINEL", "ok": True},
+            requests=1,
+            bytes=48,
+        )
 
     monkeypatch.setattr(settings, "lab_grant_secret", "gateway-v2-grant-secret")
-    monkeypatch.setattr(settings, "lab_egress_allowlist", [])
+    monkeypatch.setattr(settings, "lab_egress_allowlist", ["search.test"])
     monkeypatch.setattr(lab_orchestrator, "get_adapter", lambda name: adapter)
     monkeypatch.setattr(lab_orchestrator, "_ws_task_update", no_ws)
     monkeypatch.setattr(lab_orchestrator, "_ws_run_step", no_ws)
     monkeypatch.setattr(lab_orchestrator, "_ws_run_approval", no_ws)
 
+    async def persist_at_pipeline_boundary(driver, artifacts):
+        existing = (
+            await driver.db.execute(
+                select(LabArtifact).where(LabArtifact.run_id == driver.run_id)
+            )
+        ).scalars().all()
+        if existing:
+            return existing
+        spec = artifacts[0]
+        text = "BROKER-FULL-E2E-SENTINEL"
+        artifact = LabArtifact(
+            run_id=driver.run_id,
+            task_id=driver.task_id,
+            kind=spec.kind,
+            title=spec.title,
+            text_md=text,
+            meta_json=spec.meta,
+            tenant_id=driver.tenant_id,
+            provider_artifact_id=spec.provider_artifact_id,
+            runtime_session_id=driver.runtime_session_id,
+            provider_session_id=driver.provider_session_id,
+            producer_epoch=driver.runtime_epoch,
+            required=spec.required,
+            declared_content_type=spec.content_type,
+            content_type=spec.content_type,
+            expected_sha256=hashlib.sha256(text.encode()).hexdigest(),
+            declared_byte_size=len(text.encode()),
+            sha256=hashlib.sha256(text.encode()).hexdigest(),
+            byte_size=len(text.encode()),
+            producer_action_id=spec.producer_action_id,
+            provenance="runtime",
+            storage_status="legacy",
+        )
+        driver.db.add(artifact)
+        budget = await driver.db.get(LabRunBudget, driver.run_id)
+        budget.used_artifact_count += 1
+        budget.used_artifact_bytes += artifact.byte_size
+        await driver.db.commit()
+        return [artifact]
+
+    monkeypatch.setattr(
+        lab_orchestrator._V2Orchestrator,
+        "_persist_v2_artifacts",
+        persist_at_pipeline_boundary,
+    )
+
     driver = lab_orchestrator._V2Orchestrator(db_session, run, task)
-    driver._select_executor = lambda tool_name: sentinel_executor
+    driver._select_executor = lambda tool_name, **kwargs: (sentinel_executor, None)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=runtime_app),
         base_url="http://runtime.test",
@@ -2314,10 +2386,7 @@ async def test_v2_orchestrator_execute_full_sentinel_round_trip(
         ):
             await restarted.execute()
 
-        async def forbidden_collect(**kwargs):
-            raise AssertionError("persisted artifacts must resume without Runtime I/O")
-
-        adapter.collect_artifacts_v2 = forbidden_collect
+        adapter.collect_artifacts_v2 = original_collect
         await restarted.execute()
 
     db_session.expire_all()

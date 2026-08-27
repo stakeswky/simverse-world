@@ -27,6 +27,12 @@ def anyio_backend():
     return "asyncio"
 
 
+@pytest.fixture(autouse=True)
+def configured_test_egress(monkeypatch):
+    monkeypatch.setenv("LAB_EGRESS_ENABLED", "true")
+    monkeypatch.setenv("LAB_EGRESS_SEARCH_ENDPOINT", "http://search.test")
+
+
 def _fake_completer(script):
     calls = {"n": 0}
 
