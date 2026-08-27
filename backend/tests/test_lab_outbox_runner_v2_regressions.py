@@ -39,11 +39,17 @@ def test_topic_registry_has_exactly_one_trust_plane_owner():
         "lab_run_event": "realtime_relay",
         "lab.task.terminalized": "lab_terminalizer",
         "world_changed": "world_relay",
-        "artifact_cleanup": "artifact_cleanup",
+        "artifact.cleanup.requested": "lab_runner",
+        "artifact.cleanup.completed": "lab_runner",
     }
     assert set(dispatcher.TOPIC_OWNERS) == set(dispatcher.KNOWN_TOPICS)
     assert dispatcher.owned_topics("lab_runner") == frozenset(
-        {"lab.run.enqueue", "lab_control"}
+        {
+            "lab.run.enqueue",
+            "lab_control",
+            "artifact.cleanup.requested",
+            "artifact.cleanup.completed",
+        }
     )
 
 
@@ -66,8 +72,9 @@ async def test_runner_claims_only_owned_topics_and_publisher_receives_full_envel
             owned_topics=dispatcher.owned_topics("lab_runner"),
         )
 
-    assert stats["published"] == 2
-    assert {item["topic"] for item in seen} == {"lab.run.enqueue", "lab_control"}
+    runner_topics = dispatcher.owned_topics("lab_runner")
+    assert stats["published"] == 4
+    assert {item["topic"] for item in seen} == runner_topics
     assert {
         (
             item["outbox_id"],
@@ -80,19 +87,18 @@ async def test_runner_claims_only_owned_topics_and_publisher_receives_full_envel
     } == {
         (ids[topic], f"event-{index}", "tenant-1", "run-1", f"event-{index}")
         for index, topic in enumerate(dispatcher.KNOWN_TOPICS)
-        if topic in {"lab.run.enqueue", "lab_control"}
+        if topic in runner_topics
     }
 
     async with factory() as db:
         rows = (await db.execute(select(OutboxEvent))).scalars().all()
     published = {row.topic for row in rows if row.published_at is not None}
     pending = {row.topic for row in rows if row.dispatch_status == "pending"}
-    assert published == {"lab.run.enqueue", "lab_control"}
+    assert published == runner_topics
     assert pending == {
         "lab_run_event",
         "lab.task.terminalized",
         "world_changed",
-        "artifact_cleanup",
     }
 
 
@@ -152,8 +158,18 @@ async def test_runner_service_starts_only_runner_owned_dispatch_topics():
 
     assert service.ready is True
     assert captured == {
-        "publishers": {"lab.run.enqueue", "lab_control"},
-        "owned_topics": frozenset({"lab.run.enqueue", "lab_control"}),
+        "publishers": {
+            "lab.run.enqueue",
+            "lab_control",
+            "artifact.cleanup.requested",
+            "artifact.cleanup.completed",
+        },
+        "owned_topics": frozenset({
+            "lab.run.enqueue",
+            "lab_control",
+            "artifact.cleanup.requested",
+            "artifact.cleanup.completed",
+        }),
     }
     stop.set()
     await asyncio.wait_for(running, timeout=1)

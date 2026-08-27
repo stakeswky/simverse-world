@@ -80,7 +80,6 @@ EXPECTED_FINDINGS = {
     ),
     Finding("write", "backend/app/lab/orchestrator.py", "run_one_v1", "run.status", "failed"),
     Finding("write", "backend/app/lab/runner.py", "run_one", "run.status", "failed"),
-    Finding("write", "backend/app/lab/runner.py", "run_one", "run.status", "succeeded"),
     Finding("call", "backend/app/lab/runner.py", "run_one", "fail_task"),
     Finding(
         "write", "backend/app/lab/terminalizer.py", "_record_failure",
@@ -182,6 +181,102 @@ EXPECTED_FINDINGS = {
     Finding("call", "backend/app/tasks/nightly_cron.py", "run_nightly_jobs", "expire_lab_tasks"),
     Finding("call", "backend/app/tasks/nightly_cron.py", "sweep_orphan_lab_runs", "fail_task"),
     Finding("write", "backend/app/tasks/nightly_cron.py", "sweep_orphan_lab_runs", "run.status", "failed"),
+    Finding(
+        "call", "backend/app/lab/artifact_pipeline.py", "reconcile_once", "fail_task"
+    ),
+    Finding("call", "backend/app/lab/runner.py", "run_one", "cas_task_status"),
+    Finding(
+        "call", "backend/app/services/coin_service.py", "reward_creator_passive",
+        "reward",
+    ),
+    Finding(
+        "write", "backend/app/lab/artifact_pipeline.py", "reconcile_once",
+        "run.status", "failed",
+    ),
+    Finding(
+        "write", "backend/app/lab/artifact_services/cleanup/service.py", "delete",
+        "_receipt.status", "completed",
+    ),
+    Finding(
+        "write", "backend/app/lab/artifact_services/cleanup/service.py", "delete",
+        "_receipt.status", "failed",
+    ),
+    Finding(
+        "write", "backend/app/lab/artifact_services/scanner/service.py", "_finish",
+        "_receipt.status", "<dynamic>",
+    ),
+    Finding(
+        "write", "backend/app/lab/artifact_services/scanner/service.py",
+        "_retry_or_fail", "_finish.status", "failed",
+    ),
+    Finding(
+        "write", "backend/app/lab/artifact_services/scanner/service.py", "process",
+        "_finish.status", "failed",
+    ),
+    Finding(
+        "write", "backend/app/lab/broker.py", "settle_reconciled_action",
+        "action.status", "<dynamic>",
+    ),
+    Finding(
+        "write", "backend/app/lab/control_plane.py", "_complete_request",
+        "request.status", "completed",
+    ),
+    Finding(
+        "write", "backend/app/lab/control_plane.py", "_complete_request",
+        "run.status", "cancelled",
+    ),
+    Finding(
+        "write", "backend/app/lab/control_plane.py", "_settle_target",
+        "session.status", "cancelled",
+    ),
+    Finding(
+        "write", "backend/app/lab/control_plane.py", "process_global_kill",
+        "kill.status", "completed",
+    ),
+    Finding(
+        "write", "backend/app/lab/control_plane.py", "reconcile_v2_processing",
+        "claim.status", "completed",
+    ),
+    Finding(
+        "write", "backend/app/lab/control_plane.py", "reconcile_v2_processing",
+        "claim.status", "expired",
+    ),
+    Finding(
+        "write", "backend/app/lab/control_plane.py", "settle_queue_claim",
+        "values.status", "<dynamic>",
+    ),
+    Finding(
+        "write", "backend/app/lab/executor_service/server.py", "_complete_result",
+        "sign.status", "<dynamic>",
+    ),
+    Finding(
+        "write", "backend/app/lab/orchestrator.py", "_commit_v2_success",
+        "run.status", "succeeded",
+    ),
+    Finding(
+        "write", "backend/app/lab/orchestrator.py", "run_one_v2",
+        "run.status", "failed",
+    ),
+    Finding(
+        "write", "backend/app/lab/remote_executor.py", "get_result",
+        "verify.status", "<dynamic>",
+    ),
+    Finding(
+        "write", "backend/app/lab/supervision.py", "_commit_runtime_event",
+        "session.status", "cancelled",
+    ),
+    Finding(
+        "write", "backend/app/lab/supervision.py", "_commit_runtime_event",
+        "session.status", "completed",
+    ),
+    Finding(
+        "write", "backend/app/lab/supervision.py", "_commit_runtime_event",
+        "session.status", "failed",
+    ),
+    Finding(
+        "write", "backend/app/lab/supervision.py", "_commit_runtime_event",
+        "turn.status", "completed",
+    ),
 }
 
 CURRENT_RUNTIME_CALLERS = (

@@ -270,7 +270,10 @@ APPROVED_DIRTY_MANIFEST_SHA256 = (
 
 
 def canonical_json(value: object) -> bytes:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    return (
+        json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        + "\n"
+    ).encode()
 
 
 def sha256_bytes(value: bytes) -> str:

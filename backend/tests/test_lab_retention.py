@@ -125,7 +125,9 @@ async def test_cleanup_writes_outbox_event_with_full_payload(db_session):
     await lab_artifact_service.cleanup_expired(db_session)
 
     rows = (await db_session.execute(
-        select(OutboxEvent).where(OutboxEvent.topic == "cleanup.completed")
+        select(OutboxEvent).where(
+            OutboxEvent.topic == "artifact.cleanup.completed"
+        )
     )).scalars().all()
     assert len(rows) == 1
     payload = rows[0].payload_json
