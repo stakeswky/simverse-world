@@ -11,6 +11,7 @@ from app.challenge.models import (
     ApproveRequest,
     ChallengeSession,
     ChallengeState,
+    CommitRequest,
     InvestigateRequest,
     PreviewRequest,
 )
@@ -240,3 +241,43 @@ async def test_commit_racing_revoke_or_reset_has_one_winner(
     failures = [result for result in results if isinstance(result, Exception)]
     assert len(successes) == 1
     assert len(failures) == 1
+
+
+async def test_two_concurrent_service_commits_return_one_stable_replay() -> None:
+    base = ChallengeRepository(clock=lambda: NOW)
+    session_id, approval_id = await _approved_session(base)
+    stored = await base.load_session(session_id)
+    assert stored is not None and stored.preview is not None
+    request = CommitRequest(
+        preview_id=stored.preview.preview_id,
+        expected_world_version=stored.world.world_version,
+        diff_hash=stored.preview.diff_hash,
+    )
+    barrier = _BarrierRedis(get_redis())
+    first = ChallengeService(
+        repository=ChallengeRepository(barrier, lambda: NOW),
+        clock=lambda: NOW,
+    )
+    second = ChallengeService(
+        repository=ChallengeRepository(barrier, lambda: NOW),
+        clock=lambda: NOW,
+    )
+
+    results = await asyncio.gather(
+        first.commit(session_id, approval_id, request),
+        second.commit(session_id, approval_id, request),
+        return_exceptions=True,
+    )
+
+    successes = [result for result in results if not isinstance(result, Exception)]
+    failures = [result for result in results if isinstance(result, ChallengeDomainError)]
+    assert len(successes) == 1
+    assert len(failures) == 1
+    assert failures[0].code is ChallengeErrorCode.APPROVAL_REPLAYED
+    committed = await base.load_session(session_id)
+    tombstone = await base.load_approval(approval_id)
+    assert committed is not None and tombstone is not None
+    assert committed.state is ChallengeState.COMMITTED
+    assert committed.world.world_version == 8
+    assert committed.world.budget_sc == 60
+    assert tombstone.status == "CONSUMED"

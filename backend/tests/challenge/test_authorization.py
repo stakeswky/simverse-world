@@ -10,6 +10,7 @@ from app.challenge.models import (
     ApprovalRecord,
     ApproveRequest,
     ChallengeState,
+    CommitRequest,
     InvestigateRequest,
     PreviewRequest,
 )
@@ -29,6 +30,22 @@ async def _preview_ready(service: ChallengeService, session_id: str):
         session_id,
         PreviewRequest(crisis_id="harbor-wage-crisis", budget_cap_sc=300),
     )
+
+
+async def _approved_once(service: ChallengeService, session_id: str):
+    previewed = await _preview_ready(service, session_id)
+    preview = previewed.projection.preview
+    assert preview is not None
+    approved = await service.approve(
+        session_id,
+        ApproveRequest(
+            preview_id=preview.preview_id,
+            expected_world_version=preview.based_on_world_version,
+            diff_hash=preview.diff_hash,
+        ),
+    )
+    assert approved.approval_id is not None
+    return approved, preview
 
 
 async def test_preview_rebuild_atomically_invalidates_server_side_approval() -> None:
@@ -343,3 +360,236 @@ async def test_revoke_writes_tombstone_and_clears_active_capability() -> None:
     assert stored is not None
     assert stored.active_approval_id is None
     assert any(event.action == "revoke" for event in stored.audit_events)
+
+
+async def test_commit_consumes_bound_approval_and_receipt_in_one_transition() -> None:
+    repository = ChallengeRepository(clock=lambda: NOW)
+    service = ChallengeService(repository=repository, clock=lambda: NOW)
+    created = await service.create_or_resume(None)
+    approved, preview = await _approved_once(service, created.session_id)
+    before_hash = approved.projection.world_hash
+
+    committed = await service.commit(
+        created.session_id,
+        approved.approval_id,
+        CommitRequest(
+            preview_id=preview.preview_id,
+            expected_world_version=7,
+            diff_hash=preview.diff_hash,
+        ),
+    )
+
+    assert committed.projection.state is ChallengeState.COMMITTED
+    assert committed.projection.world_version == 8
+    assert committed.projection.budget_sc == 60
+    assert committed.projection.world_hash != before_hash
+    assert committed.projection.receipt is not None
+    assert committed.projection.receipt.world_before_version == 7
+    assert committed.projection.receipt.world_after_version == 8
+    assert committed.projection.receipt.approved_diff_hash == preview.diff_hash
+    assert committed.projection.receipt.approval_fingerprint == (
+        approved.projection.approval_fingerprint
+    )
+    stored = await repository.load_session(created.session_id)
+    tombstone = await repository.load_approval(approved.approval_id)
+    assert stored is not None and tombstone is not None
+    assert stored.active_approval_id is None
+    assert stored.approval_fingerprint is None
+    assert stored.approval_expires_at is None
+    assert stored.receipt == committed.projection.receipt
+    assert tombstone.status == "CONSUMED"
+    commit_events = [event for event in stored.audit_events if event.action == "commit"]
+    assert len(commit_events) == 1
+    assert commit_events[0].world_version_before == 7
+    assert commit_events[0].world_version_after == 8
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected_code"),
+    [
+        ("preview_id", "wrong-preview", ChallengeErrorCode.APPROVAL_MISMATCH),
+        ("diff_hash", "sha256:" + "f" * 64, ChallengeErrorCode.APPROVAL_MISMATCH),
+        ("expected_world_version", 8, ChallengeErrorCode.STALE_WORLD_VERSION),
+    ],
+)
+async def test_commit_rejects_each_request_binding_before_any_world_change(
+    field: str,
+    value: str | int,
+    expected_code: ChallengeErrorCode,
+) -> None:
+    repository = ChallengeRepository(clock=lambda: NOW)
+    service = ChallengeService(repository=repository, clock=lambda: NOW)
+    created = await service.create_or_resume(None)
+    approved, preview = await _approved_once(service, created.session_id)
+    payload: dict[str, str | int] = {
+        "preview_id": preview.preview_id,
+        "expected_world_version": 7,
+        "diff_hash": preview.diff_hash,
+    }
+    payload[field] = value
+
+    with pytest.raises(ChallengeDomainError) as rejected:
+        await service.commit(
+            created.session_id,
+            approved.approval_id,
+            CommitRequest(**payload),
+        )
+
+    assert rejected.value.code is expected_code
+    stored = await repository.load_session(created.session_id)
+    capability = await repository.load_approval(approved.approval_id)
+    assert stored is not None and capability is not None
+    assert stored.state is ChallengeState.APPROVED_ONCE
+    assert stored.world.world_version == 7
+    assert stored.world.budget_sc == 300
+    assert stored.receipt is None
+    assert capability.status == "APPROVED_ONCE"
+
+
+async def test_commit_rejects_cookie_for_another_session_and_missing_record() -> None:
+    repository = ChallengeRepository(clock=lambda: NOW)
+    service = ChallengeService(repository=repository, clock=lambda: NOW)
+    first = await service.create_or_resume(None)
+    second = await service.create_or_resume(None)
+    first_approved, first_preview = await _approved_once(service, first.session_id)
+    second_approved, _ = await _approved_once(service, second.session_id)
+
+    with pytest.raises(ChallengeDomainError) as cross_session:
+        await service.commit(
+            first.session_id,
+            second_approved.approval_id,
+            CommitRequest(
+                preview_id=first_preview.preview_id,
+                expected_world_version=7,
+                diff_hash=first_preview.diff_hash,
+            ),
+        )
+    assert cross_session.value.code is ChallengeErrorCode.APPROVAL_MISMATCH
+
+    with pytest.raises(ChallengeDomainError) as missing:
+        await service.commit(
+            first.session_id,
+            "missing-approval-record",
+            CommitRequest(
+                preview_id=first_preview.preview_id,
+                expected_world_version=7,
+                diff_hash=first_preview.diff_hash,
+            ),
+        )
+    assert missing.value.code is ChallengeErrorCode.APPROVAL_REQUIRED
+    stored = await repository.load_session(first.session_id)
+    capability = await repository.load_approval(first_approved.approval_id)
+    assert stored is not None and capability is not None
+    assert stored.state is ChallengeState.APPROVED_ONCE
+    assert capability.status == "APPROVED_ONCE"
+
+
+@pytest.mark.parametrize(
+    ("status", "expected_code"),
+    [
+        ("EXPIRED", ChallengeErrorCode.APPROVAL_EXPIRED),
+        ("REVOKED", ChallengeErrorCode.APPROVAL_REVOKED),
+        ("INVALIDATED", ChallengeErrorCode.APPROVAL_MISMATCH),
+        ("CONSUMED", ChallengeErrorCode.APPROVAL_REPLAYED),
+    ],
+)
+async def test_commit_rejects_terminal_approval_status(
+    status: str,
+    expected_code: ChallengeErrorCode,
+) -> None:
+    repository = ChallengeRepository(clock=lambda: NOW)
+    service = ChallengeService(repository=repository, clock=lambda: NOW)
+    created = await service.create_or_resume(None)
+    approved, preview = await _approved_once(service, created.session_id)
+    capability = await repository.load_approval(approved.approval_id)
+    assert capability is not None
+    await repository.save_approval(capability.model_copy(update={"status": status}))
+
+    with pytest.raises(ChallengeDomainError) as rejected:
+        await service.commit(
+            created.session_id,
+            approved.approval_id,
+            CommitRequest(
+                preview_id=preview.preview_id,
+                expected_world_version=7,
+                diff_hash=preview.diff_hash,
+            ),
+        )
+
+    assert rejected.value.code is expected_code
+    stored = await repository.load_session(created.session_id)
+    assert stored is not None
+    assert stored.world.world_version == 7
+    assert stored.receipt is None
+
+
+@pytest.mark.parametrize("tamper", ["generation", "preview", "world_version"])
+async def test_commit_rejects_stale_server_side_approval_binding(tamper: str) -> None:
+    repository = ChallengeRepository(clock=lambda: NOW)
+    service = ChallengeService(repository=repository, clock=lambda: NOW)
+    created = await service.create_or_resume(None)
+    approved, preview = await _approved_once(service, created.session_id)
+    capability = await repository.load_approval(approved.approval_id)
+    assert capability is not None
+    updates = {
+        "generation": {"session_generation": "old-generation"},
+        "preview": {"preview_id": "old-preview"},
+        "world_version": {"world_version": 6},
+    }
+    await repository.save_approval(capability.model_copy(update=updates[tamper]))
+
+    with pytest.raises(ChallengeDomainError) as rejected:
+        await service.commit(
+            created.session_id,
+            approved.approval_id,
+            CommitRequest(
+                preview_id=preview.preview_id,
+                expected_world_version=7,
+                diff_hash=preview.diff_hash,
+            ),
+        )
+
+    assert rejected.value.code is ChallengeErrorCode.APPROVAL_MISMATCH
+
+
+async def test_commit_rebuilds_preview_and_rejects_tampered_server_hash() -> None:
+    repository = ChallengeRepository(clock=lambda: NOW)
+    service = ChallengeService(repository=repository, clock=lambda: NOW)
+    created = await service.create_or_resume(None)
+    approved, preview = await _approved_once(service, created.session_id)
+    stored = await repository.load_session(created.session_id)
+    capability = await repository.load_approval(approved.approval_id)
+    assert stored is not None and stored.preview is not None
+    assert capability is not None
+    tampered_hash = "sha256:" + "f" * 64
+    await repository.save_session(
+        created.session_id,
+        stored.model_copy(
+            update={
+                "preview": stored.preview.model_copy(
+                    update={"diff_hash": tampered_hash}, deep=True
+                )
+            },
+            deep=True,
+        ),
+    )
+    await repository.save_approval(
+        capability.model_copy(update={"diff_hash": tampered_hash})
+    )
+
+    with pytest.raises(ChallengeDomainError) as rejected:
+        await service.commit(
+            created.session_id,
+            approved.approval_id,
+            CommitRequest(
+                preview_id=preview.preview_id,
+                expected_world_version=7,
+                diff_hash=tampered_hash,
+            ),
+        )
+
+    assert rejected.value.code is ChallengeErrorCode.PREVIEW_STALE
+    unchanged = await repository.load_session(created.session_id)
+    assert unchanged is not None
+    assert unchanged.world.world_version == 7
+    assert unchanged.receipt is None

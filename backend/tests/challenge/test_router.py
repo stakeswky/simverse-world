@@ -7,12 +7,57 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import event
 
+from app.challenge.repository import ChallengeRepository
 from app.config import Settings, settings
 from app.main import app
 
 pytestmark = pytest.mark.anyio
 
 PUBLIC_ORIGIN = "https://simverse.world"
+
+
+async def _http_approved(client):
+    created = await client.post(
+        "/challenge/session", headers={"Origin": PUBLIC_ORIGIN}
+    )
+    assert created.status_code == 200
+    headers = {
+        "Origin": PUBLIC_ORIGIN,
+        "X-CSRF-Token": created.json()["csrf_token"],
+    }
+    investigated = await client.post(
+        "/challenge/investigate", headers=headers, json={"budget_cap_sc": 300}
+    )
+    assert investigated.status_code == 200
+    previewed = await client.post(
+        "/challenge/preview",
+        headers=headers,
+        json={"crisis_id": "harbor-wage-crisis", "budget_cap_sc": 300},
+    )
+    assert previewed.status_code == 200
+    preview = previewed.json()["preview"]
+    approved = await client.post(
+        "/challenge/approve",
+        headers=headers,
+        json={
+            "preview_id": preview["preview_id"],
+            "expected_world_version": preview["based_on_world_version"],
+            "diff_hash": preview["diff_hash"],
+        },
+    )
+    assert approved.status_code == 200
+    approval_cookie = next(
+        value
+        for value in approved.headers.get_list("set-cookie")
+        if value.startswith("sv_challenge_approval=")
+    )
+    approval_id = approval_cookie.split(";", 1)[0].split("=", 1)[1]
+    body = {
+        "preview_id": preview["preview_id"],
+        "expected_world_version": preview["based_on_world_version"],
+        "diff_hash": preview["diff_hash"],
+    }
+    return headers, body, approval_id
 
 
 @pytest.fixture
@@ -428,6 +473,255 @@ async def test_approve_and_revoke_require_origin_cookie_and_csrf(
 
     unchanged = await client.get("/challenge/session")
     assert unchanged.json()["state"] == "PREVIEW_READY"
+
+
+async def test_commit_uses_path_scoped_cookie_and_returns_atomic_receipt(
+    client, public_challenge_origin
+) -> None:
+    headers, body, approval_id = await _http_approved(client)
+
+    session_read = await client.get("/challenge/session")
+    assert "sv_challenge_approval=" not in session_read.request.headers.get(
+        "cookie", ""
+    )
+    committed = await client.post("/challenge/commit", headers=headers, json=body)
+
+    assert committed.status_code == 200
+    assert "sv_challenge_approval=" in committed.request.headers.get("cookie", "")
+    payload = committed.json()
+    assert payload["state"] == "COMMITTED"
+    assert payload["world_version"] == 8
+    assert payload["budget_sc"] == 60
+    assert payload["receipt"]["world_before_version"] == 7
+    assert payload["receipt"]["world_after_version"] == 8
+    assert payload["receipt"]["approved_diff_hash"] == body["diff_hash"]
+    assert approval_id not in committed.text
+    assert any(
+        "sv_challenge_approval=" in value and "Max-Age=0" in value
+        for value in committed.headers.get_list("set-cookie")
+    )
+
+
+async def test_path_scoped_cookie_keeps_preview_and_reset_on_server_pointer(
+    client, public_challenge_origin
+) -> None:
+    headers, _, _ = await _http_approved(client)
+
+    previewed = await client.post(
+        "/challenge/preview",
+        headers=headers,
+        json={"crisis_id": "harbor-wage-crisis", "budget_cap_sc": 300},
+    )
+
+    assert previewed.status_code == 200
+    assert "sv_challenge_approval=" not in previewed.request.headers.get(
+        "cookie", ""
+    )
+    assert previewed.json()["state"] == "PREVIEW_READY"
+    preview = previewed.json()["preview"]
+    approved_again = await client.post(
+        "/challenge/approve",
+        headers=headers,
+        json={
+            "preview_id": preview["preview_id"],
+            "expected_world_version": preview["based_on_world_version"],
+            "diff_hash": preview["diff_hash"],
+        },
+    )
+    assert approved_again.status_code == 200
+
+    reset = await client.post(
+        "/challenge/reset",
+        headers=headers,
+        json={"expected_generation": approved_again.json()["session_generation"]},
+    )
+
+    assert reset.status_code == 200
+    assert "sv_challenge_approval=" not in reset.request.headers.get("cookie", "")
+    assert reset.json()["state"] == "INITIAL"
+
+
+async def test_commit_requires_approval_cookie_without_mutating_approved_session(
+    client, public_challenge_origin
+) -> None:
+    headers, body, _ = await _http_approved(client)
+    client.cookies.delete("sv_challenge_approval", path="/challenge/commit")
+
+    rejected = await client.post("/challenge/commit", headers=headers, json=body)
+
+    assert rejected.status_code == 403
+    assert rejected.json()["error"]["code"] == "APPROVAL_REQUIRED"
+    assert "set-cookie" not in rejected.headers
+    unchanged = await client.get("/challenge/session")
+    assert unchanged.json()["state"] == "APPROVED_ONCE"
+    assert unchanged.json()["world_version"] == 7
+    assert unchanged.json()["receipt"] is None
+
+
+async def test_commit_requires_session_cookie_before_reading_approval(
+    client, public_challenge_origin
+) -> None:
+    headers, body, _ = await _http_approved(client)
+    client.cookies.delete("sv_challenge_session", path="/challenge")
+
+    rejected = await client.post("/challenge/commit", headers=headers, json=body)
+
+    assert rejected.status_code == 409
+    assert rejected.json()["error"]["code"] == "CHALLENGE_SESSION_NOT_READY"
+    assert "set-cookie" not in rejected.headers
+
+
+async def test_commit_rejects_approval_cookie_bound_to_another_session(
+    client, public_challenge_origin
+) -> None:
+    _, _, first_approval_id = await _http_approved(client)
+    client.cookies.delete("sv_challenge_session", path="/challenge")
+    second_headers, second_body, _ = await _http_approved(client)
+    client.cookies.set(
+        "sv_challenge_approval", first_approval_id, path="/challenge/commit"
+    )
+
+    rejected = await client.post(
+        "/challenge/commit", headers=second_headers, json=second_body
+    )
+
+    assert rejected.status_code == 403
+    assert rejected.json()["error"]["code"] == "APPROVAL_MISMATCH"
+    assert any(
+        "sv_challenge_approval=" in value and "Max-Age=0" in value
+        for value in rejected.headers.get_list("set-cookie")
+    )
+    unchanged = await client.get("/challenge/session")
+    assert unchanged.json()["state"] == "APPROVED_ONCE"
+    assert unchanged.json()["world_version"] == 7
+    assert unchanged.json()["receipt"] is None
+
+
+async def test_commit_rejects_wrong_cookie_and_deletes_it(
+    client, public_challenge_origin
+) -> None:
+    headers, body, approval_id = await _http_approved(client)
+    repository = ChallengeRepository()
+    approval = await repository.load_approval(approval_id)
+    assert approval is not None
+    wrong_id = "wrong-approval-cookie"
+    await repository.save_approval(
+        approval.model_copy(update={"approval_id": wrong_id})
+    )
+    client.cookies.set(
+        "sv_challenge_approval", wrong_id, path="/challenge/commit"
+    )
+
+    rejected = await client.post("/challenge/commit", headers=headers, json=body)
+
+    assert rejected.status_code == 403
+    assert rejected.json()["error"]["code"] == "APPROVAL_MISMATCH"
+    assert any(
+        "sv_challenge_approval=" in value and "Max-Age=0" in value
+        for value in rejected.headers.get_list("set-cookie")
+    )
+    unchanged = await client.get("/challenge/session")
+    assert unchanged.json()["state"] == "APPROVED_ONCE"
+    assert unchanged.json()["world_version"] == 7
+
+
+async def test_commit_auth_and_schema_failures_never_enter_commit_or_delete_cookie(
+    client, public_challenge_origin, monkeypatch
+) -> None:
+    from app.routers import challenge as challenge_router
+
+    headers, body, _ = await _http_approved(client)
+    calls = 0
+
+    async def forbidden_commit(self, session_id, approval_id, request):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("commit service must not run")
+
+    monkeypatch.setattr(challenge_router.ChallengeService, "commit", forbidden_commit)
+    requests = (
+        ({"X-CSRF-Token": headers["X-CSRF-Token"]}, body),
+        ({"Origin": "https://attacker.invalid", "X-CSRF-Token": headers["X-CSRF-Token"]}, body),
+        ({"Origin": PUBLIC_ORIGIN}, body),
+        ({"Origin": PUBLIC_ORIGIN, "X-CSRF-Token": "wrong"}, body),
+        (headers, {**body, "approved": True}),
+    )
+    for request_headers, request_body in requests:
+        rejected = await client.post(
+            "/challenge/commit", headers=request_headers, json=request_body
+        )
+        assert rejected.status_code == 422
+        assert rejected.json()["error"]["code"] == "INVALID_INPUT"
+        assert "set-cookie" not in rejected.headers
+
+    assert calls == 0
+    unchanged = await client.get("/challenge/session")
+    assert unchanged.json()["state"] == "APPROVED_ONCE"
+    assert unchanged.json()["world_version"] == 7
+    source = inspect.getsource(challenge_router.require_mutation_context)
+    assert "secrets.compare_digest" in source
+
+
+@pytest.mark.parametrize(
+    ("status", "expected_status", "expected_code"),
+    [
+        ("EXPIRED", 410, "APPROVAL_EXPIRED"),
+        ("REVOKED", 403, "APPROVAL_REVOKED"),
+        ("INVALIDATED", 403, "APPROVAL_MISMATCH"),
+        ("CONSUMED", 409, "APPROVAL_REPLAYED"),
+    ],
+)
+async def test_terminal_commit_failure_deletes_approval_cookie(
+    client,
+    public_challenge_origin,
+    status: str,
+    expected_status: int,
+    expected_code: str,
+) -> None:
+    headers, body, approval_id = await _http_approved(client)
+    repository = ChallengeRepository()
+    approval = await repository.load_approval(approval_id)
+    assert approval is not None
+    await repository.save_approval(approval.model_copy(update={"status": status}))
+
+    rejected = await client.post("/challenge/commit", headers=headers, json=body)
+
+    assert rejected.status_code == expected_status
+    assert rejected.json()["error"]["code"] == expected_code
+    assert any(
+        "sv_challenge_approval=" in value and "Max-Age=0" in value
+        for value in rejected.headers.get_list("set-cookie")
+    )
+    session_id = client.cookies.get("sv_challenge_session")
+    unchanged = await repository.load_session(session_id)
+    assert unchanged is not None
+    assert unchanged.world.world_version == 7
+    assert unchanged.receipt is None
+
+
+async def test_second_commit_is_replay_and_cannot_apply_twice(
+    client, public_challenge_origin
+) -> None:
+    headers, body, approval_id = await _http_approved(client)
+    first = await client.post("/challenge/commit", headers=headers, json=body)
+    assert first.status_code == 200
+    client.cookies.set(
+        "sv_challenge_approval", approval_id, path="/challenge/commit"
+    )
+
+    replayed = await client.post("/challenge/commit", headers=headers, json=body)
+
+    assert replayed.status_code == 409
+    assert replayed.json()["error"]["code"] == "APPROVAL_REPLAYED"
+    assert any(
+        "sv_challenge_approval=" in value and "Max-Age=0" in value
+        for value in replayed.headers.get_list("set-cookie")
+    )
+    stored = await client.get("/challenge/session")
+    assert stored.json()["state"] == "COMMITTED"
+    assert stored.json()["world_version"] == 8
+    assert stored.json()["budget_sc"] == 60
+    assert len(stored.json()["receipt"]["created_events"]) == 1
 
 
 async def test_reset_rotates_session_cookie_and_deletes_approval_cookie(

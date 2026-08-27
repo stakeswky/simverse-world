@@ -6,7 +6,12 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timedelta
 
 from app.challenge.canonical import diff_hash, world_hash
-from app.challenge.engine import build_intervention_preview, investigate_world
+from app.challenge.engine import (
+    build_intervention_preview,
+    commit_world,
+    investigate_world,
+    validate_world_diff,
+)
 from app.challenge.errors import (
     ERROR_STATUS_BY_CODE,
     ChallengeDomainError,
@@ -20,6 +25,7 @@ from app.challenge.models import (
     ChallengeProjection,
     ChallengeSession,
     ChallengeState,
+    CommitRequest,
     InvestigateRequest,
     PreviewRequest,
     ResetRequest,
@@ -172,6 +178,18 @@ class ChallengeService:
             )
         if session.state is ChallengeState.APPROVED_ONCE:
             session = await self._settle_approval_deadline(session_id)
+        return self._result(session_id, session)
+
+    async def get_mutation_session(self, session_id: str) -> SessionResult:
+        session = await self._repository.load_session(session_id)
+        if session is None:
+            raise _error(
+                ChallengeErrorCode.CHALLENGE_SESSION_EXPIRED,
+                "Challenge session no longer exists.",
+                retryable=False,
+                current_state=None,
+                next_action="create_session",
+            )
         return self._result(session_id, session)
 
     async def investigate(
@@ -489,6 +507,247 @@ class ChallengeService:
 
         session = await self._repository.mutate_session_with_active_approval(
             session_id,
+            mutate,
+        )
+        return self._result(session_id, session)
+
+    async def commit(
+        self,
+        session_id: str,
+        approval_id: str,
+        request: CommitRequest,
+    ) -> SessionResult:
+        def reject(
+            code: ChallengeErrorCode,
+            message: str,
+            *,
+            state: ChallengeState,
+            next_action: str,
+            retryable: bool = False,
+        ) -> ChallengeDomainError:
+            return _error(
+                code,
+                message,
+                retryable=retryable,
+                current_state=state,
+                next_action=next_action,
+            )
+
+        def mutate(
+            session: ChallengeSession,
+            approval: ApprovalRecord,
+            now: datetime,
+        ) -> tuple[ChallengeSession, ApprovalRecord]:
+            state_before = session.state
+            state_after = validate_transition(state_before, "commit")
+
+            active_approval_id = session.active_approval_id or ""
+            if not secrets.compare_digest(approval_id, active_approval_id):
+                raise reject(
+                    ChallengeErrorCode.APPROVAL_MISMATCH,
+                    "Approval cookie does not match the active server capability.",
+                    state=state_before,
+                    next_action="preview",
+                )
+
+            if approval.status != "APPROVED_ONCE":
+                status_errors = {
+                    "EXPIRED": (
+                        ChallengeErrorCode.APPROVAL_EXPIRED,
+                        "Approval capability has expired.",
+                    ),
+                    "REVOKED": (
+                        ChallengeErrorCode.APPROVAL_REVOKED,
+                        "Approval capability has been revoked.",
+                    ),
+                    "CONSUMED": (
+                        ChallengeErrorCode.APPROVAL_REPLAYED,
+                        "Approval capability has already been consumed.",
+                    ),
+                    "INVALIDATED": (
+                        ChallengeErrorCode.APPROVAL_MISMATCH,
+                        "Approval capability was invalidated by a newer preview.",
+                    ),
+                }
+                code, message = status_errors[approval.status]
+                raise reject(
+                    code,
+                    message,
+                    state=state_before,
+                    next_action=(
+                        "verify"
+                        if code is ChallengeErrorCode.APPROVAL_REPLAYED
+                        else "preview"
+                    ),
+                )
+
+            deadline = min(
+                approval.expires_at,
+                session.approval_expires_at or approval.expires_at,
+            )
+            if now >= deadline:
+                raise reject(
+                    ChallengeErrorCode.APPROVAL_EXPIRED,
+                    "Approval capability has expired.",
+                    state=state_before,
+                    next_action="preview",
+                )
+
+            generation_matches = secrets.compare_digest(
+                approval.session_generation,
+                session.session_generation,
+            )
+            if not generation_matches:
+                raise reject(
+                    ChallengeErrorCode.APPROVAL_MISMATCH,
+                    "Approval generation does not match the active session.",
+                    state=state_before,
+                    next_action="preview",
+                )
+
+            preview = session.preview
+            if preview is None:
+                raise reject(
+                    ChallengeErrorCode.PREVIEW_NOT_FOUND,
+                    "The approved intervention preview is missing.",
+                    state=state_before,
+                    next_action="preview",
+                    retryable=True,
+                )
+            approval_preview_matches = secrets.compare_digest(
+                approval.preview_id,
+                preview.preview_id,
+            )
+            request_preview_matches = secrets.compare_digest(
+                request.preview_id,
+                preview.preview_id,
+            )
+            if not (approval_preview_matches & request_preview_matches):
+                raise reject(
+                    ChallengeErrorCode.APPROVAL_MISMATCH,
+                    "Approval preview does not match the requested intervention.",
+                    state=state_before,
+                    next_action="preview",
+                )
+
+            approval_hash_matches = secrets.compare_digest(
+                approval.diff_hash,
+                preview.diff_hash,
+            )
+            request_hash_matches = secrets.compare_digest(
+                request.diff_hash,
+                preview.diff_hash,
+            )
+            if not (approval_hash_matches & request_hash_matches):
+                raise reject(
+                    ChallengeErrorCode.APPROVAL_MISMATCH,
+                    "Approval diff hash does not match the requested intervention.",
+                    state=state_before,
+                    next_action="preview",
+                )
+
+            approval_world_matches = secrets.compare_digest(
+                str(approval.world_version),
+                str(preview.based_on_world_version),
+            ) & secrets.compare_digest(
+                str(approval.world_version),
+                str(session.world.world_version),
+            )
+            if not approval_world_matches:
+                raise reject(
+                    ChallengeErrorCode.APPROVAL_MISMATCH,
+                    "Approval world version no longer matches the preview.",
+                    state=state_before,
+                    next_action="preview",
+                )
+
+            if request.expected_world_version != session.world.world_version:
+                raise reject(
+                    ChallengeErrorCode.STALE_WORLD_VERSION,
+                    "The requested world version is no longer current.",
+                    state=state_before,
+                    next_action="preview",
+                    retryable=True,
+                )
+
+            if session.evidence is None:
+                raise reject(
+                    ChallengeErrorCode.EVIDENCE_STALE,
+                    "The approved preview no longer has current evidence.",
+                    state=state_before,
+                    next_action="investigate",
+                    retryable=True,
+                )
+            rebuilt = build_intervention_preview(
+                session.world,
+                session.evidence,
+                session_generation=session.session_generation,
+                preview_id=preview.preview_id,
+                created_at=preview.created_at,
+            )
+            rebuilt_hash_matches = secrets.compare_digest(
+                rebuilt.diff_hash,
+                preview.diff_hash,
+            )
+            stored_hash_matches = secrets.compare_digest(
+                diff_hash(preview.diff),
+                preview.diff_hash,
+            )
+            if not (rebuilt_hash_matches & stored_hash_matches):
+                raise reject(
+                    ChallengeErrorCode.PREVIEW_STALE,
+                    "The stored preview failed server-side reconstruction.",
+                    state=state_before,
+                    next_action="preview",
+                    retryable=True,
+                )
+
+            validate_world_diff(session.world, rebuilt.diff)
+            fingerprint = session.approval_fingerprint
+            if fingerprint is None:
+                raise reject(
+                    ChallengeErrorCode.APPROVAL_MISMATCH,
+                    "The approval fingerprint is missing.",
+                    state=state_before,
+                    next_action="preview",
+                )
+            committed_world, receipt = commit_world(
+                session.world,
+                rebuilt.diff,
+                fingerprint,
+            )
+            if committed_world.world_version != session.world.world_version + 1:
+                raise reject(
+                    ChallengeErrorCode.OUTCOME_INCOMPLETE,
+                    "The committed world did not advance exactly one version.",
+                    state=state_before,
+                    next_action="reset",
+                )
+
+            updated = session.model_copy(deep=True)
+            updated.state = state_after
+            updated.world = committed_world
+            updated.active_approval_id = None
+            updated.approval_fingerprint = None
+            updated.approval_expires_at = None
+            updated.receipt = receipt
+            updated.audit_events.append(
+                AuditEvent(
+                    event_id=secrets.token_urlsafe(16),
+                    action="commit",
+                    state_before=state_before,
+                    state_after=state_after,
+                    reason_code=None,
+                    world_version_before=session.world.world_version,
+                    world_version_after=committed_world.world_version,
+                    occurred_at=now,
+                )
+            )
+            return updated, approval.model_copy(update={"status": "CONSUMED"})
+
+        session = await self._repository.mutate_session_and_approval(
+            session_id,
+            approval_id,
             mutate,
         )
         return self._result(session_id, session)

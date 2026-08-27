@@ -17,6 +17,7 @@ from app.challenge.errors import (
 from app.challenge.models import (
     ApproveRequest,
     ChallengeProjection,
+    CommitRequest,
     InvestigateRequest,
     PreviewRequest,
     ResetRequest,
@@ -38,6 +39,12 @@ PROTECTED_MUTATION_PATHS = (
     "/verify",
     "/reset",
 )
+TERMINAL_APPROVAL_ERRORS = {
+    ChallengeErrorCode.APPROVAL_EXPIRED,
+    ChallengeErrorCode.APPROVAL_REVOKED,
+    ChallengeErrorCode.APPROVAL_REPLAYED,
+    ChallengeErrorCode.APPROVAL_MISMATCH,
+}
 
 
 def _error_response(error: ChallengeDomainError) -> JSONResponse:
@@ -76,7 +83,13 @@ class ChallengeRoute(APIRoute):
                     )
                 )
             except ChallengeDomainError as error:
-                return _error_response(error)
+                response = _error_response(error)
+                if (
+                    request.url.path == "/challenge/commit"
+                    and error.code in TERMINAL_APPROVAL_ERRORS
+                ):
+                    delete_approval_cookie(response)
+                return response
             except Exception:
                 logger.exception("Unhandled challenge route error")
                 return _error_response(
@@ -155,12 +168,23 @@ def _require_session_cookie(request: Request) -> str:
     return session_id
 
 
+def _require_approval_cookie(request: Request) -> str:
+    approval_id = request.cookies.get(APPROVAL_COOKIE)
+    if not approval_id:
+        raise _domain_error(
+            ChallengeErrorCode.APPROVAL_REQUIRED,
+            "A trusted one-time approval cookie is required before commit.",
+            next_action="approve",
+        )
+    return approval_id
+
+
 async def require_mutation_context(
     request: Request, service: ChallengeService
 ) -> str:
     _require_exact_origin(request)
     session_id = _require_session_cookie(request)
-    current = await service.get_session(session_id)
+    current = await service.get_mutation_session(session_id)
     supplied_csrf = request.headers.get(CSRF_HEADER)
     if supplied_csrf is None or not secrets.compare_digest(
         supplied_csrf, current.projection.csrf_token
@@ -237,6 +261,20 @@ async def revoke(request: Request, response: Response) -> ChallengeProjection:
     service = ChallengeService()
     session_id = await require_mutation_context(request, service)
     result = await service.revoke(session_id)
+    delete_approval_cookie(response)
+    return result.projection
+
+
+@router.post("/commit", response_model=ChallengeProjection)
+async def commit(
+    body: CommitRequest,
+    request: Request,
+    response: Response,
+) -> ChallengeProjection:
+    service = ChallengeService()
+    session_id = await require_mutation_context(request, service)
+    approval_id = _require_approval_cookie(request)
+    result = await service.commit(session_id, approval_id, body)
     delete_approval_cookie(response)
     return result.projection
 
