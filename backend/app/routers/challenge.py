@@ -14,7 +14,7 @@ from app.challenge.errors import (
     ChallengeDomainError,
     ChallengeErrorCode,
 )
-from app.challenge.models import ChallengeProjection, ResetRequest
+from app.challenge.models import ChallengeProjection, InvestigateRequest, ResetRequest
 from app.challenge.service import ChallengeService
 from app.config import settings
 
@@ -184,6 +184,16 @@ async def create_session(request: Request, response: Response) -> ChallengeProje
 @router.get("/session", response_model=ChallengeProjection)
 async def get_session(request: Request) -> ChallengeProjection:
     result = await ChallengeService().get_session(_require_session_cookie(request))
+    return result.projection
+
+
+@router.post("/investigate", response_model=ChallengeProjection)
+async def investigate(
+    body: InvestigateRequest, request: Request
+) -> ChallengeProjection:
+    service = ChallengeService()
+    session_id = await require_mutation_context(request, service)
+    result = await service.investigate(session_id, body)
     return result.projection
 
 

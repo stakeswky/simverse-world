@@ -170,6 +170,66 @@ async def test_reset_requires_origin_cookie_and_constant_time_csrf(
         assert response.json()["error"]["code"] == "INVALID_INPUT"
 
 
+async def test_investigate_requires_origin_cookie_and_constant_time_csrf(
+    client, public_challenge_origin
+) -> None:
+    created = await client.post(
+        "/challenge/session", headers={"Origin": PUBLIC_ORIGIN}
+    )
+    csrf = created.json()["csrf_token"]
+    body = {"budget_cap_sc": 300}
+
+    missing_origin = await client.post(
+        "/challenge/investigate", headers={"X-CSRF-Token": csrf}, json=body
+    )
+    missing_csrf = await client.post(
+        "/challenge/investigate", headers={"Origin": PUBLIC_ORIGIN}, json=body
+    )
+    wrong_csrf = await client.post(
+        "/challenge/investigate",
+        headers={"Origin": PUBLIC_ORIGIN, "X-CSRF-Token": "wrong"},
+        json=body,
+    )
+    for response in (missing_origin, missing_csrf, wrong_csrf):
+        assert response.status_code == 422
+        assert response.json()["error"]["code"] == "INVALID_INPUT"
+
+    unchanged = await client.get("/challenge/session")
+    assert unchanged.json()["state"] == "INITIAL"
+    assert unchanged.json()["evidence"] is None
+
+
+async def test_investigate_api_exposes_evidence_and_rejects_extra_fields(
+    client, public_challenge_origin
+) -> None:
+    created = await client.post(
+        "/challenge/session", headers={"Origin": PUBLIC_ORIGIN}
+    )
+    headers = {
+        "Origin": PUBLIC_ORIGIN,
+        "X-CSRF-Token": created.json()["csrf_token"],
+    }
+    before_hash = created.json()["world_hash"]
+
+    investigated = await client.post(
+        "/challenge/investigate", headers=headers, json={"budget_cap_sc": 300}
+    )
+    assert investigated.status_code == 200
+    assert investigated.json()["state"] == "EVIDENCE_READY"
+    assert investigated.json()["evidence"]["based_on_world_version"] == 7
+    assert investigated.json()["world_hash"] == before_hash
+    assert investigated.json()["world_version"] == 7
+    assert investigated.json()["budget_sc"] == 300
+
+    extra = await client.post(
+        "/challenge/investigate",
+        headers=headers,
+        json={"budget_cap_sc": 300, "unexpected": True},
+    )
+    assert extra.status_code == 422
+    assert extra.json()["error"]["code"] == "INVALID_INPUT"
+
+
 async def test_reset_rotates_session_cookie_and_deletes_approval_cookie(
     client, public_challenge_origin
 ) -> None:

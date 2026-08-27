@@ -5,7 +5,8 @@ import pytest
 
 import app.challenge.service as service_module
 from app.challenge.errors import ChallengeDomainError, ChallengeErrorCode
-from app.challenge.models import ChallengeState
+from app.challenge.models import ChallengeState, InvestigateRequest
+from app.challenge.canonical import world_hash
 from app.challenge.repository import ChallengeRepository, SESSION_PREFIX
 from app.challenge.service import (
     FINAL_TOOL_SURFACE,
@@ -121,6 +122,79 @@ async def test_create_or_resume_replaces_missing_absolute_key_but_get_fails() ->
     with pytest.raises(ChallengeDomainError) as absent:
         await service.get_session(None)
     assert absent.value.code is ChallengeErrorCode.CHALLENGE_SESSION_NOT_READY
+
+
+async def test_investigate_transitions_and_rebuilds_evidence_without_world_changes() -> None:
+    repository = ChallengeRepository(clock=lambda: NOW)
+    service = ChallengeService(repository=repository, clock=lambda: NOW)
+    created = await service.create_or_resume(None)
+    before = created.projection
+
+    investigated = await service.investigate(
+        created.session_id, InvestigateRequest(budget_cap_sc=300)
+    )
+
+    assert investigated.projection.state is ChallengeState.EVIDENCE_READY
+    assert investigated.projection.evidence is not None
+    assert investigated.projection.evidence.based_on_world_version == 7
+    assert investigated.projection.world_version == before.world_version
+    assert investigated.projection.world_time == before.world_time
+    assert investigated.projection.budget_sc == before.budget_sc
+    assert investigated.projection.world_hash == before.world_hash
+    first_evidence_id = investigated.projection.evidence.evidence_id
+
+    rebuilt = await service.investigate(
+        created.session_id, InvestigateRequest(budget_cap_sc=300)
+    )
+    assert rebuilt.projection.state is ChallengeState.EVIDENCE_READY
+    assert rebuilt.projection.evidence is not None
+    assert rebuilt.projection.evidence.evidence_id != first_evidence_id
+    assert rebuilt.projection.world_hash == before.world_hash
+
+    stored = await repository.load_session(created.session_id)
+    assert stored is not None
+    assert world_hash(stored.world) == before.world_hash
+    assert [event.action for event in stored.audit_events] == [
+        "investigate",
+        "investigate",
+    ]
+    assert {
+        (event.state_before, event.state_after)
+        for event in stored.audit_events
+    } == {
+        (ChallengeState.INITIAL, ChallengeState.EVIDENCE_READY),
+        (ChallengeState.EVIDENCE_READY, ChallengeState.EVIDENCE_READY),
+    }
+    assert all(
+        event.world_version_before == event.world_version_after == 7
+        for event in stored.audit_events
+    )
+
+
+async def test_investigate_rejects_a_non_investigable_state_without_mutation() -> None:
+    repository = ChallengeRepository(clock=lambda: NOW)
+    service = ChallengeService(repository=repository, clock=lambda: NOW)
+    created = await service.create_or_resume(None)
+
+    await repository.mutate_session(
+        created.session_id,
+        lambda session, now: session.model_copy(
+            update={"state": ChallengeState.PREVIEW_READY}
+        ),
+    )
+
+    with pytest.raises(ChallengeDomainError) as rejected:
+        await service.investigate(
+            created.session_id, InvestigateRequest(budget_cap_sc=300)
+        )
+
+    assert rejected.value.code is ChallengeErrorCode.INVALID_STATE_TRANSITION
+    assert rejected.value.current_state is ChallengeState.PREVIEW_READY
+    stored = await repository.load_session(created.session_id)
+    assert stored is not None
+    assert stored.state is ChallengeState.PREVIEW_READY
+    assert stored.evidence is None
+    assert stored.audit_events == []
 
 
 def test_challenge_service_is_isolated_from_production_state_and_llm() -> None:

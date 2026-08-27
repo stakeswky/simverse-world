@@ -5,6 +5,7 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timedelta
 
 from app.challenge.canonical import world_hash
+from app.challenge.engine import investigate_world
 from app.challenge.errors import (
     ERROR_STATUS_BY_CODE,
     ChallengeDomainError,
@@ -12,9 +13,11 @@ from app.challenge.errors import (
 )
 from app.challenge.fixture import build_initial_world
 from app.challenge.models import (
+    AuditEvent,
     ChallengeProjection,
     ChallengeSession,
     ChallengeState,
+    InvestigateRequest,
     ResetRequest,
     SessionResult,
 )
@@ -160,6 +163,40 @@ class ChallengeService:
                 current_state=None,
                 next_action="create_session",
             )
+        return self._result(session_id, session)
+
+    async def investigate(
+        self, session_id: str, request: InvestigateRequest
+    ) -> SessionResult:
+        evidence_id = secrets.token_urlsafe(16)
+        audit_event_id = secrets.token_urlsafe(16)
+
+        def mutate(session: ChallengeSession, now: datetime) -> ChallengeSession:
+            state_before = session.state
+            state_after = validate_transition(state_before, "investigate")
+            evidence = investigate_world(
+                session.world,
+                budget_cap_sc=request.budget_cap_sc,
+                evidence_id=evidence_id,
+            )
+            updated = session.model_copy(deep=True)
+            updated.state = state_after
+            updated.evidence = evidence
+            updated.audit_events.append(
+                AuditEvent(
+                    event_id=audit_event_id,
+                    action="investigate",
+                    state_before=state_before,
+                    state_after=state_after,
+                    reason_code=None,
+                    world_version_before=session.world.world_version,
+                    world_version_after=session.world.world_version,
+                    occurred_at=now,
+                )
+            )
+            return updated
+
+        session = await self._repository.mutate_session(session_id, mutate)
         return self._result(session_id, session)
 
     async def reset(
