@@ -15,6 +15,7 @@ from app.challenge.errors import (
     ChallengeErrorCode,
 )
 from app.challenge.models import (
+    ApproveRequest,
     ChallengeProjection,
     InvestigateRequest,
     PreviewRequest,
@@ -209,6 +210,33 @@ async def preview(
     service = ChallengeService()
     session_id = await require_mutation_context(request, service)
     result = await service.preview(session_id, body)
+    delete_approval_cookie(response)
+    return result.projection
+
+
+@router.post("/approve", response_model=ChallengeProjection)
+async def approve(
+    body: ApproveRequest,
+    request: Request,
+    response: Response,
+) -> ChallengeProjection:
+    service = ChallengeService()
+    session_id = await require_mutation_context(request, service)
+    result = await service.approve(session_id, body)
+    if result.approval_id is None:
+        raise _domain_error(
+            ChallengeErrorCode.CHALLENGE_INTERNAL_ERROR,
+            "Approval capability could not be issued.",
+        )
+    set_approval_cookie(response, result.approval_id)
+    return result.projection
+
+
+@router.post("/revoke", response_model=ChallengeProjection)
+async def revoke(request: Request, response: Response) -> ChallengeProjection:
+    service = ChallengeService()
+    session_id = await require_mutation_context(request, service)
+    result = await service.revoke(session_id)
     delete_approval_cookie(response)
     return result.projection
 

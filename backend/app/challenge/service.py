@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import secrets
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timedelta
 
-from app.challenge.canonical import world_hash
+from app.challenge.canonical import diff_hash, world_hash
 from app.challenge.engine import build_intervention_preview, investigate_world
 from app.challenge.errors import (
     ERROR_STATUS_BY_CODE,
@@ -14,6 +15,7 @@ from app.challenge.errors import (
 from app.challenge.fixture import build_initial_world
 from app.challenge.models import (
     ApprovalRecord,
+    ApproveRequest,
     AuditEvent,
     ChallengeProjection,
     ChallengeSession,
@@ -25,6 +27,7 @@ from app.challenge.models import (
 )
 from app.challenge.repository import (
     ABSOLUTE_TTL_SECONDS,
+    APPROVAL_TTL_SECONDS,
     IDLE_TTL_SECONDS,
     ChallengeRepository,
     utc_now,
@@ -140,6 +143,8 @@ class ChallengeService:
         if session_id is not None:
             existing = await self._repository.load_session(session_id)
             if existing is not None:
+                if existing.state is ChallengeState.APPROVED_ONCE:
+                    existing = await self._settle_approval_deadline(session_id)
                 return self._result(session_id, existing)
         now = self._clock()
         new_session_id = secrets.token_urlsafe(32)
@@ -165,6 +170,8 @@ class ChallengeService:
                 current_state=None,
                 next_action="create_session",
             )
+        if session.state is ChallengeState.APPROVED_ONCE:
+            session = await self._settle_approval_deadline(session_id)
         return self._result(session_id, session)
 
     async def investigate(
@@ -204,6 +211,7 @@ class ChallengeService:
     async def preview(
         self, session_id: str, request: PreviewRequest
     ) -> SessionResult:
+        await self._settle_approval_deadline(session_id)
         preview_id = secrets.token_urlsafe(16)
         audit_event_id = secrets.token_urlsafe(16)
 
@@ -283,6 +291,208 @@ class ChallengeService:
         )
         return self._result(session_id, session)
 
+    async def approve(
+        self, session_id: str, request: ApproveRequest
+    ) -> SessionResult:
+        await self._settle_approval_deadline(session_id)
+        issued: dict[str, str] = {}
+
+        def mutate(
+            session: ChallengeSession,
+            active_approval: ApprovalRecord | None,
+            now: datetime,
+        ) -> tuple[ChallengeSession, ApprovalRecord]:
+            state_before = session.state
+            state_after = validate_transition(state_before, "approve")
+            if active_approval is not None or session.active_approval_id is not None:
+                raise _error(
+                    ChallengeErrorCode.APPROVAL_MISMATCH,
+                    "A different approval capability is already active.",
+                    retryable=False,
+                    current_state=state_before,
+                    next_action="revoke",
+                )
+            if session.preview is None:
+                raise _error(
+                    ChallengeErrorCode.PREVIEW_NOT_FOUND,
+                    "No intervention preview is available for approval.",
+                    retryable=True,
+                    current_state=state_before,
+                    next_action="preview",
+                )
+            if session.evidence is None:
+                raise _error(
+                    ChallengeErrorCode.EVIDENCE_STALE,
+                    "The approved preview no longer has current evidence.",
+                    retryable=True,
+                    current_state=state_before,
+                    next_action="investigate",
+                )
+            if (
+                session.preview.based_on_world_version != session.world.world_version
+                or session.evidence.based_on_world_version
+                != session.world.world_version
+            ):
+                raise _error(
+                    ChallengeErrorCode.STALE_WORLD_VERSION,
+                    "The preview no longer matches the current world version.",
+                    retryable=True,
+                    current_state=state_before,
+                    next_action="preview",
+                )
+
+            rebuilt = build_intervention_preview(
+                session.world,
+                session.evidence,
+                session_generation=session.session_generation,
+                preview_id=session.preview.preview_id,
+                created_at=session.preview.created_at,
+            )
+            stored_diff_hash = diff_hash(session.preview.diff)
+            if (
+                not secrets.compare_digest(
+                    rebuilt.diff_hash,
+                    session.preview.diff_hash,
+                )
+                or not secrets.compare_digest(
+                    stored_diff_hash,
+                    session.preview.diff_hash,
+                )
+            ):
+                raise _error(
+                    ChallengeErrorCode.PREVIEW_STALE,
+                    "The stored preview failed server-side reconstruction.",
+                    retryable=True,
+                    current_state=state_before,
+                    next_action="preview",
+                )
+
+            preview_id_matches = secrets.compare_digest(
+                request.preview_id.encode(), rebuilt.preview_id.encode()
+            )
+            diff_hash_matches = secrets.compare_digest(
+                request.diff_hash.encode(), rebuilt.diff_hash.encode()
+            )
+            world_version_matches = secrets.compare_digest(
+                str(request.expected_world_version).encode(),
+                str(rebuilt.based_on_world_version).encode(),
+            )
+            request_matches = (
+                preview_id_matches
+                & diff_hash_matches
+                & world_version_matches
+            )
+            if not request_matches:
+                raise _error(
+                    ChallengeErrorCode.APPROVAL_MISMATCH,
+                    "Approval inputs do not match the server-side preview.",
+                    retryable=False,
+                    current_state=state_before,
+                    next_action="preview",
+                )
+
+            approval_id = secrets.token_urlsafe(32)
+            fingerprint = "appr-" + hashlib.sha256(
+                approval_id.encode()
+            ).hexdigest()[:4].upper()
+            expires_at = now + timedelta(seconds=APPROVAL_TTL_SECONDS)
+            approval = ApprovalRecord(
+                approval_id=approval_id,
+                session_generation=session.session_generation,
+                preview_id=rebuilt.preview_id,
+                diff_hash=rebuilt.diff_hash,
+                world_version=rebuilt.based_on_world_version,
+                status="APPROVED_ONCE",
+                created_at=now,
+                expires_at=expires_at,
+            )
+            updated = session.model_copy(deep=True)
+            updated.state = state_after
+            updated.preview = rebuilt
+            updated.active_approval_id = approval_id
+            updated.approval_fingerprint = fingerprint
+            updated.approval_expires_at = expires_at
+            updated.audit_events.append(
+                AuditEvent(
+                    event_id=secrets.token_urlsafe(16),
+                    action="approve",
+                    state_before=state_before,
+                    state_after=state_after,
+                    reason_code=None,
+                    world_version_before=session.world.world_version,
+                    world_version_after=session.world.world_version,
+                    occurred_at=now,
+                )
+            )
+            issued["approval_id"] = approval_id
+            return updated, approval
+
+        session = await self._repository.mutate_session_with_active_approval(
+            session_id,
+            mutate,
+        )
+        return self._result(
+            session_id,
+            session,
+            approval_id=issued["approval_id"],
+        )
+
+    async def revoke(self, session_id: str) -> SessionResult:
+        settled = await self._settle_approval_deadline(session_id)
+        if settled.state is not ChallengeState.APPROVED_ONCE:
+            raise _error(
+                ChallengeErrorCode.APPROVAL_EXPIRED,
+                "Approval capability has expired.",
+                retryable=False,
+                current_state=settled.state,
+                next_action="preview",
+            )
+
+        def mutate(
+            session: ChallengeSession,
+            approval: ApprovalRecord | None,
+            now: datetime,
+        ) -> tuple[ChallengeSession, ApprovalRecord | None]:
+            state_before = session.state
+            state_after = validate_transition(state_before, "revoke")
+            if approval is None or approval.status != "APPROVED_ONCE":
+                code = (
+                    ChallengeErrorCode.APPROVAL_REVOKED
+                    if approval is not None and approval.status == "REVOKED"
+                    else ChallengeErrorCode.APPROVAL_MISMATCH
+                )
+                raise _error(
+                    code,
+                    "Active approval is missing or no longer revocable.",
+                    retryable=False,
+                    current_state=state_before,
+                    next_action="preview",
+                )
+            updated = session.model_copy(deep=True)
+            updated.state = state_after
+            updated.active_approval_id = None
+            updated.approval_fingerprint = None
+            updated.approval_expires_at = None
+            updated.audit_events.append(
+                AuditEvent(
+                    event_id=secrets.token_urlsafe(16),
+                    action="revoke",
+                    state_before=state_before,
+                    state_after=state_after,
+                    reason_code=None,
+                    world_version_before=session.world.world_version,
+                    world_version_after=session.world.world_version,
+                    occurred_at=now,
+                )
+            )
+            return updated, approval.model_copy(update={"status": "REVOKED"})
+
+        session = await self._repository.mutate_session_with_active_approval(
+            session_id,
+            mutate,
+        )
+        return self._result(session_id, session)
+
     async def reset(
         self, session_id: str, request: ResetRequest
     ) -> SessionResult:
@@ -333,6 +543,73 @@ class ChallengeService:
         )
         return self._result(new_session_id, new_session)
 
+    async def _settle_approval_deadline(
+        self,
+        session_id: str,
+    ) -> ChallengeSession:
+        session = await self._repository.load_session(session_id)
+        if session is None:
+            raise _error(
+                ChallengeErrorCode.CHALLENGE_SESSION_EXPIRED,
+                "Challenge session no longer exists.",
+                retryable=False,
+                current_state=None,
+                next_action="create_session",
+            )
+        if session.state is not ChallengeState.APPROVED_ONCE:
+            return session
+
+        def settle(
+            current: ChallengeSession,
+            approval: ApprovalRecord | None,
+            now: datetime,
+        ) -> tuple[ChallengeSession, ApprovalRecord | None]:
+            if approval is None:
+                raise _error(
+                    ChallengeErrorCode.APPROVAL_MISMATCH,
+                    "Active approval record is missing.",
+                    retryable=False,
+                    current_state=current.state,
+                    next_action="preview",
+                )
+            deadline = min(
+                approval.expires_at,
+                current.approval_expires_at or approval.expires_at,
+            )
+            if approval.status == "APPROVED_ONCE" and now < deadline:
+                return current, approval
+            if approval.status != "EXPIRED" and now < deadline:
+                raise _error(
+                    ChallengeErrorCode.APPROVAL_MISMATCH,
+                    "Active approval record is not usable.",
+                    retryable=False,
+                    current_state=current.state,
+                    next_action="preview",
+                )
+            updated = current.model_copy(deep=True)
+            updated.state = ChallengeState.PREVIEW_READY
+            updated.active_approval_id = None
+            updated.approval_fingerprint = None
+            updated.approval_expires_at = None
+            updated.audit_events.append(
+                AuditEvent(
+                    event_id=secrets.token_urlsafe(16),
+                    action="approval_expired",
+                    state_before=current.state,
+                    state_after=ChallengeState.PREVIEW_READY,
+                    reason_code=ChallengeErrorCode.APPROVAL_EXPIRED.value,
+                    world_version_before=current.world.world_version,
+                    world_version_after=current.world.world_version,
+                    occurred_at=now,
+                )
+            )
+            return updated, approval.model_copy(update={"status": "EXPIRED"})
+
+        return await self._repository.mutate_session_with_active_approval(
+            session_id,
+            settle,
+        )
+
     @staticmethod
     def _new_session(now: datetime) -> ChallengeSession:
         world = build_initial_world()
@@ -380,9 +657,14 @@ class ChallengeService:
             verification=session.verification,
         )
 
-    def _result(self, session_id: str, session: ChallengeSession) -> SessionResult:
+    def _result(
+        self,
+        session_id: str,
+        session: ChallengeSession,
+        approval_id: str | None = None,
+    ) -> SessionResult:
         return SessionResult(
             session_id=session_id,
             projection=self._projection(session),
-            approval_id=None,
+            approval_id=approval_id,
         )

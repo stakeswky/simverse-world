@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import re
 
 import pytest
 from pydantic import ValidationError
@@ -318,6 +319,115 @@ async def test_preview_requires_origin_cookie_and_constant_time_csrf(
     unchanged = await client.get("/challenge/session")
     assert unchanged.json()["state"] == "EVIDENCE_READY"
     assert unchanged.json()["preview"] is None
+
+
+async def test_approve_cookie_is_secret_scoped_and_revoke_uses_server_pointer(
+    client, public_challenge_origin
+) -> None:
+    created = await client.post(
+        "/challenge/session", headers={"Origin": PUBLIC_ORIGIN}
+    )
+    headers = {
+        "Origin": PUBLIC_ORIGIN,
+        "X-CSRF-Token": created.json()["csrf_token"],
+    }
+    await client.post(
+        "/challenge/investigate", headers=headers, json={"budget_cap_sc": 300}
+    )
+    previewed = await client.post(
+        "/challenge/preview",
+        headers=headers,
+        json={"crisis_id": "harbor-wage-crisis", "budget_cap_sc": 300},
+    )
+    preview = previewed.json()["preview"]
+
+    approved = await client.post(
+        "/challenge/approve",
+        headers=headers,
+        json={
+            "preview_id": preview["preview_id"],
+            "expected_world_version": preview["based_on_world_version"],
+            "diff_hash": preview["diff_hash"],
+        },
+    )
+
+    assert approved.status_code == 200
+    assert approved.json()["state"] == "APPROVED_ONCE"
+    assert approved.json()["tool_surface"] == ["simverse_commit_approved"]
+    assert re.fullmatch(
+        r"appr-[0-9A-F]{4}", approved.json()["approval_fingerprint"]
+    )
+    cookie = next(
+        value for value in approved.headers.get_list("set-cookie")
+        if value.startswith("sv_challenge_approval=")
+    )
+    secret = cookie.split(";", 1)[0].split("=", 1)[1]
+    lower_cookie = cookie.lower()
+    assert len(secret) >= 43
+    assert secret not in approved.text
+    assert "httponly" in lower_cookie
+    assert "max-age=90" in lower_cookie
+    assert "path=/challenge/commit" in lower_cookie
+    assert "samesite=strict" in lower_cookie
+    assert "secure" not in lower_cookie
+
+    revoked = await client.post("/challenge/revoke", headers=headers)
+
+    assert revoked.status_code == 200
+    assert revoked.json()["state"] == "PREVIEW_READY"
+    assert revoked.json()["approval_fingerprint"] is None
+    deleted = revoked.headers.get_list("set-cookie")
+    assert any(
+        "sv_challenge_approval=" in value and "Max-Age=0" in value
+        for value in deleted
+    )
+
+
+async def test_approve_and_revoke_require_origin_cookie_and_csrf(
+    client, public_challenge_origin
+) -> None:
+    created = await client.post(
+        "/challenge/session", headers={"Origin": PUBLIC_ORIGIN}
+    )
+    csrf = created.json()["csrf_token"]
+    headers = {"Origin": PUBLIC_ORIGIN, "X-CSRF-Token": csrf}
+    await client.post(
+        "/challenge/investigate", headers=headers, json={"budget_cap_sc": 300}
+    )
+    previewed = await client.post(
+        "/challenge/preview",
+        headers=headers,
+        json={"crisis_id": "harbor-wage-crisis", "budget_cap_sc": 300},
+    )
+    preview = previewed.json()["preview"]
+    body = {
+        "preview_id": preview["preview_id"],
+        "expected_world_version": 7,
+        "diff_hash": preview["diff_hash"],
+    }
+
+    for path, request_body in (("/challenge/approve", body), ("/challenge/revoke", None)):
+        missing_origin = await client.post(
+            path,
+            headers={"X-CSRF-Token": csrf},
+            json=request_body,
+        )
+        missing_csrf = await client.post(
+            path,
+            headers={"Origin": PUBLIC_ORIGIN},
+            json=request_body,
+        )
+        wrong_csrf = await client.post(
+            path,
+            headers={"Origin": PUBLIC_ORIGIN, "X-CSRF-Token": "wrong"},
+            json=request_body,
+        )
+        for response in (missing_origin, missing_csrf, wrong_csrf):
+            assert response.status_code == 422
+            assert response.json()["error"]["code"] == "INVALID_INPUT"
+
+    unchanged = await client.get("/challenge/session")
+    assert unchanged.json()["state"] == "PREVIEW_READY"
 
 
 async def test_reset_rotates_session_cookie_and_deletes_approval_cookie(
