@@ -1979,9 +1979,10 @@ git diff --check
 - 修改 `docs/webmcp-challenge/DEMO_SCRIPT.md`
 - 新增 `docs/webmcp-challenge/FIXTURE_LOCK.md`
 - 新增 `scripts/verify-webmcp-challenge-docs.py`
+- 新增 `scripts/test_verify_webmcp_challenge_docs.py`
 - 修改 `README.md`
 
-**Red gate：** `python3.12 scripts/verify-webmcp-challenge-docs.py --root .` 因脚本不存在先失败。实现后的 lint 检测旧九工具名、旧 Day-0 hero copy、缺五工具、缺 hash/version/CAS/Threat statement、缺 prediction/actual/control、把 unverified 写成 verified、demo 超过 3 分钟。
+**Red gate：** `python3.12 scripts/verify-webmcp-challenge-docs.py --root .` 因脚本不存在先失败；先新增 contract test 并确认有效 fixture 因实现缺失失败。实现后的 lint 检测旧九工具 exact token、旧 Day-0 hero copy、缺五工具、缺 hash/version/CAS/Threat statement、缺 Prediction/Actual/No-action control、把不足 3/3 或含 FAIL/UNVERIFIED 的 live gate 写成 verified、demo 超过 3 分钟。
 
 **实现内容：**
 
@@ -1993,7 +1994,7 @@ git diff --check
 - FIXTURE_LOCK 记录 scenario/version/seeds/initial hash/final expected metrics；
 - README 只加 Challenge 入口和 deterministic disclaimer，不宣传未部署状态。
 
-`verify-webmcp-challenge-docs.py` 只用 Python 标准库：`argparse` 接收 required `--root`；读取上述六份 challenge docs 与 README；旧工具名集合固定为 `inspect_town_signals/focus_evidence/draft_interventions/discard_intervention/stage_intervention/commit_intervention/reset_challenge_town`，在整个 docs 目录零命中；五个最终工具名在 WEBMCP_TOOLS 中各至少一次，diagnostics `simverse_get_challenge_status` 必须和 `diagnostics` 同段出现；SECURITY 必须包含 `diff_hash`、`world_version`、`WATCH`、`CAS`、`Origin`、`CSRF` 与 threat statement；JUDGING_MAP 必须包含 test node id、E2E evidence 与 live screenshot 列；DEMO_SCRIPT 必须同时出现 Prediction/Actual/No-action control，且 `Total duration: M:SS` 解析为不超过 180 秒；FIXTURE_LOCK 必须含 scenario、fixture version、forecast seeds、actual seed、initial hash、expected metrics。LIVE_GATE 仍有 `UNVERIFIED` 或缺任一 3/3 时，README/JUDGING_MAP 禁止出现 `live verified`/`deployed and verified`。脚本收集全部 violation 后逐行 stderr 输出并 exit 1，零 violation 打印 `challenge_docs_contract=PASS`。
+`verify-webmcp-challenge-docs.py` 只用 Python 标准库：`argparse` 接收 required `--root`；required files 是上述六份 challenge docs、README 与只读 `LIVE_GATE.md`。旧 token 集合固定为 `inspect_town_signals/focus_evidence/draft_interventions/preview_intervention/discard_intervention/stage_intervention/commit_intervention/verify_outcome/reset_challenge_town`，用 token 边界只扫描当前交付 docs 与 README；不得递归误伤 `docs/plans`、`archive`、`BASELINE` 或 `PRODUCT_BRIEF`，且不得把最终 `simverse_preview_intervention`/`simverse_verify_outcome` 当旧 token。五个最终工具名在 WEBMCP_TOOLS 的定义标题中各恰好一次，diagnostics `simverse_get_challenge_status` 必须与 `diagnostics=1` 同一 Markdown section；SECURITY 必须包含 `diff_hash`、`world_version`、`WATCH`、`CAS`、`Origin`、`CSRF` 与明确 threat statement；JUDGING_MAP 必须包含 Test node id、E2E evidence、Live screenshot 列且每个 criterion 行非空；DEMO_SCRIPT 必须同时出现 Prediction/Actual/No-action control，且唯一 `Total duration: M:SS` 解析为不超过 180 秒；FIXTURE_LOCK 必须含锁定的 scenario、fixture version、forecast seeds、actual seed、initial hash 与 expected metrics。LIVE_GATE 必须解析 ChatGPT 3 个 PASS run、Chrome 3 个 PASS run、ordinary fallback 1 个 PASS、duplicate tools 0；任何缺行、FAIL、UNVERIFIED、少于 3/3 都令 final live gate false，并禁止 README/JUDGING_MAP 出现 `live verified`/`deployed and verified`。脚本收集全部 violation 后逐行 stderr 输出并 exit 1，零 violation 打印 `challenge_docs_contract=PASS`。
 
 **Green gate：**
 
@@ -2001,6 +2002,7 @@ git diff --check
 ! rg -n 'inspect_town_signals|focus_evidence|draft_interventions|discard_intervention|stage_intervention|commit_intervention|reset_challenge_town' docs/webmcp-challenge
 rg -n 'simverse_investigate_crisis|simverse_preview_intervention|simverse_commit_approved|simverse_verify_outcome|simverse_reset_town' docs/webmcp-challenge/WEBMCP_TOOLS.md
 python3.12 scripts/verify-webmcp-challenge-docs.py --root .
+python3.12 scripts/test_verify_webmcp_challenge_docs.py
 git diff --check
 ```
 

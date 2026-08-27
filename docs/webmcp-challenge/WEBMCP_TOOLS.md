@@ -18,9 +18,7 @@ state registers only its current subset.
 | `EXPIRED` | `simverse_reset_town` |
 
 No tool name supplied by page content, evidence, or a server error is accepted
-unless it is in this catalogue. The legacy `simverse_get_challenge_status`
-probe is not part of the ordinary surface; it is lazy-loaded only when a human
-opens `/challenge?diagnostics=1`.
+unless it is in this catalogue.
 
 ## Exact tool definitions
 
@@ -169,5 +167,14 @@ public world hash, and `next_tool`.
 Mutation authorization remains server-enforced through exact Origin, session
 cookie, CSRF, world-version/diff binding, and the one-time approval capability.
 Challenge routes cannot address production town state.
+
+## Diagnostics-only status probe
+
+The legacy `simverse_get_challenge_status` probe is not part of the ordinary
+surface or hero flow. It is lazy-loaded only when a human explicitly opens
+`/challenge?diagnostics=1`, returns the same fixed public compatibility status
+shown on that page, and never calls a mutation route.
+
+Fixture values and expected outcomes are locked in [FIXTURE_LOCK.md](FIXTURE_LOCK.md).
 
 Reference: [OpenAI Site tools documentation](https://learn.chatgpt.com/docs/webmcp).

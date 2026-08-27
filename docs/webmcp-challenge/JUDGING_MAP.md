@@ -1,43 +1,36 @@
-# Judging Map
+# Civic Copilot Judging Map
 
-The submission is designed backward from the four equally weighted Challenge criteria. WebMCP leverage is treated as the tie-breaker and therefore the primary product constraint.
+The submission is evaluated against one locked task:
 
-| Criterion | Product evidence | Submission evidence |
-|---|---|---|
-| WebMCP leverage | Shared live page, state-dependent tools, visible evidence focus, preview → stage → approve → commit → verify | Tool trace beside the page, staged diff, approval boundary, before/after shared state |
-| Execution | Anonymous Judge Mode, isolated deterministic town, one-click reset, fallback behavior, stable critical path | Public URL, test instructions, browser matrix, five-run reliability results, failure demo |
-| Potential impact | Reduces navigation through map, graph, economy, and event panels while preserving human judgment | Timed ordinary-UI versus WebMCP benchmark with clicks, page changes, errors, and completion rate |
-| Creativity and ambition | Human-agent co-governance of a persistent AI society where interventions affect residents, relationships, economy, and events | Three-minute end-to-end civic intervention story and concise architecture explanation |
+> Find the town's most urgent problem and create a safe intervention under 300 SC. Do not close the harbor or rewrite resident preferences.
 
-## Evidence maturity
+The five state-dependent Site Tools are the product surface. The legacy status probe is diagnostics-only and is not hero-flow evidence.
 
-| Evidence | Day-0 status | Required before submission |
-|---|---|---|
-| Pre-challenge baseline | Proven by the GitHub-signed merge commit SHA and timestamp | Annotated tag resolves to the SHA |
-| Public `/challenge` experience | Implemented in source | Deployed and directly reachable without login |
-| Site Tool discovery | Registration path implemented; discovery unverified | Three consecutive ChatGPT in-app-browser successes |
-| Chrome compatibility | Registration path implemented; compatibility unverified | Three consecutive Chrome 149 flag-enabled successes |
-| Ordinary-browser fallback | Covered by unit tests | Manual Safari/Chrome/Firefox smoke |
-| Visible tool activity | Implemented in source and unit tested | Captured in screenshots and final video |
-| Full civic hero flow | Not part of Day 0 | Diagnose through verified outcome, plus reset |
-| Quantified impact | Measurement design complete | Five ordinary-UI and five WebMCP trials |
+| Criterion | Product evidence | Test node id | E2E evidence | Live screenshot |
+|---|---|---|---|---|
+| WebMCP leverage | Exact state-dependent catalogue: investigate, preview, commit the trusted approved diff, verify, reset | `frontend/src/webmcp/challengeContract.test.ts` — locks the exact catalogue and schemas | `frontend/e2e/challenge-flow.spec.ts` — real modelContext host, 10/10 closed loops, zero duplicate or stale tools | `LIVE_GATE.md` records the Day-0 status probe; final five-tool mutation screenshots remain pending until the exact commit is deployed |
+| Execution | Deterministic isolated Challenge Town, ordinary-UI fallback, one-time approval, receipt-bound verification, reset to the locked hash | `backend/tests/challenge/test_contract.py` — route contract, authorization, replay, reset, and output allowlists | `E2E_EVIDENCE.md` — 10 full flows and 10 reset/hash checks in real Chromium | Day-0 discovery is public; final mutation-host evidence is intentionally not claimed yet |
+| Potential impact | The ordinary page and Site Tools solve the same task, allowing a paired time/click comparison | `frontend/src/pages/ChallengePage.test.tsx` — approved-only ordinary commit path | `BENCHMARK.md` — five alternating ordinary and five WebMCP runs; medians 423.6 ms/6 clicks versus 242.8 ms/2 clicks | Public benchmark screenshots are captured only after the final deployment identity is proven |
+| Creativity and ambition | Prediction is compared with both the 72-hour Actual outcome and a paired No-action control in one civic-governance story | `backend/tests/challenge/test_engine.py` — deterministic forecast, actual, control, and fixture invariants | `challenge-flow.spec.ts` captures prediction, actual, control, receipt, and reset | Final hero-flow screenshots remain pending until live verification |
 
-No submission copy should promote a source-level or unit-tested item to “deployed” or “verified” without the corresponding live evidence.
+## Evidence ladder
 
-## Benchmark record
+Evidence is promoted only in this order:
 
-Use one consistent task:
+1. **Automated contracts** — unit and contract assertions for exact schemas, state transitions, authorization, and safe output.
+2. **Local real services** — FastAPI with real Redis for one-time approval, replay, compare-and-set, and reset behavior.
+3. **E2E real Chromium** — the actual built page, real API, modelContext test host, ordinary fallback, and lifecycle transitions.
+4. **Day-0 public live** — three ChatGPT and three Chrome status-probe runs plus ordinary fallback, recorded in `LIVE_GATE.md`.
+5. **Final mutation live** — the exact deployed backend/frontend identity and three complete investigate-to-reset lifecycles. This is pending until deployment.
 
-> Find the most urgent town problem and prepare a safe intervention costing no more than 300 SC.
+Source-level, unit-test, local-browser, and Day-0 status evidence must not be described as final mutation live evidence.
 
-Record each run in a worksheet with:
+## Quantified evidence
 
-- Method: ordinary UI or WebMCP.
-- Tester and run number.
-- Completion time in seconds.
-- Page changes and clicks.
-- Wrong resident or district selection.
-- Whether the final plan met the budget and safety constraints.
-- Whether approval and verification completed correctly.
+- [Closed-loop E2E evidence](E2E_EVIDENCE.md)
+- [Paired benchmark with every raw run](BENCHMARK.md)
+- [Public Day-0 gate](LIVE_GATE.md)
+- [Locked fixture and expected outcome](FIXTURE_LOCK.md)
+- [Security and authority boundary](SECURITY.md)
 
-Report medians and raw results; do not cherry-pick the fastest run.
+The benchmark includes all ten runs and reports medians; no run is discarded or cherry-picked.

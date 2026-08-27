@@ -1,5 +1,17 @@
 # WebMCP Challenge Test Plan
 
+## Evidence layers and release claim boundary
+
+| Layer | What it proves | Current record |
+|---|---|---|
+| Automated contracts | Exact schemas, state machine, output allowlists, deterministic fixture, authorization failures | Backend Challenge 255 passed plus 23 environment checks; frontend 78 files / 430 tests |
+| Local real services | Real Redis one-time approval, replay rejection, CAS concurrency, reset, and the built page against the real API | Challenge real-Redis cases and local API/browser loops pass; environment-gated cases stay explicit when Redis is unavailable |
+| E2E real Chromium | Real built assets, modelContext lifecycle, ordinary fallback, all five tools, 403 approval probe, receipt, and reset | Full flow 10/10; reset hash 10/10; replay success 0; duplicate tools 0 |
+| Live host | The public host serves the intended assets and a supported browser can discover/call its Site Tools | Day-0 diagnostics: ChatGPT 3/3, Chrome 3/3, ordinary fallback 1/1; final five-tool host verification pending deployment |
+| Deployed identity | The public frontend and backend resolve to the exact reviewed commits/configuration | Must be captured during the final release gate; local build output is not sufficient |
+
+No lower evidence layer may be described as final live mutation evidence.
+
 ## Automated Day-0 gates
 
 Run from `frontend/`:
@@ -205,7 +217,7 @@ VITE_WEBMCP_ENABLED=true \
 
 After deployment, fetch the page in a fresh profile and confirm the deployed asset is new. Do not treat a local build as live evidence.
 
-## Manual browser matrix
+## Day-0 diagnostics-only browser matrix
 
 | Check | ChatGPT desktop in-app browser | Chrome 149 with WebMCP flag | Ordinary browser |
 |---|---:|---:|---:|
@@ -244,17 +256,17 @@ For every manual run, record:
 
 Do not continue to the mutation workflow until the public probe passes all six WebMCP discovery/invocation runs.
 
-### Explicit live blocker: route lifecycle
+### Historical Day-0 route lifecycle gate
 
-The current OpenAI guide documents registration but does not define a removal API. Day 0 therefore uses ordinary document navigation in the Challenge header and deduplicates registrations within a document. Before any state-changing tool is added, verify all of these in both supported hosts:
+The Day-0 compatibility probe used ordinary document navigation and deduplicated registrations within a document. Its public evidence is recorded in `LIVE_GATE.md`. The final state-dependent catalogue is separately covered by the real-Chromium E2E suite. The reusable lifecycle checks are:
 
 1. Directly open `/challenge`, discover the tool, and call it.
 2. Leave for `/town`; confirm the Challenge tool is no longer available.
 3. Use browser Back to return; confirm exactly one working Challenge tool appears.
 4. Repeat with Forward, refresh, and a programmatic same-document route transition.
-5. Stop the sprint if a stale or duplicate tool remains; resolve the host lifecycle before adding mutations.
+5. Fail the release if a stale or duplicate tool remains.
 
-## Latest local evidence
+## Historical Day-0 local evidence
 
 Recorded on `2026-08-26` against the challenge worktree using Node `24.19.0` and npm `11.9.0`:
 
@@ -268,7 +280,7 @@ Recorded on `2026-08-26` against the challenge worktree using Node `24.19.0` and
 | `VITE_WEBMCP_ENABLED=true` production build | Pass — tool name and `modelContext` present in the lazy Challenge chunk |
 | Built-asset secret-marker scan | Pass |
 
-GitHub CI remains the authority for the repository's pinned Node 22 environment. Live ChatGPT and Chrome rows remain unverified until the exact commit is deployed publicly.
+GitHub CI remains the authority for the repository's pinned Node 22 environment. These older rows are retained only as Day-0 history; the current closed-loop evidence is the five-layer table above plus `E2E_EVIDENCE.md` and `BENCHMARK.md`.
 
 The recorded built-asset marker scan is reproducible after the enabled production build:
 

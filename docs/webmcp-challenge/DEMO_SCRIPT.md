@@ -1,37 +1,38 @@
-# Three-Minute Demo Script
+# Three-Minute Civic Copilot Demo
 
-Target runtime: `2:55`. The final video must be public, under three minutes, and include spoken audio. Record the actual ChatGPT in-app browser, Site Tool calls, Simverse page changes, and final receipt in one legible frame.
+Total duration: 2:55
 
-| Time | Visual | Narration |
+Record the actual public Challenge page and ChatGPT in-app browser in one readable composition. The task shown on screen and sent to the agent is:
+
+> Find the town's most urgent problem and create a safe intervention under 300 SC. Do not close the harbor or rewrite resident preferences.
+
+| Time | Visual and Site Tool action | Narration |
 |---|---|---|
-| 0:00–0:15 | A running Simverse town; fast cuts across map, relationships, economy, and events | “A living AI society is difficult to understand and even harder to govern safely. Its problems are spread across people, places, relationships, and money.” |
-| 0:15–0:30 | Open `/challenge` beside the ChatGPT conversation | “Simverse Civic Copilot gives a person and an agent the same live page. The agent investigates complexity; the person keeps final authority.” |
-| 0:30–0:55 | Agent calls `inspect_town_signals`; harbor risk glows on the map | “The agent discovers purpose-built Site Tools and identifies a harbor wage crisis without guessing through the interface.” |
-| 0:55–1:20 | `focus_evidence` opens residents, wage records, relationship tension, and timeline | “Every conclusion is grounded in evidence that appears on the page for me to inspect.” |
-| 1:20–1:50 | `draft_interventions` produces three bounded plan cards | “The agent drafts alternatives instead of silently choosing policy: emergency aid, mediation, or a public commission.” |
-| 1:50–2:15 | `preview_intervention` shows cost, affected residents, benefit, risk, and uncertainty | “Before anything changes, Simverse previews the exact impact and checks my 300 Soul Coin limit.” |
-| 2:15–2:35 | A staged world diff appears; user explicitly approves; `commit_intervention` runs | “The change remains uncommitted until I approve this exact diff. The agent cannot expand the action after approval.” |
-| 2:35–2:50 | `verify_outcome` shows receipt and before/after economy and relationship values | “The world changes visibly, and the agent verifies the result with a receipt tied to the new world revision.” |
-| 2:50–2:55 | Product lockup and one-line architecture | “WebMCP turns Simverse into a shared civic workspace for humans and agents—not an invisible API.” |
+| 0:00–0:15 | Living Simverse town, then `/challenge` beside ChatGPT | “A persistent AI society spreads one civic problem across people, places, relationships, and money. Civic Copilot turns that complexity into one shared, inspectable workspace.” |
+| 0:15–0:38 | Call `simverse_investigate_crisis`; Harbor evidence appears in the page | “The agent uses a purpose-built Site Tool to find the Harbor wage crisis. Its conclusion is grounded in the same evidence I can see.” |
+| 0:38–1:05 | Call `simverse_preview_intervention`; show the immutable diff, 240 SC cost, warnings, rejected alternatives, and Prediction range | “It proposes a bounded relief-and-mediation package. Preview changes nothing: it shows the exact diff, rejects unsafe alternatives, and forecasts five deterministic futures under my 300 SC limit.” |
+| 1:05–1:30 | Show that commit is absent; tick the visible approval checkbox and press the ordinary approval button; the commit tool appears | “The agent cannot approve its own proposal. Only this visible ceremony creates a short-lived, one-time capability for this exact version and diff.” |
+| 1:30–1:52 | Call `simverse_commit_approved`; show receipt, v7 to v8, and remaining 60 SC | “Commit consumes that capability once. A replay, stale version, changed hash, or cross-session request is rejected by the server.” |
+| 1:52–2:25 | Call `simverse_verify_outcome`; show the 72-hour chart and labels Prediction, Actual, No-action control | “After 72 hours, Actual lands inside the Prediction range: high food risk falls to one, tension to 54, and five residents stabilize. The paired No-action control reaches a strike.” |
+| 2:25–2:43 | Call `simverse_reset_town`; show a new generation at v7 and the locked initial hash | “Reset discards the terminal run and proves reproducibility: a fresh anonymous town returns to the locked fixture.” |
+| 2:43–2:55 | Agent Activity receipts, ordinary UI fallback, product lockup | “WebMCP makes Simverse a human-agent civic workspace, while the person keeps final authority and the ordinary page remains complete.” |
 
 ## Required captures
 
-- ChatGPT conversation and selected model.
-- Available Site Tools list.
-- Each tool invocation at the moment it changes the page.
-- Agent Activity trace.
-- Evidence focus on the harbor district.
-- Three intervention cards.
-- Preview and staged diff before approval.
-- The user's explicit approval action.
-- Commit receipt and before/after verification.
-- Reset back to the initial deterministic state.
+- The public URL, ChatGPT conversation, selected model, and discoverable Site Tool list.
+- Each tool invocation when it changes the visible page or available catalogue.
+- Harbor cross-domain evidence and the exact 300 SC constraint.
+- Preview diff, Prediction range, 240 SC cost, warnings, and rejected alternatives.
+- The visible approval checkbox/button and proof that commit was absent before approval.
+- Commit receipt with v7 to v8 and the 60 SC remainder.
+- Verification labels Prediction, Actual, and No-action control with the v9 receipt binding.
+- Reset to a new generation, v7, and the locked initial public hash.
+- Agent Activity receipts and the complete ordinary-UI fallback.
 
 ## Recording rules
 
-- Use English UI, narration, and captions; optionally add Chinese subtitles.
-- Keep the browser zoom high enough to read tool names and results.
-- Use seeded data and a deterministic path; do not depend on a live external LLM for the critical flow.
-- Do not use unlicensed music, footage, trademarks, or assets.
-- Show no tokens, account email, DevTools secrets, admin configuration, or private resident data.
-- The Day-0 status probe is a technical proof, not the final hero demo. Replace it with the complete flow only after every stage is live and tested.
+- Use English UI, narration, and captions; Chinese subtitles are optional.
+- Keep tool names, exact numbers, receipt/version fields, and the approval control legible.
+- Use the locked deterministic fixture and the exact deployed commit; do not splice local evidence into a public-host claim.
+- Show no tokens, cookies, account email, approval identifiers, private resident data, DevTools secrets, or admin configuration.
+- The diagnostics-only status probe is Day-0 compatibility evidence, not part of this hero demo.

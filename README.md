@@ -16,6 +16,7 @@ AI 居民是由程序控制的居民。
 - **项目开发者**：先读[本地开发手册](docs/DEVELOPMENT.md)，再读[贡献指南](docs/CONTRIBUTING.md)。
 - **生产运维人员**：先读[部署说明](docs/DEPLOYMENT.md)，再读[运维手册](docs/OPERATIONS.md)。
 - **管理员或外部 Agent 开发者**：外部 Agent 是接入小镇的程序玩家；请从[文档总目录](docs/README.md)选择入口。
+- **Challenge 评审或 Site Tool 开发者**：从 [Civic Copilot Challenge](docs/webmcp-challenge/WEBMCP_TOOLS.md) 开始。它使用 deterministic isolated Challenge Town，不会改动生产小镇；公网证据按 [live gate](docs/webmcp-challenge/LIVE_GATE.md) 分层记录。
 
 读完自己的路径，就能开始使用或维护项目。
 
@@ -158,6 +159,7 @@ simverse-world/
 | 系统怎样合作 | [系统结构](docs/ARCHITECTURE.md) |
 | 怎样部署 | [部署说明](docs/DEPLOYMENT.md) |
 | 怎样检查和恢复 | [运维手册](docs/OPERATIONS.md) |
+| 怎样评审 Civic Copilot Challenge | [WebMCP 工具与证据入口](docs/webmcp-challenge/WEBMCP_TOOLS.md) |
 | 现在做到哪里 | [当前路线图](docs/ROADMAP.md) |
 | 陌生词是什么意思 | [词语表](docs/GLOSSARY.md) |
 | 找全部高级和历史资料 | [文档总目录](docs/README.md) |
