@@ -1890,17 +1890,44 @@ npx vitest run src/services/challengeTelemetry.test.ts src/stores/challengeStore
 
 **提交：** `feat(challenge): record minimal benchmark telemetry`
 
-### Task 6.4B：真实执行五组 ordinary UI 与 WebMCP paired runs
+### Task 6.4B.1：补齐 ordinary browser 的可见 commit 控件
+
+**接口核对发现：** 当前 ordinary UI 只有 investigate、preview、trusted approval 与 verify 控件，`APPROVED_ONCE` 后没有可见 commit 控件；因此原 6.4B 不能诚实完成“ordinary 只用可见按钮/checkbox”的全流程。新增控件只在 `APPROVED_ONCE` 且 preview 存在时可见，复用同一个 store `commit` action 与服务端一次性 approval gate，不引入任何浏览器侧授权捷径。
+
+**文件：**
+
+- 修改 `frontend/src/components/challenge/DecisionFlowPanel.tsx`
+- 修改 `frontend/src/pages/ChallengePage.tsx`
+- 修改 `frontend/src/pages/ChallengePage.test.tsx`
+
+**Red test：** approved projection 必须出现 `Commit approved intervention`，点击后以当前 preview 的 `preview_id`、`based_on_world_version`、`diff_hash` 调用 store `commit`；PREVIEW_READY 时按钮必须不存在。测试在实现前因按钮缺失失败。
+
+**Green gate：**
+
+```bash
+cd frontend
+npx vitest run src/pages/ChallengePage.test.tsx --reporter=verbose
+npm run lint
+npx tsc --noEmit
+```
+
+**提交：** `feat(challenge): expose approved commit to ordinary UI`
+
+### Task 6.4B.2：真实执行五组 ordinary UI 与 WebMCP paired runs
 
 **文件：**
 
 - 新增 `frontend/e2e/challenge-benchmark.spec.ts`
+- 修改 `scripts/run-challenge-e2e.sh`
 - 新增 `scripts/render-challenge-benchmark.py`
+- 新增 `scripts/test-render-challenge-benchmark.py`
 - 新增 `docs/webmcp-challenge/BENCHMARK.md`
 
-**Red gate：** 首次运行 benchmark spec 时，缺 telemetry export 或原始行数不是 ordinary 5 + WebMCP 5 应失败；renderer 对缺行、重复 run id、任一模式少于五行、13 事件序列不完整、core tool calls 不等于 WebMCP 4、unauthorized success 非零、或不存在 slowest row 时 exit 1。
+**Red gate：** 首次运行 benchmark spec 时，缺 benchmark marker 安装出的 telemetry export 或原始行数不是 ordinary 5 + WebMCP 5 应失败；renderer contract test 对缺行、重复 run id、任一模式少于五行、必需事件顺序不完整、未知 event、ordinary core tool calls 非零、WebMCP core tool calls 不等于 4、unauthorized success 非零、或不存在 slowest row 时 exit 1。runner 必须在执行前删除旧 raw，benchmark 只可用临时文件原子替换最终 raw，防止失败后读取旧十行形成假绿。
 
-**执行设计：** `challenge-benchmark.spec.ts` 使用 Task 6.3 的真实 Chromium runtime。ordinary 模式只用可见按钮/checkbox 完成 investigate、preview、approval、commit、verify；WebMCP 模式经 `challengeWebMcpHarness` 调五个动态 surface 中的前四个核心工具，人工 approval 仍由真实 Playwright click 完成。每个 mode fresh browser context，按 run id 1 至 5 交替执行以降低热缓存偏差；保留全部十行，写 `/tmp/simverse-option-b-benchmark-raw.json`。每行包含 mode/run id、13 个按序 event、duration、clicks、panel/route switches、wrong selections、success、core tool calls、unauthorized attempts/successes、rebuild count、commit/verify receipt evidence，不含任何禁止字段。
+**执行设计：** `challenge-benchmark.spec.ts` 使用 Task 6.3 的真实 Chromium runtime。每次 run 在 `page.goto` 前通过 `context.addInitScript` 设置 benchmark session marker，并安装与 `challengeWebMcpHarness` 同契约的 in-page host adapter；不能在 Node runner 侧直接复用 Vitest helper 冒充浏览器 host。ordinary 模式只用可见按钮/checkbox 完成 investigate、preview、approval、commit、verify；WebMCP 模式经真实动态 tool surface 调前四个核心工具，人工 approval 仍由真实 Playwright checkbox/click 完成。执行顺序固定为 ordinary-1、webmcp-1、ordinary-2、webmcp-2 直到 5，每一行独立 `browser.newContext()` 并关闭。
+
+每个 run 在 approval 前另发真实 HTTP commit probe，必须得到 `403 + APPROVAL_REQUIRED`，该服务端响应才是 unauthorized success 为零的权威证据。harness 只在真实 DOM 信号出现时记录 `panel_opened`、`approval_viewed`；正确流程没有错误 resident/region 选择时，`wrong_target_selected` 不得伪造，`wrong_selections` 必须为 0。13 个名称是固定 vocabulary；每行要求其余 12 个 lifecycle event 各一次且顺序固定，`wrong_target_selected` 仅在真实错误选择发生时插入 `panel_opened` 与 `crisis_identified` 之间。保留全部十行，原子写 `/tmp/simverse-option-b-benchmark-raw.json`。每行包含 mode/run id、events、duration、clicks、panel/route switches、wrong selections、success、core tool calls、unauthorized attempts/successes、rebuild count、公开 commit/verify receipt evidence，不含 cookie、CSRF、approval id 或 resident private text。
 
 `render-challenge-benchmark.py` 只用标准库读取 raw JSON，验证上述 schema 与十行 cardinality，用 `statistics.median` 分别计算两种模式 duration/clicks/core calls；按 mode/run id 输出全部 raw rows 与 median 到 `BENCHMARK.md`，并明确列出 slowest row，禁止丢弃慢 run。生成文档记录当前 `git rev-parse HEAD`、Chromium version、执行时间与 raw SHA-256。
 
@@ -1909,6 +1936,7 @@ npx vitest run src/services/challengeTelemetry.test.ts src/stores/challengeStore
 ```bash
 cd /Volumes/data/dev/simverse-world-option-b
 bash scripts/run-challenge-e2e.sh e2e/challenge-benchmark.spec.ts
+python3.12 scripts/test-render-challenge-benchmark.py
 python3.12 scripts/render-challenge-benchmark.py --input /tmp/simverse-option-b-benchmark-raw.json --output docs/webmcp-challenge/BENCHMARK.md
 rg -q 'ordinary_runs=5 webmcp_runs=5 paired_runs=5 unauthorized_success=0' docs/webmcp-challenge/BENCHMARK.md
 git diff --check

@@ -80,6 +80,7 @@ export function ChallengePage() {
   const preview = useChallengeStore((state) => state.preview)
   const approve = useChallengeStore((state) => state.approve)
   const revoke = useChallengeStore((state) => state.revoke)
+  const commit = useChallengeStore((state) => state.commit)
   const verify = useChallengeStore((state) => state.verify)
   const reset = useChallengeStore((state) => state.reset)
   const setRegistrationState = useChallengeStore(
@@ -203,6 +204,9 @@ export function ChallengePage() {
             }}
             onRevoke={async () => {
               await revoke()
+            }}
+            onCommit={async (input) => {
+              await commit(input)
             }}
             onVerify={async (input) => {
               await verify(input)

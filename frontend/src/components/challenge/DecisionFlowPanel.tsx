@@ -1,6 +1,7 @@
 import type {
   ApproveInput,
   ChallengeProjection,
+  CommitInput,
   InvestigateInput,
   PreviewInput,
   VerifyInput,
@@ -18,6 +19,7 @@ interface DecisionFlowPanelProps {
     event: Pick<MouseEvent, 'isTrusted'>,
   ) => Promise<void>
   onRevoke: () => Promise<void>
+  onCommit: (input: CommitInput) => Promise<void>
   onVerify: (input: VerifyInput) => Promise<void>
 }
 
@@ -32,6 +34,7 @@ export function DecisionFlowPanel({
   onPreview,
   onApprove,
   onRevoke,
+  onCommit,
   onVerify,
 }: DecisionFlowPanelProps) {
   const evidence = session.evidence
@@ -43,6 +46,7 @@ export function DecisionFlowPanel({
     'PREVIEW_READY',
     'APPROVED_ONCE',
   ].includes(session.state)
+  const canCommit = session.state === 'APPROVED_ONCE' && preview !== null
   const canVerify = session.state === 'COMMITTED' && receipt !== null
   const activeStep = {
     INITIAL: 0,
@@ -265,7 +269,7 @@ export function DecisionFlowPanel({
         />
       ) : null}
 
-      {canInvestigate || canPreview || canVerify ? (
+      {canInvestigate || canPreview || canCommit || canVerify ? (
         <div className="challenge-decision-actions">
           {canInvestigate ? (
             <button
@@ -286,6 +290,19 @@ export function DecisionFlowPanel({
               })}
             >
               {preview ? 'Rebuild intervention preview' : 'Preview intervention'}
+            </button>
+          ) : null}
+          {canCommit && preview ? (
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => void onCommit({
+                preview_id: preview.preview_id,
+                expected_world_version: preview.based_on_world_version,
+                diff_hash: preview.diff_hash,
+              })}
+            >
+              Commit approved intervention
             </button>
           ) : null}
           {canVerify && receipt ? (

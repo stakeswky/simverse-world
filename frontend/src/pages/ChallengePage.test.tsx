@@ -27,6 +27,7 @@ const store = vi.hoisted(() => ({
   preview: vi.fn(),
   approve: vi.fn(),
   revoke: vi.fn(),
+  commit: vi.fn(),
   verify: vi.fn(),
   reset: vi.fn(),
   setRegistrationState: vi.fn(),
@@ -315,6 +316,9 @@ beforeEach(() => {
   })
   store.approve.mockReset().mockResolvedValue(undefined)
   store.revoke.mockReset().mockResolvedValue(undefined)
+  store.commit.mockReset().mockResolvedValue({
+    structuredContent: { state: 'COMMITTED' },
+  })
   store.verify.mockReset().mockResolvedValue({
     structuredContent: { state: 'VERIFIED' },
   })
@@ -470,6 +474,36 @@ describe('ChallengePage', () => {
     expect(screen.getByText('2042-06-12T08:06:30Z')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Revoke approval' }))
     await waitFor(() => expect(store.revoke).toHaveBeenCalledTimes(1))
+  })
+
+  it('uses the approved preview for the visible ordinary-browser commit control', async () => {
+    store.session = previewProjection({
+      state: 'APPROVED_ONCE',
+      tool_surface: ['simverse_commit_approved'],
+      approval_fingerprint: 'appr-A1B2',
+      approval_expires_at: '2042-06-12T08:06:30Z',
+    })
+    store.activeToolNames = ['simverse_commit_approved']
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', {
+      name: 'Commit approved intervention',
+    }))
+
+    await waitFor(() => expect(store.commit).toHaveBeenCalledWith({
+      preview_id: 'preview-01',
+      expected_world_version: 7,
+      diff_hash: `sha256:${'b'.repeat(64)}`,
+    }))
+  })
+
+  it('does not show the ordinary commit control before trusted approval', () => {
+    store.session = previewProjection()
+    renderPage()
+
+    expect(screen.queryByRole('button', {
+      name: 'Commit approved intervention',
+    })).not.toBeInTheDocument()
   })
 
   it('refreshes the session at approval expiry and removes the commit tool', async () => {
