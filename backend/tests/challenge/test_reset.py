@@ -7,9 +7,14 @@ from app.challenge.errors import ChallengeDomainError, ChallengeErrorCode
 from app.challenge.fixture import build_initial_world
 from app.challenge.models import (
     ApprovalRecord,
+    ApproveRequest,
     ChallengeState,
+    CommitRequest,
     ExecutionReceipt,
+    InvestigateRequest,
+    PreviewRequest,
     ResetRequest,
+    VerifyRequest,
 )
 from app.challenge.repository import APPROVAL_PREFIX, SESSION_PREFIX, ChallengeRepository
 from app.challenge.service import ChallengeService
@@ -142,3 +147,57 @@ async def test_ten_consecutive_resets_restore_the_identical_fixture_hash() -> No
         hashes.append(result.projection.world_hash)
 
     assert hashes == [LOCKED_HASH] * 10
+
+
+async def test_reset_after_verification_clears_v9_outcome_and_restores_v7_hash() -> None:
+    repository = ChallengeRepository(clock=lambda: NOW)
+    service = ChallengeService(repository=repository, clock=lambda: NOW)
+    created = await service.create_or_resume(None)
+    await service.investigate(
+        created.session_id, InvestigateRequest(budget_cap_sc=300)
+    )
+    previewed = await service.preview(
+        created.session_id,
+        PreviewRequest(crisis_id="harbor-wage-crisis", budget_cap_sc=300),
+    )
+    preview = previewed.projection.preview
+    assert preview is not None
+    approved = await service.approve(
+        created.session_id,
+        ApproveRequest(
+            preview_id=preview.preview_id,
+            expected_world_version=7,
+            diff_hash=preview.diff_hash,
+        ),
+    )
+    assert approved.approval_id is not None
+    committed = await service.commit(
+        created.session_id,
+        approved.approval_id,
+        CommitRequest(
+            preview_id=preview.preview_id,
+            expected_world_version=7,
+            diff_hash=preview.diff_hash,
+        ),
+    )
+    receipt = committed.projection.receipt
+    assert receipt is not None
+    verified = await service.verify(
+        created.session_id,
+        VerifyRequest(receipt_id=receipt.receipt_id, advance_hours=72),
+    )
+    assert verified.projection.state is ChallengeState.VERIFIED
+    assert verified.projection.world_version == 9
+    assert verified.projection.verification is not None
+
+    reset = await service.reset(
+        created.session_id,
+        ResetRequest(expected_generation=verified.projection.session_generation),
+    )
+
+    assert reset.projection.state is ChallengeState.INITIAL
+    assert reset.projection.world_version == 7
+    assert reset.projection.world_hash == LOCKED_HASH
+    assert reset.projection.receipt is None
+    assert reset.projection.verification is None
+    assert reset.projection.tool_surface == ["simverse_investigate_crisis"]

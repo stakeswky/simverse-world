@@ -61,6 +61,14 @@ async def _http_approved(client):
     return headers, body, approval_id
 
 
+async def _http_committed(client):
+    headers, body, _ = await _http_approved(client)
+    committed = await client.post("/challenge/commit", headers=headers, json=body)
+    assert committed.status_code == 200
+    assert committed.json()["state"] == "COMMITTED"
+    return headers, committed.json()
+
+
 @pytest.fixture
 def public_challenge_origin(monkeypatch):
     monkeypatch.setattr(settings, "challenge_allowed_origins", [PUBLIC_ORIGIN])
@@ -501,6 +509,99 @@ async def test_commit_uses_path_scoped_cookie_and_returns_atomic_receipt(
         "sv_challenge_approval=" in value and "Max-Age=0" in value
         for value in committed.headers.get_list("set-cookie")
     )
+
+
+async def test_verify_returns_atomic_v9_timeline_and_rejects_replay(
+    client, public_challenge_origin
+) -> None:
+    headers, committed = await _http_committed(client)
+    receipt = committed["receipt"]
+
+    verified = await client.post(
+        "/challenge/verify",
+        headers=headers,
+        json={"receipt_id": receipt["receipt_id"], "advance_hours": 72},
+    )
+
+    assert verified.status_code == 200
+    payload = verified.json()
+    assert payload["state"] == "VERIFIED"
+    assert payload["world_version"] == 9
+    assert payload["tool_surface"] == ["simverse_reset_town"]
+    assert payload["verification"]["receipt_id"] == receipt["receipt_id"]
+    assert payload["verification"]["advance_hours"] == 72
+    assert payload["verification"]["baseline_snapshot"]["tick_index"] == 0
+    assert [
+        tick["elapsed_hours"]
+        for tick in payload["verification"]["tick_snapshots"]
+    ] == list(range(6, 73, 6))
+
+    replayed = await client.post(
+        "/challenge/verify",
+        headers=headers,
+        json={"receipt_id": receipt["receipt_id"], "advance_hours": 72},
+    )
+    assert replayed.status_code == 409
+    assert replayed.json()["error"]["code"] == "OUTCOME_ALREADY_VERIFIED"
+
+
+async def test_verify_requires_strict_schema_origin_session_and_csrf(
+    client, public_challenge_origin, monkeypatch
+) -> None:
+    from app.routers import challenge as challenge_router
+
+    headers, committed = await _http_committed(client)
+    body = {
+        "receipt_id": committed["receipt"]["receipt_id"],
+        "advance_hours": 72,
+    }
+    calls = 0
+    original_verify = challenge_router.ChallengeService.verify
+
+    async def tracked_verify(self, session_id, request):
+        nonlocal calls
+        calls += 1
+        return await original_verify(self, session_id, request)
+
+    monkeypatch.setattr(challenge_router.ChallengeService, "verify", tracked_verify)
+
+    invalid_requests = (
+        ({"Origin": PUBLIC_ORIGIN}, body),
+        ({"X-CSRF-Token": headers["X-CSRF-Token"]}, body),
+        (
+            {"Origin": PUBLIC_ORIGIN, "X-CSRF-Token": "wrong"},
+            body,
+        ),
+        (headers, {"receipt_id": body["receipt_id"], "advance_hours": 71}),
+        (headers, {**body, "unexpected": True}),
+        (headers, {"advance_hours": 72}),
+    )
+    for request_headers, request_body in invalid_requests:
+        rejected = await client.post(
+            "/challenge/verify",
+            headers=request_headers,
+            json=request_body,
+        )
+        assert rejected.status_code == 422
+        assert rejected.json()["error"]["code"] == "INVALID_INPUT"
+    assert calls == 0
+
+    session_id = client.cookies.get("sv_challenge_session")
+    assert session_id is not None
+    client.cookies.delete("sv_challenge_session", path="/challenge")
+    missing_session = await client.post(
+        "/challenge/verify", headers=headers, json=body
+    )
+    assert missing_session.status_code == 409
+    assert missing_session.json()["error"]["code"] == "CHALLENGE_SESSION_NOT_READY"
+    assert calls == 0
+    client.cookies.set("sv_challenge_session", session_id, path="/challenge")
+
+    unchanged = await client.get("/challenge/session")
+    assert unchanged.status_code == 200
+    assert unchanged.json()["state"] == "COMMITTED"
+    assert unchanged.json()["world_version"] == 8
+    assert unchanged.json()["verification"] is None
 
 
 async def test_path_scoped_cookie_keeps_preview_and_reset_on_server_pointer(

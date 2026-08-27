@@ -1,11 +1,20 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import inspect
 
 import pytest
 
 import app.challenge.service as service_module
 from app.challenge.errors import ChallengeDomainError, ChallengeErrorCode
-from app.challenge.models import ChallengeState, InvestigateRequest, PreviewRequest
+from app.challenge.fixture import build_initial_world
+from app.challenge.models import (
+    ApproveRequest,
+    ChallengeState,
+    CommitRequest,
+    InvestigateRequest,
+    PreviewRequest,
+    ResetRequest,
+    VerifyRequest,
+)
 from app.challenge.canonical import diff_hash, world_hash
 from app.challenge.repository import ChallengeRepository, SESSION_PREFIX
 from app.challenge.service import (
@@ -31,6 +40,38 @@ LEGAL_TRANSITIONS = {
     (ChallengeState.COMMITTED, "verify"): ChallengeState.VERIFIED,
     **{(state, "reset"): ChallengeState.INITIAL for state in ChallengeState},
 }
+
+
+async def _committed_session(service: ChallengeService):
+    created = await service.create_or_resume(None)
+    await service.investigate(
+        created.session_id, InvestigateRequest(budget_cap_sc=300)
+    )
+    previewed = await service.preview(
+        created.session_id,
+        PreviewRequest(crisis_id="harbor-wage-crisis", budget_cap_sc=300),
+    )
+    preview = previewed.projection.preview
+    assert preview is not None
+    approved = await service.approve(
+        created.session_id,
+        ApproveRequest(
+            preview_id=preview.preview_id,
+            expected_world_version=preview.based_on_world_version,
+            diff_hash=preview.diff_hash,
+        ),
+    )
+    assert approved.approval_id is not None
+    committed = await service.commit(
+        created.session_id,
+        approved.approval_id,
+        CommitRequest(
+            preview_id=preview.preview_id,
+            expected_world_version=preview.based_on_world_version,
+            diff_hash=preview.diff_hash,
+        ),
+    )
+    return created, committed
 
 
 def _expected_error(state: ChallengeState, action: str) -> ChallengeErrorCode:
@@ -276,6 +317,132 @@ async def test_preview_rejects_stale_evidence_without_partial_mutation() -> None
     assert stored.world.world_version == 8
     assert stored.preview is None
     assert [event.action for event in stored.audit_events] == ["investigate"]
+
+
+async def test_verify_atomically_persists_v9_and_paired_timeline() -> None:
+    repository = ChallengeRepository(clock=lambda: NOW)
+    service = ChallengeService(repository=repository, clock=lambda: NOW)
+    created, committed = await _committed_session(service)
+    receipt = committed.projection.receipt
+    assert receipt is not None
+
+    verified = await service.verify(
+        created.session_id,
+        VerifyRequest(receipt_id=receipt.receipt_id, advance_hours=72),
+    )
+
+    assert verified.projection.state is ChallengeState.VERIFIED
+    assert verified.projection.tool_surface == ["simverse_reset_town"]
+    assert verified.projection.world_version == 9
+    assert verified.projection.world_time == created.projection.world_time + timedelta(
+        hours=72
+    )
+    verification = verified.projection.verification
+    assert verification is not None
+    assert verification.receipt_id == receipt.receipt_id
+    assert verification.advance_hours == 72
+    assert verification.baseline_snapshot.tick_index == 0
+    assert verification.baseline_snapshot.elapsed_hours == 0
+    assert [tick.tick_index for tick in verification.tick_snapshots] == list(
+        range(1, 13)
+    )
+    assert [tick.elapsed_hours for tick in verification.tick_snapshots] == list(
+        range(6, 73, 6)
+    )
+    stored = await repository.load_session(created.session_id)
+    assert stored is not None
+    assert stored.state is ChallengeState.VERIFIED
+    assert stored.world.world_version == 9
+    assert stored.verification == verification
+    assert stored.initial_world_hash == receipt.world_before_hash
+    assert world_hash(build_initial_world()) == receipt.world_before_hash
+    verify_audit = next(
+        event for event in stored.audit_events if event.action == "verify"
+    )
+    assert verify_audit.state_before is ChallengeState.COMMITTED
+    assert verify_audit.state_after is ChallengeState.VERIFIED
+    assert verify_audit.world_version_before == 8
+    assert verify_audit.world_version_after == 9
+
+    with pytest.raises(ChallengeDomainError) as replayed:
+        await service.verify(
+            created.session_id,
+            VerifyRequest(receipt_id=receipt.receipt_id, advance_hours=72),
+        )
+    assert replayed.value.code is ChallengeErrorCode.OUTCOME_ALREADY_VERIFIED
+
+
+async def test_verify_rejects_foreign_receipt_and_persists_failed_without_partial_v9() -> None:
+    repository = ChallengeRepository(clock=lambda: NOW)
+    service = ChallengeService(repository=repository, clock=lambda: NOW)
+    created, committed = await _committed_session(service)
+    receipt = committed.projection.receipt
+    assert receipt is not None
+
+    with pytest.raises(ChallengeDomainError) as rejected:
+        await service.verify(
+            created.session_id,
+            VerifyRequest(receipt_id="receipt-from-another-session", advance_hours=72),
+        )
+
+    assert rejected.value.code is ChallengeErrorCode.OUTCOME_INCOMPLETE
+    assert rejected.value.status == 500
+    assert rejected.value.current_state is ChallengeState.FAILED
+    stored = await repository.load_session(created.session_id)
+    assert stored is not None
+    assert stored.state is ChallengeState.FAILED
+    assert stored.world.world_version == 8
+    assert world_hash(stored.world) == receipt.world_after_hash
+    assert stored.verification is None
+    failed_audit = next(
+        event for event in stored.audit_events if event.action == "verify_failed"
+    )
+    assert failed_audit.reason_code == "OUTCOME_INCOMPLETE"
+
+
+async def test_verify_normalizes_engine_invariant_failure_and_allows_reset() -> None:
+    repository = ChallengeRepository(clock=lambda: NOW)
+    service = ChallengeService(repository=repository, clock=lambda: NOW)
+    created, committed = await _committed_session(service)
+    receipt = committed.projection.receipt
+    assert receipt is not None
+    await repository.mutate_session(
+        created.session_id,
+        lambda session, now: session.model_copy(
+            update={
+                "receipt": session.receipt.model_copy(
+                    update={"world_before_hash": "sha256:" + "f" * 64}
+                )
+            },
+            deep=True,
+        ),
+    )
+
+    with pytest.raises(ChallengeDomainError) as rejected:
+        await service.verify(
+            created.session_id,
+            VerifyRequest(receipt_id=receipt.receipt_id, advance_hours=72),
+        )
+
+    assert rejected.value.code is ChallengeErrorCode.OUTCOME_INCOMPLETE
+    assert rejected.value.status == 500
+    assert rejected.value.current_state is ChallengeState.FAILED
+    stored = await repository.load_session(created.session_id)
+    assert stored is not None
+    assert stored.state is ChallengeState.FAILED
+    assert stored.world.world_version == 8
+    assert stored.verification is None
+    failed_audit = next(
+        event for event in stored.audit_events if event.action == "verify_failed"
+    )
+    assert failed_audit.reason_code == "OUTCOME_INCOMPLETE"
+    reset = await service.reset(
+        created.session_id,
+        ResetRequest(expected_generation=stored.session_generation),
+    )
+    assert reset.projection.state is ChallengeState.INITIAL
+    assert reset.projection.world_version == 7
+    assert reset.projection.world_hash == world_hash(build_initial_world())
 
 
 def test_challenge_service_is_isolated_from_production_state_and_llm() -> None:

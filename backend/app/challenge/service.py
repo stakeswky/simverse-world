@@ -11,6 +11,7 @@ from app.challenge.engine import (
     commit_world,
     investigate_world,
     validate_world_diff,
+    verify_intervention,
 )
 from app.challenge.errors import (
     ERROR_STATUS_BY_CODE,
@@ -30,6 +31,7 @@ from app.challenge.models import (
     PreviewRequest,
     ResetRequest,
     SessionResult,
+    VerifyRequest,
 )
 from app.challenge.repository import (
     ABSOLUTE_TTL_SECONDS,
@@ -750,6 +752,127 @@ class ChallengeService:
             approval_id,
             mutate,
         )
+        return self._result(session_id, session)
+
+    async def verify(
+        self, session_id: str, request: VerifyRequest
+    ) -> SessionResult:
+        audit_event_id = secrets.token_urlsafe(16)
+        outcome_errors: list[ChallengeDomainError] = []
+
+        def failed_outcome(
+            session: ChallengeSession,
+            now: datetime,
+            message: str,
+        ) -> ChallengeSession:
+            error = _error(
+                ChallengeErrorCode.OUTCOME_INCOMPLETE,
+                message,
+                retryable=False,
+                current_state=ChallengeState.FAILED,
+                next_action="reset",
+            )
+            outcome_errors.append(error)
+            updated = session.model_copy(deep=True)
+            updated.state = ChallengeState.FAILED
+            updated.verification = None
+            updated.audit_events.append(
+                AuditEvent(
+                    event_id=audit_event_id,
+                    action="verify_failed",
+                    state_before=ChallengeState.COMMITTED,
+                    state_after=ChallengeState.FAILED,
+                    reason_code=ChallengeErrorCode.OUTCOME_INCOMPLETE.value,
+                    world_version_before=session.world.world_version,
+                    world_version_after=session.world.world_version,
+                    occurred_at=now,
+                )
+            )
+            return updated
+
+        def mutate(session: ChallengeSession, now: datetime) -> ChallengeSession:
+            outcome_errors.clear()
+            state_before = session.state
+            state_after = validate_transition(state_before, "verify")
+            receipt = session.receipt
+            preview = session.preview
+            if receipt is None or preview is None:
+                return failed_outcome(
+                    session,
+                    now,
+                    "Committed challenge receipt or preview is missing.",
+                )
+            receipt_matches = secrets.compare_digest(
+                request.receipt_id,
+                receipt.receipt_id,
+            ) & secrets.compare_digest(
+                receipt.session_generation,
+                session.session_generation,
+            )
+            if not receipt_matches:
+                return failed_outcome(
+                    session,
+                    now,
+                    "Verification receipt does not belong to the current session.",
+                )
+
+            try:
+                verified_world, verification = verify_intervention(
+                    session.world,
+                    build_initial_world(),
+                    session.initial_world_hash,
+                    preview,
+                    receipt,
+                )
+            except ChallengeDomainError as error:
+                if error.code is not ChallengeErrorCode.OUTCOME_INCOMPLETE:
+                    raise
+                return failed_outcome(
+                    session,
+                    now,
+                    "Committed challenge invariants are incomplete.",
+                )
+            except Exception:
+                return failed_outcome(
+                    session,
+                    now,
+                    "Committed challenge outcome could not be completed.",
+                )
+
+            if (
+                request.advance_hours != 72
+                or verified_world.world_version != 9
+                or verified_world.world_version != session.world.world_version + 1
+                or verification.receipt_id != receipt.receipt_id
+                or verification.advance_hours != request.advance_hours
+            ):
+                return failed_outcome(
+                    session,
+                    now,
+                    "Verified challenge outcome does not match the locked lifecycle.",
+                )
+
+            updated = session.model_copy(deep=True)
+            updated.state = state_after
+            updated.world = verified_world
+            updated.verification = verification
+            updated.audit_events.append(
+                AuditEvent(
+                    event_id=audit_event_id,
+                    action="verify",
+                    state_before=state_before,
+                    state_after=state_after,
+                    reason_code=None,
+                    world_version_before=session.world.world_version,
+                    world_version_after=verified_world.world_version,
+                    occurred_at=now,
+                )
+            )
+            return updated
+
+        session = await self._repository.mutate_session(session_id, mutate)
+        if outcome_errors:
+            raise outcome_errors[-1]
         return self._result(session_id, session)
 
     async def reset(

@@ -21,6 +21,7 @@ from app.challenge.models import (
     InvestigateRequest,
     PreviewRequest,
     ResetRequest,
+    VerifyRequest,
 )
 from app.challenge.service import ChallengeService
 from app.config import settings
@@ -276,6 +277,16 @@ async def commit(
     approval_id = _require_approval_cookie(request)
     result = await service.commit(session_id, approval_id, body)
     delete_approval_cookie(response)
+    return result.projection
+
+
+@router.post("/verify", response_model=ChallengeProjection)
+async def verify(
+    body: VerifyRequest, request: Request
+) -> ChallengeProjection:
+    service = ChallengeService()
+    session_id = await require_mutation_context(request, service)
+    result = await service.verify(session_id, body)
     return result.projection
 
 
