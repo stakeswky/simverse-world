@@ -1,12 +1,14 @@
 import type {
   ChallengeProjection,
   InvestigateInput,
+  PreviewInput,
 } from '../../services/api/challenge'
 
 interface DecisionFlowPanelProps {
   session: ChallengeProjection
   loading: boolean
   onInvestigate: (input: InvestigateInput) => Promise<void>
+  onPreview: (input: PreviewInput) => Promise<void>
 }
 
 function shortHash(hash: string): string {
@@ -17,9 +19,26 @@ export function DecisionFlowPanel({
   session,
   loading,
   onInvestigate,
+  onPreview,
 }: DecisionFlowPanelProps) {
   const evidence = session.evidence
+  const preview = session.preview
   const canInvestigate = session.state === 'INITIAL' || session.state === 'EVIDENCE_READY'
+  const canPreview = evidence !== null && [
+    'EVIDENCE_READY',
+    'PREVIEW_READY',
+    'APPROVED_ONCE',
+  ].includes(session.state)
+  const activeStep = {
+    INITIAL: 0,
+    EVIDENCE_READY: 1,
+    PREVIEW_READY: 1,
+    APPROVED_ONCE: 2,
+    COMMITTED: 3,
+    VERIFIED: 4,
+    FAILED: 4,
+    EXPIRED: 4,
+  }[session.state]
 
   return (
     <section className="challenge-decision-flow" aria-labelledby="decision-flow-title">
@@ -33,7 +52,7 @@ export function DecisionFlowPanel({
 
       <div className="challenge-flow-steps" aria-label="Challenge lifecycle">
         {['Investigate', 'Preview', 'Approve', 'Commit', 'Verify'].map((step, index) => (
-          <div data-active={index === 0 ? 'true' : 'false'} key={step}>
+          <div data-active={index === activeStep ? 'true' : 'false'} key={step}>
             <i>{index + 1}</i><span>{step}</span>
           </div>
         ))}
@@ -77,14 +96,103 @@ export function DecisionFlowPanel({
         </div>
       )}
 
-      {canInvestigate ? (
-        <button
-          type="button"
-          disabled={loading}
-          onClick={() => void onInvestigate({ budget_cap_sc: 300 })}
-        >
-          {evidence ? 'Rebuild Harbor evidence' : 'Investigate Harbor crisis'}
-        </button>
+      {preview ? (
+        <div className="challenge-intervention-preview">
+          <header>
+            <div>
+              <span>Immutable World Diff</span>
+              <strong>{preview.intervention_id}</strong>
+            </div>
+            <b>{session.approval_fingerprint ? 'Approved once' : 'Review required'}</b>
+          </header>
+          <p>World v{preview.based_on_world_version} · {shortHash(preview.diff_hash)}</p>
+
+          <section className="challenge-guaranteed-diff">
+            <h3>Guaranteed on commit</h3>
+            <div className="challenge-preview-totals">
+              <strong>{preview.total_cost_sc} SC total</strong>
+              <strong>{preview.remaining_budget_sc} SC remaining</strong>
+            </div>
+            <ul>
+              <li>{preview.diff.resident_cash_changes.length} wage transfers</li>
+              <li>{preview.diff.food_credit_changes.length} food credits</li>
+              <li>{preview.diff.employer_claims_created.length} employer claims</li>
+              <li>{preview.diff.events_created.length} mediation event</li>
+            </ul>
+            <div className="challenge-unchanged-invariants">
+              <span>Explicitly unchanged</span>
+              {preview.diff.explicitly_unchanged.map((invariant) => (
+                <code data-testid="unchanged-invariant" key={invariant}>
+                  {invariant}
+                </code>
+              ))}
+            </div>
+          </section>
+
+          <section className="challenge-forecast-block">
+            <h3>Forecast over 72h</h3>
+            <p>{preview.forecast.seeds.length} fixed seeds · deterministic range</p>
+            <dl>
+              <div>
+                <dt>High food risk</dt>
+                <dd>{preview.forecast.high_food_risk_residents.min}–{preview.forecast.high_food_risk_residents.max}</dd>
+              </div>
+              <div>
+                <dt>Social tension</dt>
+                <dd>{preview.forecast.social_tension.min}–{preview.forecast.social_tension.max}</dd>
+              </div>
+              <div>
+                <dt>Strike risk</dt>
+                <dd>{preview.forecast.strike_risk_pct.min}–{preview.forecast.strike_risk_pct.max}%</dd>
+              </div>
+              <div>
+                <dt>Stabilized</dt>
+                <dd>{preview.forecast.stabilized_residents.min}–{preview.forecast.stabilized_residents.max}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section className="challenge-rejected-alternatives">
+            <h3>Rejected alternatives</h3>
+            {preview.rejected_alternatives.map((alternative) => (
+              <article key={alternative.alternative_id}>
+                <strong>{alternative.title}</strong>
+                <code>{alternative.rejected_reason}</code>
+                <small>
+                  {alternative.total_cost_sc === null
+                    ? 'Rejected by policy invariants'
+                    : `${alternative.total_cost_sc} SC proposed`}
+                </small>
+              </article>
+            ))}
+          </section>
+        </div>
+      ) : null}
+
+      {canInvestigate || canPreview ? (
+        <div className="challenge-decision-actions">
+          {canInvestigate ? (
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => void onInvestigate({ budget_cap_sc: 300 })}
+            >
+              {evidence ? 'Rebuild Harbor evidence' : 'Investigate Harbor crisis'}
+            </button>
+          ) : null}
+          {canPreview ? (
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => void onPreview({
+                crisis_id: 'harbor-wage-crisis',
+                budget_cap_sc: 300,
+              })}
+            >
+              {preview ? 'Rebuild intervention preview' : 'Preview intervention'}
+            </button>
+          ) : null}
+        </div>
       ) : null}
     </section>
   )

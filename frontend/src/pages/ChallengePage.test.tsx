@@ -1,5 +1,12 @@
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -16,6 +23,7 @@ const store = vi.hoisted(() => ({
   error: null as Error | null,
   initialize: vi.fn<() => Promise<void>>(),
   investigate: vi.fn(),
+  preview: vi.fn(),
   reset: vi.fn(),
   setRegistrationState: vi.fn(),
 }))
@@ -80,6 +88,107 @@ function projection(overrides: Partial<ChallengeProjection> = {}): ChallengeProj
   }
 }
 
+function previewProjection(
+  overrides: Partial<ChallengeProjection> = {},
+): ChallengeProjection {
+  const base = projection()
+  return projection({
+    state: 'PREVIEW_READY',
+    tool_surface: ['simverse_preview_intervention'],
+    evidence: {
+      evidence_id: 'evidence-01',
+      based_on_world_version: 7,
+      crisis_id: 'harbor-wage-crisis',
+      priority_score: 94,
+      region_id: 'harbor',
+      affected_resident_ids: base.world.residents.map(
+        (resident) => resident.resident_id,
+      ),
+      evidence: [],
+      enforced_constraints: ['budget_lte_300_sc'],
+    },
+    preview: {
+      preview_id: 'preview-01',
+      crisis_id: 'harbor-wage-crisis',
+      based_on_world_version: 7,
+      intervention_id: 'harbor-wage-bridge',
+      total_cost_sc: 240,
+      remaining_budget_sc: 60,
+      diff: {
+        scenario_id: 'harbor-wage-crisis-v1',
+        session_generation: 'generation-01',
+        preview_id: 'preview-01',
+        based_on_world_version: 7,
+        budget_before_sc: 300,
+        budget_after_sc: 60,
+        resident_cash_changes: base.world.residents.map((resident) => ({
+          resident_id: resident.resident_id,
+          before_sc: 10,
+          delta_sc: 30,
+          after_sc: 40,
+        })),
+        food_credit_changes: base.world.residents.slice(0, 2).map((resident) => ({
+          resident_id: resident.resident_id,
+          before_sc: 0,
+          delta_sc: 20,
+          after_sc: 20,
+        })),
+        employer_claims_created: base.world.employers.map((employer) => ({
+          employer_id: employer.employer_id,
+          amount_sc: 90,
+          status: 'PENDING' as const,
+        })),
+        events_created: [{
+          event_id: 'employer-escrow-mediation',
+          event_type: 'MEDIATION',
+          region_id: 'harbor-district',
+          title: 'Employer escrow mediation opened',
+          description: 'Harbor employers enter mediation.',
+          occurs_at: '2042-06-12T08:05:00Z',
+        }],
+        explicitly_unchanged: [
+          'resident_personality',
+          'resident_preferences',
+          'resident_intentions',
+          'direct_relationship_scores',
+          'harbor_operating_status',
+          'production_town_state',
+        ],
+      },
+      diff_hash: `sha256:${'b'.repeat(64)}`,
+      forecast: {
+        seeds: [101, 102, 103, 104, 105],
+        high_food_risk_residents: { min: 0, max: 1 },
+        social_tension: { min: 50, max: 58 },
+        strike_risk_pct: { min: 28, max: 42 },
+        stabilized_residents: { min: 5, max: 6 },
+      },
+      rejected_alternatives: [
+        {
+          alternative_id: 'universal-town-subsidy',
+          title: 'Universal town subsidy',
+          total_cost_sc: 320,
+          rejected_reason: 'BUDGET_EXCEEDED',
+          violated_invariants: ['budget_lte_300_sc'],
+        },
+        {
+          alternative_id: 'forced-rewrite-and-harbor-closure',
+          title: 'Forced morale rewrite and Harbor closure',
+          total_cost_sc: null,
+          rejected_reason: 'POLICY_VIOLATION',
+          violated_invariants: [
+            'harbor_must_remain_open',
+            'no_direct_preference_rewrite',
+            'no_direct_relationship_rewrite',
+          ],
+        },
+      ],
+      created_at: '2042-06-12T08:05:00Z',
+    },
+    ...overrides,
+  })
+}
+
 function renderPage(path = '/challenge') {
   return render(
     <MemoryRouter initialEntries={[path]}>
@@ -97,6 +206,9 @@ beforeEach(() => {
   store.initialize.mockReset().mockResolvedValue(undefined)
   store.investigate.mockReset().mockResolvedValue({
     structuredContent: { state: 'EVIDENCE_READY' },
+  })
+  store.preview.mockReset().mockResolvedValue({
+    structuredContent: { state: 'PREVIEW_READY' },
   })
   store.reset.mockReset().mockResolvedValue({ structuredContent: { state: 'INITIAL' } })
   store.setRegistrationState.mockReset()
@@ -177,6 +289,63 @@ describe('ChallengePage', () => {
 
     await waitFor(() => expect(store.investigate).toHaveBeenCalledTimes(1))
     expect(store.investigate).toHaveBeenCalledWith({ budget_cap_sc: 300 })
+  })
+
+  it('renders guaranteed changes separately from the deterministic 72h forecast', () => {
+    store.session = previewProjection()
+    store.activeToolNames = ['simverse_preview_intervention']
+    renderPage()
+
+    const guaranteed = screen.getByRole('heading', {
+      name: 'Guaranteed on commit',
+    }).closest('section')
+    const forecast = screen.getByRole('heading', {
+      name: 'Forecast over 72h',
+    }).closest('section')
+    expect(guaranteed).not.toBeNull()
+    expect(forecast).not.toBeNull()
+    expect(within(guaranteed!).getByText('6 wage transfers')).toBeInTheDocument()
+    expect(within(guaranteed!).getByText('2 food credits')).toBeInTheDocument()
+    expect(within(guaranteed!).getByText('2 employer claims')).toBeInTheDocument()
+    expect(within(guaranteed!).getByText('1 mediation event')).toBeInTheDocument()
+    expect(within(guaranteed!).getByText('240 SC total')).toBeInTheDocument()
+    expect(within(guaranteed!).getByText('60 SC remaining')).toBeInTheDocument()
+    expect(within(guaranteed!).queryByText('50–58')).not.toBeInTheDocument()
+    expect(within(forecast!).getByText('0–1')).toBeInTheDocument()
+    expect(within(forecast!).getByText('50–58')).toBeInTheDocument()
+    expect(within(forecast!).getByText('28–42%')).toBeInTheDocument()
+    expect(within(forecast!).getByText('5–6')).toBeInTheDocument()
+    expect(screen.getByText('Universal town subsidy')).toBeInTheDocument()
+    expect(screen.getByText('BUDGET_EXCEEDED')).toBeInTheDocument()
+    expect(screen.getByText('Forced morale rewrite and Harbor closure')).toBeInTheDocument()
+    expect(screen.getByText('POLICY_VIOLATION')).toBeInTheDocument()
+    expect(screen.getAllByTestId('unchanged-invariant')).toHaveLength(6)
+    expect(screen.getByText('World v7 · sha256:bbbbbbbbbbbb…')).toBeInTheDocument()
+    expect(screen.getByText('Review required')).toBeInTheDocument()
+    expect(screen.getByText(/deterministic isolated simulation/i)).toBeInTheDocument()
+  })
+
+  it('rebuilds through the store and clears stale approval presentation', async () => {
+    store.session = previewProjection({
+      state: 'APPROVED_ONCE',
+      approval_fingerprint: 'fingerprint-old',
+    })
+    const firstRender = renderPage()
+    expect(screen.getByText('Approved once')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', {
+      name: 'Rebuild intervention preview',
+    }))
+    await waitFor(() => expect(store.preview).toHaveBeenCalledWith({
+      crisis_id: 'harbor-wage-crisis',
+      budget_cap_sc: 300,
+    }))
+
+    firstRender.unmount()
+    store.session = previewProjection({ approval_fingerprint: null })
+    renderPage()
+    expect(screen.getByText('Review required')).toBeInTheDocument()
+    expect(screen.queryByText('Approved once')).not.toBeInTheDocument()
   })
 
   it('shows a safe retry control after API failure', () => {

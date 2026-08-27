@@ -2,18 +2,27 @@ import {
   ChallengeApiError,
   type ChallengeProjection,
   type InvestigateInput,
+  type PreviewInput,
 } from '../services/api/challenge'
 import { useChallengeStore } from '../stores/challengeStore'
 import { publishAgentActivity } from './activity'
-import { buildInvestigateToolOutput } from './challengeToolResults'
+import {
+  buildInvestigateToolOutput,
+  buildPreviewToolOutput,
+} from './challengeToolResults'
 import type { WebMcpToolDefinition } from './types'
 
 export const INVESTIGATE_TOOL_NAME = 'simverse_investigate_crisis'
+export const PREVIEW_TOOL_NAME = 'simverse_preview_intervention'
 
 export interface ChallengeToolState {
   readonly session: ChallengeProjection | null
   readonly investigate: (
     input: InvestigateInput,
+    signal?: AbortSignal,
+  ) => Promise<unknown>
+  readonly preview: (
+    input: PreviewInput,
     signal?: AbortSignal,
   ) => Promise<unknown>
 }
@@ -61,6 +70,17 @@ function hasInvestigateInput(input: Record<string, unknown>): input is {
     && typeof input.budget_cap_sc === 'number'
     && input.budget_cap_sc >= 1
     && input.budget_cap_sc <= 300
+  )
+}
+
+function hasPreviewInput(input: Record<string, unknown>): input is {
+  crisis_id: 'harbor-wage-crisis'
+  budget_cap_sc: 300
+} {
+  return (
+    Object.keys(input).length === 2
+    && input.crisis_id === 'harbor-wage-crisis'
+    && input.budget_cap_sc === 300
   )
 }
 
@@ -176,10 +196,109 @@ export function createInvestigateTool(
   }
 }
 
+export function createPreviewTool(
+  options: ChallengeToolOptions = {},
+): WebMcpToolDefinition {
+  const store = options.store ?? useChallengeStore
+  const toolDocument = options.document ?? currentDocument()
+  const clock = options.clock ?? monotonicNow
+
+  return {
+    name: PREVIEW_TOOL_NAME,
+    title: 'Preview Harbor intervention',
+    description: 'Build an immutable World Diff and deterministic 72-hour forecast without changing the challenge world.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        crisis_id: { type: 'string', enum: ['harbor-wage-crisis'] },
+        budget_cap_sc: { type: 'integer', const: 300 },
+      },
+      required: ['crisis_id', 'budget_cap_sc'],
+      additionalProperties: false,
+    },
+    annotations: {
+      readOnlyHint: false,
+      untrustedContentHint: false,
+    },
+    execute: async (input, executionOptions) => {
+      let startedAt = 0
+      try {
+        startedAt = clock()
+      } catch {
+        // Timing is diagnostic and never changes tool behavior.
+      }
+      const before = store.getState().session
+
+      const record = (
+        outcome: 'completed' | 'failed',
+        reasonCode: string,
+        after: ChallengeProjection | null,
+      ) => {
+        if (!toolDocument) return
+        publishAgentActivity(toolDocument, {
+          toolName: PREVIEW_TOOL_NAME,
+          phase: 'preview',
+          outcome,
+          durationMs: safeDuration(clock, startedAt),
+          reasonCode,
+          worldVersionBefore: before?.world_version ?? 0,
+          worldVersionAfter: after?.world_version ?? before?.world_version ?? 0,
+          receiptId: null,
+          fingerprint: shortFingerprint(after ?? before),
+        })
+      }
+
+      if (executionOptions.signal.aborted) {
+        record('failed', 'REQUEST_ABORTED', before)
+        return safeError(
+          'REQUEST_ABORTED',
+          'Tool execution was cancelled before the request started.',
+          true,
+        )
+      }
+      if (!hasPreviewInput(input)) {
+        record('failed', 'INVALID_INPUT', before)
+        return safeError(
+          'INVALID_INPUT',
+          'Tool input must match the preview schema.',
+        )
+      }
+
+      try {
+        await store.getState().preview(
+          {
+            crisis_id: input.crisis_id,
+            budget_cap_sc: input.budget_cap_sc,
+          },
+          executionOptions.signal,
+        )
+        const after = store.getState().session
+        if (!after) throw new Error('Missing challenge projection.')
+        const output = buildPreviewToolOutput(after)
+        record('completed', 'PREVIEW_READY', after)
+        return output
+      } catch (error) {
+        const after = store.getState().session
+        const code = errorCode(error, executionOptions.signal.aborted)
+        record('failed', code, after)
+        return safeError(
+          code,
+          code === 'REQUEST_ABORTED'
+            ? 'Tool execution was cancelled.'
+            : 'Challenge preview could not be completed.',
+          code === 'REQUEST_ABORTED'
+            || (error instanceof ChallengeApiError && error.retryable),
+        )
+      }
+    },
+  }
+}
+
 export function createChallengeTool(
   name: string,
   options: ChallengeToolOptions = {},
 ): WebMcpToolDefinition {
   if (name === INVESTIGATE_TOOL_NAME) return createInvestigateTool(options)
+  if (name === PREVIEW_TOOL_NAME) return createPreviewTool(options)
   throw new Error(`Tool ${name} is not implemented for this phase.`)
 }

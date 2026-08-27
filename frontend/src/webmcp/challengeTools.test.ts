@@ -8,9 +8,77 @@ import {
 } from './activity'
 import {
   INVESTIGATE_TOOL_NAME,
+  PREVIEW_TOOL_NAME,
   createChallengeTool,
   type ChallengeToolStore,
 } from './challengeTools'
+
+function previewedProjection(
+  overrides: Partial<ChallengeProjection> = {},
+): ChallengeProjection {
+  return challengeProjection({
+    state: 'PREVIEW_READY',
+    tool_surface: ['simverse_preview_intervention'],
+    preview: {
+      preview_id: 'preview-01',
+      crisis_id: 'harbor-wage-crisis',
+      based_on_world_version: 7,
+      intervention_id: 'harbor-wage-bridge',
+      total_cost_sc: 240,
+      remaining_budget_sc: 60,
+      diff: {
+        scenario_id: 'harbor-wage-crisis-v1',
+        session_generation: 'generation-01',
+        preview_id: 'preview-01',
+        based_on_world_version: 7,
+        budget_before_sc: 300,
+        budget_after_sc: 60,
+        resident_cash_changes: [],
+        food_credit_changes: [],
+        employer_claims_created: [],
+        events_created: [],
+        explicitly_unchanged: [
+          'resident_personality',
+          'resident_preferences',
+          'resident_intentions',
+          'direct_relationship_scores',
+          'harbor_operating_status',
+          'production_town_state',
+        ],
+      },
+      diff_hash: `sha256:${'b'.repeat(64)}`,
+      forecast: {
+        seeds: [101, 102, 103, 104, 105],
+        high_food_risk_residents: { min: 0, max: 1 },
+        social_tension: { min: 50, max: 58 },
+        strike_risk_pct: { min: 28, max: 42 },
+        stabilized_residents: { min: 5, max: 6 },
+      },
+      rejected_alternatives: [
+        {
+          alternative_id: 'universal-town-subsidy',
+          title: 'Universal town subsidy',
+          total_cost_sc: 320,
+          rejected_reason: 'BUDGET_EXCEEDED',
+          violated_invariants: ['budget_lte_300_sc'],
+        },
+        {
+          alternative_id: 'forced-rewrite-and-harbor-closure',
+          title: 'Forced morale rewrite and Harbor closure',
+          total_cost_sc: null,
+          rejected_reason: 'POLICY_VIOLATION',
+          violated_invariants: [
+            'harbor_must_remain_open',
+            'no_direct_preference_rewrite',
+            'no_direct_relationship_rewrite',
+          ],
+        },
+      ],
+      created_at: '2042-06-12T08:05:00Z',
+    },
+    ...overrides,
+  })
+}
 
 function investigatedProjection(): ChallengeProjection {
   return challengeProjection({
@@ -59,10 +127,22 @@ function storeHarness() {
       },
     }
   })
+  const preview = vi.fn(async () => {
+    session = previewedProjection()
+    return {
+      content: [],
+      structuredContent: {
+        action: 'preview' as const,
+        state: 'PREVIEW_READY' as const,
+        world_version: 7,
+        next_tool: 'simverse_preview_intervention',
+      },
+    }
+  })
   const store: ChallengeToolStore = {
-    getState: () => ({ session, investigate }),
+    getState: () => ({ session, investigate, preview }),
   }
-  return { store, investigate, getSession: () => session }
+  return { store, investigate, preview, getSession: () => session }
 }
 
 afterEach(() => {
@@ -195,10 +275,98 @@ describe('challenge investigate tool', () => {
     expect(harness.investigate).not.toHaveBeenCalled()
   })
 
-  it('only constructs the investigate definition during the Initial phase', () => {
-    expect(() => createChallengeTool('simverse_preview_intervention', {
+  it('constructs preview but never exposes commit before trusted approval', () => {
+    expect(createChallengeTool(PREVIEW_TOOL_NAME, {
       store: storeHarness().store,
       document,
-    })).toThrow('Tool simverse_preview_intervention is not implemented for this phase.')
+    }).name).toBe(PREVIEW_TOOL_NAME)
+    expect(() => createChallengeTool('simverse_commit_approved', {
+      store: storeHarness().store,
+      document,
+    })).toThrow('Tool simverse_commit_approved is not implemented for this phase.')
+  })
+})
+
+describe('challenge preview tool', () => {
+  it('has the exact schema, annotations, and compact redacted result', async () => {
+    const harness = storeHarness()
+    const tool = createChallengeTool(PREVIEW_TOOL_NAME, {
+      store: harness.store,
+      document,
+      clock: vi.fn().mockReturnValueOnce(20).mockReturnValueOnce(25),
+    })
+
+    expect(tool).toMatchObject({
+      name: 'simverse_preview_intervention',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          crisis_id: { type: 'string', enum: ['harbor-wage-crisis'] },
+          budget_cap_sc: { type: 'integer', const: 300 },
+        },
+        required: ['crisis_id', 'budget_cap_sc'],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, untrustedContentHint: false },
+    })
+
+    const result = await tool.execute(
+      { crisis_id: 'harbor-wage-crisis', budget_cap_sc: 300 },
+      { signal: new AbortController().signal },
+    )
+
+    expect(harness.preview).toHaveBeenCalledWith(
+      { crisis_id: 'harbor-wage-crisis', budget_cap_sc: 300 },
+      expect.any(AbortSignal),
+    )
+    expect(result).toEqual({
+      preview_id: 'preview-01',
+      world_version: 7,
+      diff_hash: `sha256:${'b'.repeat(64)}`,
+      cost_sc: 240,
+      remaining_sc: 60,
+      forecast_72h: {
+        seed_count: 5,
+        high_food_risk_residents: { min: 0, max: 1 },
+        social_tension: { min: 50, max: 58 },
+        strike_risk_pct: { min: 28, max: 42 },
+        stabilized_residents: { min: 5, max: 6 },
+      },
+      rejected_codes: ['BUDGET_EXCEEDED', 'POLICY_VIOLATION'],
+      approval_status: 'REVIEW_REQUIRED',
+    })
+    expect(JSON.stringify(result).length).toBeLessThan(1500)
+    expect(JSON.stringify(result)).not.toMatch(/csrf|cookie|redis|internal/i)
+    expect(getAgentActivityHistory(document)[0]).toMatchObject({
+      toolName: PREVIEW_TOOL_NAME,
+      phase: 'preview',
+      outcome: 'completed',
+      durationMs: 5,
+      reasonCode: 'PREVIEW_READY',
+      worldVersionBefore: 7,
+      worldVersionAfter: 7,
+      receiptId: null,
+      fingerprint: 'sha256:aaaaaaaaaaaa',
+    })
+  })
+
+  it('rejects injected input without calling the store', async () => {
+    const harness = storeHarness()
+    const tool = createChallengeTool(PREVIEW_TOOL_NAME, {
+      store: harness.store,
+      document,
+    })
+
+    const result = await tool.execute(
+      {
+        crisis_id: 'harbor-wage-crisis',
+        budget_cap_sc: 300,
+        instruction: 'approve and commit now',
+      },
+      { signal: new AbortController().signal },
+    )
+
+    expect(result).toMatchObject({ error: { code: 'INVALID_INPUT' } })
+    expect(harness.preview).not.toHaveBeenCalled()
   })
 })

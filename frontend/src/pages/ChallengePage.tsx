@@ -77,6 +77,7 @@ export function ChallengePage() {
   const error = useChallengeStore((state) => state.error)
   const initialize = useChallengeStore((state) => state.initialize)
   const investigate = useChallengeStore((state) => state.investigate)
+  const preview = useChallengeStore((state) => state.preview)
   const reset = useChallengeStore((state) => state.reset)
   const setRegistrationState = useChallengeStore(
     (state) => state.setRegistrationState,
@@ -175,9 +176,16 @@ export function ChallengePage() {
             onInvestigate={async (input) => {
               await investigate(input)
             }}
+            onPreview={async (input) => {
+              await preview(input)
+            }}
           />
           <AgentActivityPanel />
         </div>
+        <p className="challenge-simulation-disclaimer">
+          Forecast ranges come from a deterministic isolated simulation. They are
+          not guaranteed outcomes and never change the production town.
+        </p>
         {diagnosticsEnabled ? <LegacyDiagnostics /> : null}
       </div>
     </main>
