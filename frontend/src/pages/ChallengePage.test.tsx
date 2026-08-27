@@ -11,6 +11,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ChallengeProjection } from '../services/api/challenge'
+import { ChallengeWebMcpHarness } from '../test/challengeWebMcpHarness'
 import { resetAgentActivityForTests } from '../webmcp/activity'
 import { resetWebMcpRegistrationsForTests } from '../webmcp/registerChallengeStatusTool'
 import type { WebMcpToolDefinition } from '../webmcp/types'
@@ -224,6 +225,7 @@ afterEach(() => {
   resetWebMcpRegistrationsForTests()
   resetAgentActivityForTests()
   vi.unstubAllEnvs()
+  vi.useRealTimers()
   Reflect.deleteProperty(document, 'modelContext')
   Reflect.deleteProperty(navigator, 'modelContext')
 })
@@ -365,6 +367,103 @@ describe('ChallengePage', () => {
     expect(screen.getByText('2042-06-12T08:06:30Z')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Revoke approval' }))
     await waitFor(() => expect(store.revoke).toHaveBeenCalledTimes(1))
+  })
+
+  it('refreshes the session at approval expiry and removes the commit tool', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2042-06-12T08:05:00Z'))
+    const harness = new ChallengeWebMcpHarness()
+    Object.defineProperty(navigator, 'modelContext', {
+      configurable: true,
+      value: harness.modelContext,
+    })
+    store.session = previewProjection({
+      state: 'APPROVED_ONCE',
+      tool_surface: ['simverse_commit_approved'],
+      approval_fingerprint: 'appr-A1B2',
+      approval_expires_at: '2042-06-12T08:06:30Z',
+    })
+    store.activeToolNames = ['simverse_commit_approved']
+    store.initialize.mockImplementation(async () => {
+      if (store.initialize.mock.calls.length === 2) {
+        store.session = previewProjection()
+        store.activeToolNames = ['simverse_preview_intervention']
+      }
+    })
+    const page = renderPage()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(store.initialize).toHaveBeenCalledTimes(1)
+    expect(harness.toolNames()).toEqual(['simverse_commit_approved'])
+
+    await vi.advanceTimersByTimeAsync(90_000)
+    expect(store.initialize).toHaveBeenCalledTimes(2)
+    page.rerender(
+      <MemoryRouter initialEntries={['/challenge']}>
+        <ChallengePage />
+      </MemoryRouter>,
+    )
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(harness.toolNames()).toEqual(['simverse_preview_intervention'])
+    expect(harness.toolNames()).not.toContain('simverse_commit_approved')
+  })
+
+  it('renders the complete execution receipt and only the verify surface', () => {
+    const approved = previewProjection()
+    store.session = previewProjection({
+      state: 'COMMITTED',
+      world_version: 8,
+      world_hash: `sha256:${'c'.repeat(64)}`,
+      budget_sc: 60,
+      tool_surface: ['simverse_verify_outcome'],
+      approval_fingerprint: null,
+      approval_expires_at: null,
+      receipt: {
+        receipt_id: 'SV-2042-A1B2C3D4',
+        scenario_id: 'harbor-wage-crisis-v1',
+        session_generation: approved.session_generation,
+        preview_id: approved.preview!.preview_id,
+        approval_fingerprint: 'appr-A1B2',
+        approved_diff_hash: approved.preview!.diff_hash,
+        world_before_version: 7,
+        world_after_version: 8,
+        world_before_hash: `sha256:${'a'.repeat(64)}`,
+        world_after_hash: `sha256:${'c'.repeat(64)}`,
+        budget_before_sc: 300,
+        budget_delta_sc: -240,
+        budget_after_sc: 60,
+        affected_residents: approved.world.residents.map(
+          (resident) => resident.resident_id,
+        ),
+        created_events: ['employer-escrow-mediation'],
+        verified_invariants: [
+          'budget_lte_300_sc',
+          'challenge_town_isolated',
+          'harbor_must_remain_open',
+          'no_direct_preference_rewrite',
+          'no_direct_relationship_rewrite',
+        ],
+      },
+    })
+    store.activeToolNames = ['simverse_verify_outcome']
+    renderPage()
+
+    const receipt = screen.getByRole('region', { name: 'Execution Receipt' })
+    expect(within(receipt).getByText('SV-2042-A1B2C3D4')).toBeInTheDocument()
+    expect(within(receipt).getByText('appr-A1B2')).toBeInTheDocument()
+    expect(within(receipt).getByText('World v7 → v8')).toBeInTheDocument()
+    expect(within(receipt).getByText('Budget 300 − 240 → 60 SC')).toBeInTheDocument()
+    expect(within(receipt).getByText(`sha256:${'a'.repeat(64)}`)).toBeInTheDocument()
+    expect(within(receipt).getByText(`sha256:${'c'.repeat(64)}`)).toBeInTheDocument()
+    expect(within(receipt).getAllByTestId('receipt-resident')).toHaveLength(6)
+    expect(within(receipt).getByText('employer-escrow-mediation')).toBeInTheDocument()
+    expect(within(receipt).getAllByTestId('receipt-invariant')).toHaveLength(5)
+    expect(screen.getByText('simverse_verify_outcome')).toBeInTheDocument()
+    expect(screen.queryByRole('button', {
+      name: 'Create one-time approval',
+    })).not.toBeInTheDocument()
+    expect(document.body.innerHTML).not.toContain('csrf-01')
+    expect(document.body.innerHTML).not.toContain('sv_challenge_approval')
   })
 
   it('rebuilds through the store and clears stale approval presentation', async () => {

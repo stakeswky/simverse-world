@@ -872,6 +872,41 @@
 .challenge-approval-binding dt { color: #77798d; font-size: 8px; }
 .challenge-approval-binding dd { overflow: hidden; margin: 0; color: #fde68a; font: 8px var(--mkt-mono, monospace); text-overflow: ellipsis; }
 
+.challenge-execution-receipt {
+  display: grid;
+  gap: 11px;
+  margin: 0 16px 16px;
+  padding: 13px;
+  border: 1px solid rgb(134 239 152 / 28%);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgb(34 197 94 / 8%), rgb(34 211 238 / 3%));
+}
+
+.challenge-execution-receipt > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.challenge-execution-receipt > header div { display: grid; min-width: 0; gap: 3px; }
+.challenge-execution-receipt > header span { color: #86ef98; font: 8px var(--mkt-mono, monospace); letter-spacing: 0.12em; text-transform: uppercase; }
+.challenge-execution-receipt > header strong { overflow: hidden; font: 600 10px var(--mkt-mono, monospace); text-overflow: ellipsis; }
+.challenge-execution-receipt > header b { flex: none; color: #a5f3fc; font: 8px var(--mkt-mono, monospace); }
+.challenge-execution-receipt > p { margin: 0; color: #a6a8b9; font-size: 9px; }
+.challenge-execution-receipt > code { overflow: hidden; color: #77798d; font-size: 8px; text-overflow: ellipsis; }
+
+.challenge-execution-receipt > dl { display: grid; gap: 6px; margin: 0; }
+.challenge-execution-receipt > dl div { display: grid; gap: 4px; padding: 8px; border: 1px solid rgb(255 255 255 / 7%); border-radius: 7px; background: rgb(0 0 0 / 12%); }
+.challenge-execution-receipt dt { color: #77798d; font-size: 8px; text-transform: uppercase; }
+.challenge-execution-receipt dd { overflow-wrap: anywhere; margin: 0; color: #d7d9e3; font: 8px/1.45 var(--mkt-mono, monospace); }
+
+.challenge-execution-receipt > section { display: grid; gap: 6px; }
+.challenge-execution-receipt h3 { margin: 0; color: #8d8fa2; font-size: 8px; text-transform: uppercase; }
+.challenge-execution-receipt ul { display: flex; flex-wrap: wrap; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.challenge-execution-receipt li { max-width: 100%; padding: 5px 7px; border-radius: 6px; background: rgb(134 239 152 / 7%); }
+.challenge-execution-receipt li code { overflow-wrap: anywhere; color: #bbf7d0; font-size: 8px; }
+
 .challenge-decision-actions {
   display: grid;
   gap: 7px;

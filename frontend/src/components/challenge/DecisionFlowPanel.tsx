@@ -32,6 +32,7 @@ export function DecisionFlowPanel({
 }: DecisionFlowPanelProps) {
   const evidence = session.evidence
   const preview = session.preview
+  const receipt = session.receipt
   const canInvestigate = session.state === 'INITIAL' || session.state === 'EVIDENCE_READY'
   const canPreview = evidence !== null && [
     'EVIDENCE_READY',
@@ -184,6 +185,72 @@ export function DecisionFlowPanel({
             onRevoke={onRevoke}
           />
         </>
+      ) : null}
+
+      {receipt ? (
+        <section className="challenge-execution-receipt" aria-label="Execution Receipt">
+          <header>
+            <div>
+              <span>Execution Receipt</span>
+              <strong>{receipt.receipt_id}</strong>
+            </div>
+            <b>{receipt.approval_fingerprint}</b>
+          </header>
+          <p>{receipt.scenario_id} · Preview {receipt.preview_id}</p>
+          <code>{receipt.session_generation}</code>
+          <dl>
+            <div>
+              <dt>World</dt>
+              <dd>World v{receipt.world_before_version} → v{receipt.world_after_version}</dd>
+            </div>
+            <div>
+              <dt>Budget</dt>
+              <dd>
+                Budget {receipt.budget_before_sc} − {Math.abs(receipt.budget_delta_sc)} → {receipt.budget_after_sc} SC
+              </dd>
+            </div>
+            <div>
+              <dt>Approved diff</dt>
+              <dd>{receipt.approved_diff_hash}</dd>
+            </div>
+            <div>
+              <dt>World before</dt>
+              <dd>{receipt.world_before_hash}</dd>
+            </div>
+            <div>
+              <dt>World after</dt>
+              <dd>{receipt.world_after_hash}</dd>
+            </div>
+          </dl>
+          <section>
+            <h3>Affected residents</h3>
+            <ul>
+              {receipt.affected_residents.map((residentId) => (
+                <li data-testid="receipt-resident" key={residentId}>
+                  <code>{residentId}</code>
+                </li>
+              ))}
+            </ul>
+          </section>
+          <section>
+            <h3>Created events</h3>
+            <ul>
+              {receipt.created_events.map((eventId) => (
+                <li key={eventId}><code>{eventId}</code></li>
+              ))}
+            </ul>
+          </section>
+          <section>
+            <h3>Verified invariants</h3>
+            <ul>
+              {receipt.verified_invariants.map((invariant) => (
+                <li data-testid="receipt-invariant" key={invariant}>
+                  <code>{invariant}</code>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </section>
       ) : null}
 
       {canInvestigate || canPreview ? (

@@ -36,6 +36,25 @@ export interface PreviewToolOutput {
   readonly approval_status: 'REVIEW_REQUIRED' | 'APPROVED_ONCE'
 }
 
+export interface CommitToolOutput {
+  readonly state: 'COMMITTED'
+  readonly receipt_id: string
+  readonly world: {
+    readonly version_before: number
+    readonly version_after: number
+    readonly hash_before: string
+    readonly hash_after: string
+  }
+  readonly budget: {
+    readonly before_sc: number
+    readonly delta_sc: number
+    readonly after_sc: number
+  }
+  readonly affected_resident_count: number
+  readonly verified_invariants: string[]
+  readonly next_tool: string | null
+}
+
 export function buildInvestigateToolOutput(
   projection: ChallengeProjection,
 ): InvestigateToolOutput {
@@ -97,6 +116,37 @@ export function buildPreviewToolOutput(
   }
   if (JSON.stringify(output).length >= 1500) {
     throw new Error('Preview tool output exceeded its safety budget.')
+  }
+  return output
+}
+
+export function buildCommitToolOutput(
+  projection: ChallengeProjection,
+): CommitToolOutput {
+  const receipt = projection.receipt
+  if (projection.state !== 'COMMITTED' || !receipt) {
+    throw new Error('Commit did not produce an execution receipt.')
+  }
+  const output: CommitToolOutput = {
+    state: 'COMMITTED',
+    receipt_id: receipt.receipt_id,
+    world: {
+      version_before: receipt.world_before_version,
+      version_after: receipt.world_after_version,
+      hash_before: receipt.world_before_hash,
+      hash_after: receipt.world_after_hash,
+    },
+    budget: {
+      before_sc: receipt.budget_before_sc,
+      delta_sc: receipt.budget_delta_sc,
+      after_sc: receipt.budget_after_sc,
+    },
+    affected_resident_count: receipt.affected_residents.length,
+    verified_invariants: [...receipt.verified_invariants],
+    next_tool: projection.tool_surface[0] ?? null,
+  }
+  if (JSON.stringify(output).length >= 1500) {
+    throw new Error('Commit tool output exceeded its safety budget.')
   }
   return output
 }

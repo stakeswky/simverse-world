@@ -94,6 +94,22 @@ export function ChallengePage() {
     void initialize().catch(() => undefined)
   }, [initialize])
 
+  useEffect(() => {
+    if (
+      session?.state !== 'APPROVED_ONCE'
+      || session.approval_expires_at === null
+    ) {
+      return
+    }
+    const deadline = Date.parse(session.approval_expires_at)
+    if (!Number.isFinite(deadline)) return
+    const delay = Math.max(0, deadline - Date.now())
+    const timeout = globalThis.setTimeout(() => {
+      void initialize().catch(() => undefined)
+    }, Math.min(delay, 2_147_483_647))
+    return () => globalThis.clearTimeout(timeout)
+  }, [initialize, session?.approval_expires_at, session?.state])
+
   useEffect(() => () => surfaceManager.destroy(), [surfaceManager])
 
   useEffect(() => {

@@ -217,4 +217,82 @@ describe('ChallengeToolSurfaceManager', () => {
     expect(harness.reloadCount).toBe(1)
     expect(harness.registrationCalls).toHaveLength(1)
   })
+
+  it('exposes commit only while approved and invalidates it immediately after success', async () => {
+    const harness = new ChallengeWebMcpHarness()
+    const surface = manager(harness)
+    await surface.sync(challengeProjection({
+      state: 'PREVIEW_READY',
+      tool_surface: ['simverse_preview_intervention'],
+    }))
+    expect(harness.toolNames()).not.toContain('simverse_commit_approved')
+
+    await surface.sync(challengeProjection({
+      state: 'APPROVED_ONCE',
+      tool_surface: ['simverse_commit_approved'],
+      approval_fingerprint: 'appr-A1B2',
+      approval_expires_at: '2042-06-12T08:06:30Z',
+    }))
+    expect(harness.toolNames()).toEqual(['simverse_commit_approved'])
+    const oldCommit = harness.tool('simverse_commit_approved')
+
+    await surface.sync(challengeProjection({
+      state: 'COMMITTED',
+      world_version: 8,
+      tool_surface: ['simverse_verify_outcome'],
+    }))
+
+    expect(harness.toolNames()).toEqual(['simverse_verify_outcome'])
+    expect(await oldCommit?.execute(
+      {},
+      { signal: new AbortController().signal },
+    )).toEqual(STALE_TOOL_SURFACE_RESULT)
+  })
+
+  it.each([
+    {
+      label: 'revoke',
+      next: challengeProjection({
+        state: 'PREVIEW_READY',
+        tool_surface: ['simverse_preview_intervention'],
+      }),
+    },
+    {
+      label: 'preview rebuild',
+      next: challengeProjection({
+        state: 'PREVIEW_READY',
+        tool_surface: ['simverse_preview_intervention'],
+      }),
+    },
+    {
+      label: 'world version change',
+      next: challengeProjection({
+        state: 'APPROVED_ONCE',
+        world_version: 8,
+        tool_surface: ['simverse_commit_approved'],
+        approval_fingerprint: 'appr-A1B2',
+        approval_expires_at: '2042-06-12T08:06:30Z',
+      }),
+    },
+  ])('aborts the old commit handler after $label', async ({ next }) => {
+    const executeCommit = vi.fn(async () => ({ committed: true }))
+    const harness = new ChallengeWebMcpHarness()
+    const surface = manager(harness, (name) => definition(name, executeCommit))
+    await surface.sync(challengeProjection({
+      state: 'APPROVED_ONCE',
+      tool_surface: ['simverse_commit_approved'],
+      approval_fingerprint: 'appr-A1B2',
+      approval_expires_at: '2042-06-12T08:06:30Z',
+    }))
+    const oldCommit = harness.tool('simverse_commit_approved')
+
+    await surface.sync(next)
+    const result = await oldCommit?.execute(
+      {},
+      { signal: new AbortController().signal },
+    )
+
+    expect(result).toEqual(STALE_TOOL_SURFACE_RESULT)
+    expect(executeCommit).not.toHaveBeenCalled()
+  })
 })
