@@ -2,21 +2,21 @@
 
 ## Result
 
-The reproducible Chromium gate passed on 2026-08-27 at `07:34:30Z` from source
-HEAD `47c4173858a6edb4cccf561a5988f34073776b3a` (`test(challenge): lock
-five-tool WebMCP contract`). The run used Node `v22.23.2`, npm `10.9.8`,
+The reproducible Chromium gate passed on 2026-08-27 at `08:36:09Z` from source
+HEAD `aa1453bacf66f5637aaa4680176168e1660c5755` (`fix(challenge): record
+lifecycle after real DOM actions`). The run used Node `v22.23.2`, npm `10.9.8`,
 Playwright `1.62.1`, and Chromium `151.0.7922.34`.
 
-That hash is the checked-out parent because the Task 6.3 tree was still the
-working-tree diff under test when this evidence document was authored. The
-task's fixed commit is verified by running the same complete script again after
-commit; the fixed `/tmp/simverse-option-b-e2e-evidence.log` must then report the
-new HEAD. This avoids an impossible self-referential commit hash and avoids
-amending a tested commit.
+That hash is the reviewed runtime source commit. A later evidence-only commit
+does not create an impossible self-reference: `python3.12
+scripts/verify-challenge-e2e-evidence.py --root .` proves that no Challenge
+runtime, route, WebMCP, flow spec, dependency, compose, or runner path changed
+after the recorded source. The complete script is also rerun on the clean final
+commit so `/tmp/simverse-option-b-e2e-evidence.log` reports that exact HEAD.
 
 ```text
 full_flow=10/10 reset_hash=10/10 replay_success=0 unauthorized_success=0 duplicate_tools=0
-1 passed (16.5s)
+1 passed (16.3s)
 playwright_exit=0 cleanup_exit=0
 api_health=ok frontend_health=ok
 api_drain=api drained pid=8860
@@ -25,7 +25,7 @@ frontend_drain=frontend drained pid=9033
 
 The fixed machine-readable record path (overwritten by each later run) is
 `/tmp/simverse-option-b-e2e-evidence.log`; Playwright's JSON report is
-`/tmp/simverse-option-b-e2e-artifacts/report.json` (3,406 bytes).
+`/tmp/simverse-option-b-e2e-artifacts/report.json` (3,416 bytes).
 
 ## Real path exercised
 
@@ -68,7 +68,7 @@ The unauthorized request is asserted as HTTP `403` as well as
 - `/tmp/simverse-option-b-e2e-artifacts/challenge-outcome-control.png` —
   No-action control article (9,264 bytes)
 - `/tmp/simverse-option-b-e2e-artifacts/challenge-reset-10.png` — initial state
-  after ten same-context resets (303,623 bytes)
+  after ten same-context resets (303,529 bytes)
 
 The three outcome articles are separate screenshots because the shipped UI
 intentionally presents that comparison as a horizontally scrollable strip at
