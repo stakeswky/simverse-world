@@ -1815,6 +1815,7 @@ enabled build 必须检出五名，常规页面不得包含 `simverse_get_challe
 
 **文件：**
 
+- 修改 `docker-compose.yml`（对齐 CI/生产的 `pgvector/pgvector:pg16`，保证全链 migration 可运行）
 - 修改 `frontend/package.json`
 - 修改 `frontend/package-lock.json`
 - 新增 `frontend/playwright.config.ts`
@@ -1823,6 +1824,8 @@ enabled build 必须检出五名，常规页面不得包含 `simverse_get_challe
 - 新增 `docs/webmcp-challenge/E2E_EVIDENCE.md`
 
 **依赖说明：** 当前仓库没有可执行的 Playwright/Puppeteer 包；Browser skill 只能做本机人工验收，不能提供可提交、可重复、可跑 10 次的 E2E gate。因此本 Task 是唯一允许新增依赖的步骤：`@playwright/test@1.62.1` 作为 devDependency，并运行其官方 Chromium installer。不得引入第二套 E2E runner。
+
+**运行时发现：** 根目录 compose 原先使用不带 pgvector 扩展的 `postgres:16-alpine`，与 CI 和生产部署的 `pgvector/pgvector:pg16` 不一致，导致 `004_add_memories_table` 在真实 `alembic upgrade head` 失败。本 Task 将根 compose 对齐现有 CI/生产镜像；不改 schema、不清理命名卷。宿主同时设置了本地 HTTP 代理但没有 loopback bypass，导致 health probe 被错误送往代理；脚本固定导出 `NO_PROXY/no_proxy=localhost,127.0.0.1,::1`，所有 health curl 加 5 秒上限。
 
 **Red gate：** spec 首次对未完成 app 应在第一个缺失 state/tool/UI assertion 失败。测试使用真实 Chromium headed 或 CI headless browser，禁止只 mount React test。
 
@@ -1855,7 +1858,7 @@ test "$(cat /tmp/simverse-option-b-e2e.exit)" = 0
 git show -s --format='%H %s' HEAD
 ```
 
-**Green gate：** script exit 0，后端/前端 health 与 drain sentinel 存在，Playwright 真实 Chromium 全通过，stdout 精确含下述五个计数，E2E_EVIDENCE 的 commit 等于当前 HEAD，截图/日志真实存在，worktree 无测试残留。
+**Green gate：** script exit 0，后端/前端 health 与 drain sentinel 存在，Playwright 真实 Chromium 全通过，stdout 精确含下述五个计数，截图/日志真实存在，worktree 无测试残留。由于包含 commit hash 的文档无法自引用其自身 commit，`E2E_EVIDENCE.md` 保存提交前真实运行；完成本 Task 的唯一 commit 后必须整脚本再跑一次，并断言 `/tmp/simverse-option-b-e2e-evidence.log` 的 `source_head` 精确等于新 HEAD。
 
 脚本最后固定打印 `full_flow=10/10 reset_hash=10/10 replay_success=0 unauthorized_success=0 duplicate_tools=0`。E2E_EVIDENCE 记录真实 commit、浏览器版本、命令、stdout、截图和失败重跑原因。
 
