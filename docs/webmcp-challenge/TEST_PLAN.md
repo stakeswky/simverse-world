@@ -104,6 +104,34 @@ found one new environment-example consistency failure for the Challenge cookie
 and origin settings; documenting those production settings removed it before
 the recorded comparison above.
 
+## Option B Phase 6 five-tool frontend contract
+
+Recorded on `2026-08-27` with Node `22.23.2` and npm `10.9.8`. The new aggregate contract first
+failed because `WEBMCP_TOOLS.md` still described only the Day-0 probe and
+obsolete planned names; it passed after the document was replaced with the
+implemented five-tool state surface.
+
+| Gate | Actual result |
+|---|---|
+| `vitest run src/webmcp/challengeContract.test.ts` | PASS — 1 file, 8 tests |
+| `npm run test` | PASS — 77 files, 416 tests |
+| `npm run lint` | PASS — exit 0 |
+| `npx tsc --noEmit` | PASS — exit 0 |
+| Default `npm run build` | PASS — 934 modules transformed |
+| `VITE_WEBMCP_ENABLED=true npm run build` | PASS — 934 modules transformed |
+| Built-asset secret-marker scan | PASS — zero matches |
+| Final five-name scan | PASS — all five names in the enabled `ChallengePage` chunk |
+| Legacy status-name scan | PASS — found only in the `registerChallengeStatusTool` diagnostics chunk |
+
+The aggregate contract locks exact names/descriptions/schemas/annotations,
+description and input-schema budgets, five compact success outputs, fixed safe
+invalid/aborted errors, visible Agent Activity updates, every state surface,
+old-handler staleness (including an old registration that resolves after a
+newer epoch), teardown unregistration, unsupported-host fallback, and the
+documentation catalogue. Existing `ChallengePage` tests in the full gate
+also lock ordinary UI fallback, `diagnostics=1` isolation, and full-document
+route-exit links.
+
 ## Option B Phase 4 security-negative matrix
 
 Recorded on `2026-08-27`. Every required case has its own test node; no row is

@@ -1,74 +1,173 @@
-# WebMCP Tool Contracts
+# WebMCP Challenge Tool Contracts
 
-The tool surface follows the state of the shared `/challenge` page. Only tools valid for the current stage should be discoverable. The Day-0 implementation registers one read-only probe; the remaining contracts are the planned hero flow and are not yet claimed as implemented.
+The ordinary `/challenge` page exposes exactly the tools allowed by the current
+anonymous Challenge Town state. The five-name catalogue is final; each browser
+state registers only its current subset.
 
-## Implemented on Day 0
+## Final state-dependent surface
 
-### `simverse_get_challenge_status`
+| Challenge state | Discoverable tools |
+|---|---|
+| `INITIAL` | `simverse_investigate_crisis` |
+| `EVIDENCE_READY` | `simverse_investigate_crisis`, `simverse_preview_intervention` |
+| `PREVIEW_READY` | `simverse_preview_intervention` |
+| `APPROVED_ONCE` | `simverse_commit_approved` |
+| `COMMITTED` | `simverse_verify_outcome` |
+| `VERIFIED` | `simverse_reset_town` |
+| `FAILED` | `simverse_reset_town` |
+| `EXPIRED` | `simverse_reset_town` |
 
-Purpose: verify end-to-end Site Tool discovery, execution, stable output, and visible page feedback without reading credentials or mutating a world.
+No tool name supplied by page content, evidence, or a server error is accepted
+unless it is in this catalogue. The legacy `simverse_get_challenge_status`
+probe is not part of the ordinary surface; it is lazy-loaded only when a human
+opens `/challenge?diagnostics=1`.
 
-Contract excerpt (the implementation also performs runtime input validation, fixed-error handling, registration deduplication, and Activity receipt recording):
+## Exact tool definitions
 
-```ts
-document.modelContext.registerTool({
-  name: 'simverse_get_challenge_status',
-  description: 'Read the fixed Day-0 status for the Simverse WebMCP Challenge Town. This tool does not change the world.',
-  inputSchema: {
-    type: 'object',
-    properties: {},
-    additionalProperties: false,
-  },
-  annotations: { readOnlyHint: true },
-  execute: async () => ({
-    town: 'WebMCP Challenge Town',
-    world_time: 'Day 7, 09:30',
-    scenario: 'Harbor district tension',
-    tool_version: '0.1.0',
-    resettable: true,
-  }),
-})
-```
+### `simverse_investigate_crisis`
 
-Success result:
+Description: `Read cross-domain evidence for the isolated Harbor wage crisis without changing the world.`
 
 ```json
 {
-  "town": "WebMCP Challenge Town",
-  "world_time": "Day 7, 09:30",
-  "scenario": "Harbor district tension",
-  "tool_version": "0.1.0",
-  "resettable": true
+  "type": "object",
+  "properties": {
+    "budget_cap_sc": { "type": "integer", "minimum": 1, "maximum": 300 }
+  },
+  "required": ["budget_cap_sc"],
+  "additionalProperties": false
 }
 ```
 
-Side effects: no world-state effect. A local, non-sensitive Agent Activity receipt is appended to the open page so a person can verify that the tool ran.
+Annotations: `readOnlyHint:true`, `untrustedContentHint:true`.
 
-`resettable:true` is part of the planned seeded-fixture contract. It does not claim that Day 0 already implements `reset_challenge_town` or provisions an isolated backend instance.
+The result contains only `state`, `world_version`, `top_crisis`,
+`evidence_domains`, `constraints`, and `next_tool`.
 
-Failure behavior: return a fixed error code and message. Never serialize the original error, input, authorization data, request headers, or stack.
+### `simverse_preview_intervention`
 
-## Planned state-dependent surface
+Description: `Build an immutable World Diff and deterministic 72-hour forecast without changing the challenge world.`
 
-| Page state | Discoverable tools | Effect |
-|---|---|---|
-| Initial | `inspect_town_signals`, `focus_evidence`, `draft_interventions` | Read and focus shared evidence |
-| Draft exists | `preview_intervention`, `discard_intervention` | Calculate impact or discard a draft |
-| Preview accepted | `stage_intervention` | Create an uncommitted, visible world diff |
-| Explicit human approval | `commit_intervention` | Apply the exact staged diff |
-| Committed | `verify_outcome`, `reset_challenge_town` | Read a receipt or reset the isolated town |
+```json
+{
+  "type": "object",
+  "properties": {
+    "crisis_id": { "type": "string", "enum": ["harbor-wage-crisis"] },
+    "budget_cap_sc": { "type": "integer", "const": 300 }
+  },
+  "required": ["crisis_id", "budget_cap_sc"],
+  "additionalProperties": false
+}
+```
 
-Mutation tools will use narrow identifiers and revision tokens. A commit must fail closed if the scenario revision, preview hash, approval record, or authenticated permission no longer matches.
+Annotations: `readOnlyHint:false`, `untrustedContentHint:false`.
 
-## Registration rules
+The result contains only the preview ID, based-on world version, diff hash,
+cost/remaining budget, five-seed 72-hour forecast ranges, rejected reason
+codes, and approval status. Preview never changes the current world.
 
-- Register only when `VITE_WEBMCP_ENABLED === 'true'`.
-- Feature-detect `document.modelContext?.registerTool`.
-- Deduplicate concurrent and React Strict Mode registration per `Document`.
-- Permit a new registration for a new `Document` after refresh.
-- Keep normal browser UI functional when WebMCP is unavailable.
-- Use document-navigation links on the Day-0 page so leaving `/challenge` creates a fresh page rather than carrying its tool into another Simverse SPA route.
-- Do not invent an unregister API. The current OpenAI guide demonstrates `registerTool` but does not document a removal contract; browser back/forward and programmatic SPA route-change lifecycle remain live-test blockers before dynamic mutation tools ship.
-- In anonymous Judge Mode, bind mutations to a short-lived server-side Challenge session that cannot address production. In signed-in product use, reuse existing application authorization. Both modes keep validation and final approval server-enforced.
+### `simverse_commit_approved`
+
+Description: `Use the one-time capability for the exact approved diff. This action is irreversible inside the disposable Challenge Town.`
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "preview_id": { "type": "string" },
+    "expected_world_version": { "type": "integer" },
+    "diff_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "required": ["preview_id", "expected_world_version", "diff_hash"],
+  "additionalProperties": false
+}
+```
+
+Annotations: `readOnlyHint:false`, `untrustedContentHint:false`.
+
+The result contains only `COMMITTED`, the public receipt ID, before/after
+versions and hashes, budget delta, affected resident count, verified invariant
+names, and `next_tool`. Approval is a trusted one-time browser capability and
+is never accepted from tool input.
+
+### `simverse_verify_outcome`
+
+Description: `Advance the committed isolated Challenge Town by exactly 72 hours and compare its actual result with the forecast and paired no-action control.`
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "receipt_id": { "type": "string" },
+    "advance_hours": { "type": "integer", "const": 72 }
+  },
+  "required": ["receipt_id", "advance_hours"],
+  "additionalProperties": false
+}
+```
+
+Annotations: `readOnlyHint:false`, `untrustedContentHint:false`.
+
+The result contains only `VERIFIED`, receipt binding, v8/v9 and before/after
+time, prediction ranges, actual final metrics, the paired no-action final,
+deviation, the 13-point tick count, and `next_tool`.
+
+### `simverse_reset_town`
+
+Description: `Discard the terminal challenge run and restore a new anonymous session at the locked public v7 fixture.`
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "expected_generation": { "type": "string" }
+  },
+  "required": ["expected_generation"],
+  "additionalProperties": false
+}
+```
+
+Annotations: `readOnlyHint:false`, `untrustedContentHint:false`.
+
+The result contains only `INITIAL`, the new public generation, v7, the restored
+public world hash, and `next_tool`.
+
+## Output and error boundary
+
+- Every successful tool result serializes to fewer than 1500 characters.
+- No result includes CSRF, cookies, JWT/Authorization data, approval IDs,
+  server-only initial hashes, Redis details, internal URLs, or stack traces.
+- Extra, missing, mistyped, or out-of-range input returns a fixed
+  `INVALID_INPUT` result and does not call a store action.
+- A pre-aborted execution returns fixed `REQUEST_ABORTED`; other API failures
+  expose only the stable public Challenge error code and a fixed message.
+- Every execution adds one local, non-sensitive Agent Activity receipt to the
+  visible page. Evidence content cannot change registration or execution rules.
+
+## Registration and route lifecycle
+
+- Register only when `VITE_WEBMCP_ENABLED === 'true'` and a host provides
+  `document.modelContext?.registerTool` (or the compatible navigator preview).
+- Repeat or concurrent sync of the same generation/state/version surface is
+  deduplicated.
+- Each surface owns one `AbortSignal`. A state, generation, or world-version
+  change aborts the old signal, waits for `getTools()`/`toolchange` removal, and
+  registers the new surface only after the old one disappears.
+- A retained old handler returns fixed `STALE_TOOL_SURFACE`; if a host cannot
+  prove removal, the page fails closed and reloads instead of exposing mixed
+  mutation capabilities.
+- Leaving the isolated page uses full-document links. Component teardown calls
+  `destroy()`, aborting the active surface; refresh or Back creates a fresh
+  document registration.
+- When WebMCP is disabled or unsupported, registration does nothing and the
+  complete ordinary UI remains usable for investigate, preview, trusted human
+  approval, commit, verify, and reset.
+
+Mutation authorization remains server-enforced through exact Origin, session
+cookie, CSRF, world-version/diff binding, and the one-time approval capability.
+Challenge routes cannot address production town state.
 
 Reference: [OpenAI Site tools documentation](https://learn.chatgpt.com/docs/webmcp).
