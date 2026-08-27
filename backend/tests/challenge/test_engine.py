@@ -1,16 +1,25 @@
+import inspect
+from datetime import UTC, datetime
+
 import pytest
 
-from app.challenge.canonical import world_hash
+from app.challenge import engine as engine_module
+from app.challenge.canonical import diff_hash, world_hash
 from app.challenge.engine import (
     ACTUAL_SEED,
     FORECAST_SEEDS,
     TICK_COUNT,
     TICK_HOURS,
     VERIFICATION_HOURS,
+    apply_world_diff,
+    build_intervention_preview,
+    forecast_intervention,
     investigate_world,
+    validate_world_diff,
 )
 from app.challenge.errors import ChallengeDomainError, ChallengeErrorCode
 from app.challenge.fixture import build_initial_world
+from app.challenge.models import ChallengeEvent
 
 
 EXPECTED_CONSTRAINTS = {
@@ -20,6 +29,31 @@ EXPECTED_CONSTRAINTS = {
     "no_direct_relationship_rewrite",
     "challenge_town_isolated",
 }
+EXPECTED_UNCHANGED = {
+    "resident_personality",
+    "resident_preferences",
+    "resident_intentions",
+    "direct_relationship_scores",
+    "harbor_operating_status",
+    "production_town_state",
+}
+PREVIEW_CREATED_AT = datetime(2042, 6, 12, 8, 5, tzinfo=UTC)
+
+
+def _build_preview():
+    world = build_initial_world()
+    evidence = investigate_world(
+        world,
+        budget_cap_sc=300,
+        evidence_id="evidence-preview",
+    )
+    return world, build_intervention_preview(
+        world,
+        evidence,
+        session_generation="generation-01",
+        preview_id="preview-01",
+        created_at=PREVIEW_CREATED_AT,
+    )
 
 
 def test_engine_constants_are_locked_for_later_forecast_and_verification() -> None:
@@ -116,3 +150,163 @@ def test_investigate_does_not_mutate_the_input_world() -> None:
 
     assert world.model_dump(mode="json") == before
     assert world_hash(world) == before_hash
+
+
+def test_intervention_preview_locks_cost_diff_invariants_and_rejections() -> None:
+    _, preview = _build_preview()
+
+    assert preview.preview_id == "preview-01"
+    assert preview.crisis_id == "harbor-wage-crisis"
+    assert preview.based_on_world_version == 7
+    assert preview.intervention_id == "harbor-wage-bridge"
+    assert preview.total_cost_sc == 240
+    assert preview.remaining_budget_sc == 60
+    assert preview.created_at == PREVIEW_CREATED_AT
+
+    diff = preview.diff
+    assert diff.session_generation == "generation-01"
+    assert diff.budget_before_sc == 300
+    assert diff.budget_after_sc == 60
+    assert len(diff.resident_cash_changes) == 6
+    assert {
+        (change.before_sc, change.delta_sc, change.after_sc)
+        for change in diff.resident_cash_changes
+    } == {(10, 30, 40)}
+    assert len(diff.food_credit_changes) == 2
+    assert {
+        (change.resident_id, change.before_sc, change.delta_sc, change.after_sc)
+        for change in diff.food_credit_changes
+    } == {
+        ("harbor-resident-01", 0, 20, 20),
+        ("harbor-resident-02", 0, 20, 20),
+    }
+    assert {
+        (claim.employer_id, claim.amount_sc, claim.status)
+        for claim in diff.employer_claims_created
+    } == {
+        ("harbor-employer-a", 90, "PENDING"),
+        ("harbor-employer-b", 90, "PENDING"),
+    }
+    assert [event.event_id for event in diff.events_created] == [
+        "employer-escrow-mediation"
+    ]
+    assert set(diff.explicitly_unchanged) == EXPECTED_UNCHANGED
+    assert preview.diff_hash == diff_hash(diff)
+
+    rejected_by_reason = {
+        alternative.rejected_reason: alternative
+        for alternative in preview.rejected_alternatives
+    }
+    budget_rejection = rejected_by_reason["BUDGET_EXCEEDED"]
+    assert budget_rejection.total_cost_sc == 320
+    assert "budget_lte_300_sc" in budget_rejection.violated_invariants
+    policy_rejection = rejected_by_reason["POLICY_VIOLATION"]
+    assert policy_rejection.total_cost_sc is None
+    assert set(policy_rejection.violated_invariants) == {
+        "harbor_must_remain_open",
+        "no_direct_preference_rewrite",
+        "no_direct_relationship_rewrite",
+    }
+
+
+def test_world_diff_rejects_a_320_sc_scheme_as_over_budget() -> None:
+    world, preview = _build_preview()
+    over_budget = preview.diff.model_copy(
+        update={"budget_after_sc": -20},
+        deep=True,
+    )
+
+    with pytest.raises(ChallengeDomainError) as exc:
+        validate_world_diff(world, over_budget)
+
+    assert exc.value.code is ChallengeErrorCode.BUDGET_EXCEEDED
+    assert exc.value.status == 422
+
+
+@pytest.mark.parametrize(
+    "event_type",
+    ["FORCED_PREFERENCE_REWRITE", "DIRECT_RELATIONSHIP_REWRITE", "HARBOR_CLOSURE"],
+)
+def test_world_diff_rejects_forced_rewrites_or_harbor_closure(
+    event_type: str,
+) -> None:
+    world, preview = _build_preview()
+    prohibited_event = ChallengeEvent(
+        event_id=f"prohibited-{event_type.lower()}",
+        event_type=event_type,
+        region_id="harbor-district",
+        title="Prohibited direct intervention",
+        description="Attempts to bypass the locked challenge policy.",
+        occurs_at=PREVIEW_CREATED_AT,
+    )
+    prohibited = preview.diff.model_copy(
+        update={"events_created": [prohibited_event]},
+        deep=True,
+    )
+
+    with pytest.raises(ChallengeDomainError) as exc:
+        validate_world_diff(world, prohibited)
+
+    assert exc.value.code is ChallengeErrorCode.POLICY_VIOLATION
+    assert exc.value.status == 422
+
+
+def test_apply_world_diff_returns_an_isolated_clone_and_preserves_invariants() -> None:
+    world, preview = _build_preview()
+    before_dump = world.model_dump(mode="json")
+    before_hash = world_hash(world)
+    relationship_dump = [
+        relationship.model_dump(mode="json") for relationship in world.relationships
+    ]
+
+    applied = apply_world_diff(world, preview.diff)
+
+    assert applied is not world
+    assert applied.world_version == 8
+    assert applied.budget_sc == 60
+    assert {resident.cash_sc for resident in applied.residents} == {40}
+    assert {resident.unpaid_wage_sc for resident in applied.residents} == {0}
+    assert [resident.food_credit_sc for resident in applied.residents] == [
+        20,
+        20,
+        0,
+        0,
+        0,
+        0,
+    ]
+    assert {
+        (employer.repayment_claim_sc, employer.escrow_status)
+        for employer in applied.employers
+    } == {(90, "PENDING")}
+    assert "employer-escrow-mediation" in {
+        event.event_id for event in applied.events
+    }
+    assert applied.harbor_open is True
+    assert [
+        relationship.model_dump(mode="json")
+        for relationship in applied.relationships
+    ] == relationship_dump
+    assert applied.metrics.unpaid_residents == 0
+    assert world.model_dump(mode="json") == before_dump
+    assert world_hash(world) == before_hash
+
+
+def test_forecast_runs_all_fixed_seeds_and_has_locked_ranges() -> None:
+    world, preview = _build_preview()
+
+    forecast = forecast_intervention(world, preview.diff)
+
+    assert forecast.seeds == [101, 102, 103, 104, 105]
+    assert forecast.high_food_risk_residents.model_dump() == {"min": 0, "max": 1}
+    assert forecast.social_tension.model_dump() == {"min": 50, "max": 58}
+    assert forecast.strike_risk_pct.model_dump() == {"min": 28, "max": 42}
+    assert forecast.stabilized_residents.model_dump() == {"min": 5, "max": 6}
+    assert forecast_intervention(world, preview.diff) == forecast
+
+
+def test_intervention_engine_is_local_and_has_no_external_llm_dependency() -> None:
+    source = inspect.getsource(engine_module).lower()
+
+    assert "openai" not in source
+    assert "anthropic" not in source
+    assert "langchain" not in source
