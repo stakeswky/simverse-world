@@ -13,7 +13,7 @@ on:
   push:
     branches: [master, 'feat/**']
   pull_request:
-    branches: [master]
+    branches: [master, challenge/webmcp-civic-copilot]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -91,9 +91,20 @@ jobs:
           cache: pip
           cache-dependency-path: backend/pyproject.toml
       - name: Install
-        run: pip install -e .
+        run: pip install -e ".[dev]" pytest-timeout
       - name: Alembic full-chain upgrade on real PG
         run: alembic upgrade head
+      - name: Living Loop P0 acceptance on disposable real PG
+        env:
+          LIVING_LOOP_POSTGRES_REQUIRED: 'true'
+          LIVING_LOOP_TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/postgres
+          LIVING_LOOP_PG_ACCEPTANCE_DISPOSABLE: 'true'
+          LIVING_LOOP_P0_ENABLED: 'true'
+          LIVING_LOOP_P0_DELAY_SECONDS: '60'
+        run: >
+          pytest -q -s -m lab_postgres
+          tests/integration/test_living_loop_p0_postgres.py
+          --timeout=600 --timeout-method=signal
       - name: Boot API + register smoke
         # 覆盖 vm212 曾暴露的 bug 类:FK 插入顺序 / 迁移类型漂移 / vector 列类型。
         run: |
