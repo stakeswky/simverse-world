@@ -52,7 +52,7 @@ def test_agent_player_and_hosted_agent_migrations_extend_linear_chain():
     assert ugc_privileges.down_revision == "064_forge_quota_counters"
     assert hosted_agents.down_revision == "065_sanitize_ugc_privileges"
     assert market_economy.down_revision == "066_hosted_agent_controllers"
-    assert script.get_heads() == ["068_fix_theater_bounds"]
+    assert script.get_heads() == ["069_living_loop_p0"]
 
 
 def test_067_upgrade_and_downgrade_create_market_economy_schema():
