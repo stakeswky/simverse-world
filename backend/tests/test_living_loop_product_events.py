@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 import pytest
@@ -345,6 +346,16 @@ async def test_client_event_ids_must_use_uuid4_namespace(
 
     assert response.status_code == 422
     assert await _count(db_session) == 0
+
+
+def test_product_event_openapi_request_schema_has_resolvable_references() -> None:
+    from app.main import app
+
+    schema = app.openapi()["paths"]["/product-events/batch"]["post"][
+        "requestBody"
+    ]["content"]["application/json"]["schema"]
+
+    assert "#/$defs/" not in json.dumps(schema, sort_keys=True)
 
 
 async def test_product_event_endpoint_has_a_finite_per_ip_rate_limit(
