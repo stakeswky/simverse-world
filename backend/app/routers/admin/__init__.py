@@ -19,6 +19,7 @@ from app.routers.admin.policies import router as policies_router
 from app.routers.admin.resident_sprites import router as resident_sprites_router
 from app.routers.admin.seasons import router as seasons_router
 from app.routers.admin.hosted_agents import router as hosted_agents_router
+from app.routers.admin.product_metrics import router as product_metrics_router
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 router.include_router(dashboard_router)
@@ -39,3 +40,4 @@ router.include_router(policies_router)
 router.include_router(resident_sprites_router)
 router.include_router(seasons_router)
 router.include_router(hosted_agents_router)
+router.include_router(product_metrics_router)

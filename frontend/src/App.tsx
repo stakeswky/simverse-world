@@ -9,7 +9,7 @@ import { ConnectionBanner } from './components/ConnectionBanner'
 import { EncounterCard } from './components/EncounterCard'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { checkOnboarding, getMe, type MeResponse } from './services/api'
-import { loginPath, safeAuthReturnTo } from './services/authReturnTo'
+import { loginPath, onboardingPath, safeAuthReturnTo } from './services/authReturnTo'
 
 // Heavy pages are code-split so the login/first-load bundle stays lean:
 // GamePage pulls in Phaser (~1.4MB), ProfilePage pulls in @uiw/react-md-editor
@@ -28,6 +28,11 @@ const CapsulesPage = lazy(() => import('./pages/CapsulesPage').then((m) => ({ de
 const TownPage = lazy(() => import('./pages/TownPage').then((m) => ({ default: m.TownPage })))
 const WatchPage = lazy(() => import('./pages/WatchPage').then((m) => ({ default: m.WatchPage })))
 const ChallengePage = lazy(() => import('./pages/ChallengePage').then((m) => ({ default: m.ChallengePage })))
+const TodayPage = lazy(() => import('./pages/TodayPage').then((m) => ({ default: m.TodayPage })))
+
+function livingLoopEntryEnabled(): boolean {
+  return import.meta.env.VITE_LIVING_LOOP_P0_ENABLED === 'true'
+}
 
 function normalizePathname(pathname: string): string {
   if (pathname === '/') return pathname
@@ -95,17 +100,22 @@ function HomeRoute() {
   // "Checking" is derived, not stored: the check for the current token is in
   // flight exactly while `checked.token` doesn't match it, so a token change
   // shows the spinner again without any synchronous setState in the effect.
-  const [checked, setChecked] = useState<{ token: string; needsOnboarding: boolean } | null>(null)
+  const [checked, setChecked] = useState<{
+    token: string
+    result: 'complete' | 'required' | 'error'
+  } | null>(null)
 
   useEffect(() => {
     if (!token) return
     let cancelled = false
     checkOnboarding(token)
       .then((result) => {
-        if (!cancelled) setChecked({ token, needsOnboarding: result.needs_onboarding })
+        if (!cancelled) {
+          setChecked({ token, result: result.needs_onboarding ? 'required' : 'complete' })
+        }
       })
       .catch(() => {
-        if (!cancelled) setChecked({ token, needsOnboarding: false })
+        if (!cancelled) setChecked({ token, result: 'error' })
       })
     return () => {
       cancelled = true
@@ -114,8 +124,48 @@ function HomeRoute() {
 
   if (!token) return <LandingPage />
   if (checked?.token !== token) return <PageFallback />
-  if (checked.needsOnboarding) return <Navigate to="/onboarding" replace />
+  if (checked.result === 'error') return <GamePage />
+  if (checked.result === 'required') {
+    return <Navigate to={livingLoopEntryEnabled() ? onboardingPath('/today') : '/onboarding'} replace />
+  }
+  if (livingLoopEntryEnabled()) {
+    return <Navigate to="/today" replace state={{ livingLoopEntryPoint: 'root' }} />
+  }
   return <GamePage />
+}
+
+function TodayRoute() {
+  const token = useGameStore((s) => s.token)
+  const { pathname, search, hash } = useLocation()
+  const [checked, setChecked] = useState<{
+    token: string
+    result: 'complete' | 'required' | 'error'
+  } | null>(null)
+
+  useEffect(() => {
+    if (!token || !livingLoopEntryEnabled()) return
+    let cancelled = false
+    checkOnboarding(token)
+      .then((result) => {
+        if (!cancelled) {
+          setChecked({ token, result: result.needs_onboarding ? 'required' : 'complete' })
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setChecked({ token, result: 'error' })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
+  if (!livingLoopEntryEnabled()) return <TodayPage />
+  if (!token || checked?.token !== token) return <PageFallback />
+  if (checked.result === 'required') {
+    return <Navigate to={onboardingPath(`${pathname}${search}${hash}`)} replace />
+  }
+  if (checked.result === 'error') return <Navigate to="/play" replace />
+  return <TodayPage />
 }
 
 function LoginRoute() {
@@ -156,6 +206,7 @@ function AuthenticatedOverlays() {
     || normalizedPath === '/town'
     || normalizedPath === '/watch'
     || normalizedPath === '/challenge'
+    || normalizedPath === '/today'
   ) return null
 
   return (
@@ -181,6 +232,7 @@ export function AppRoutes() {
             <Route path="/challenge" element={<ChallengePage />} />
             <Route path="/onboarding" element={<OnboardingPage />} />
             <Route path="/" element={<HomeRoute />} />
+            <Route path="/today" element={<ProtectedRoute><TodayRoute /></ProtectedRoute>} />
             {/* The game also lives at /play — many entry points (landing CTA,
                 onboarding redirect, Admin/Forge/ErrorBoundary) navigate here.
                 Without this route React Router matches nothing → blank screen. */}

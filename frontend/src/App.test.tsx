@@ -30,6 +30,10 @@ vi.mock('./pages/ChallengePage', () => ({
   ChallengePage: () => <main data-testid="challenge-page">WebMCP Challenge</main>,
 }))
 
+vi.mock('./pages/TodayPage', () => ({
+  TodayPage: () => <main data-testid="today-page">Today</main>,
+}))
+
 vi.mock('./pages/AdminPage', () => ({
   AdminPage: () => <main data-testid="admin-page">Admin Console</main>,
 }))
@@ -83,10 +87,12 @@ beforeEach(() => {
     player_resident_id: 'resident-1',
   })
   vi.mocked(getMe).mockReset().mockResolvedValue({ ...user, is_admin: false })
+  vi.stubEnv('VITE_LIVING_LOOP_P0_ENABLED', 'false')
 })
 
 afterEach(() => {
   cleanup()
+  vi.unstubAllEnvs()
   document.body.classList.remove('marketing-page-open', 'auth-page-open')
 })
 
@@ -121,6 +127,16 @@ describe('public and authenticated routes', () => {
     renderRoute('/play')
     expect(await screen.findByRole('heading', { name: '进入 Simverse' })).toBeInTheDocument()
     expect(screen.queryByTestId('game-page')).not.toBeInTheDocument()
+  })
+
+  it('redirects a logged-out /today visit to login with the complete return path', async () => {
+    renderRoute('/today?entry=return#decision')
+
+    expect(await screen.findByRole('heading', { name: '进入 Simverse' })).toBeInTheDocument()
+    expect(screen.getByTestId('route-location')).toHaveTextContent(
+      '/login?next=%2Ftoday%3Fentry%3Dreturn%23decision',
+    )
+    expect(screen.queryByTestId('today-page')).not.toBeInTheDocument()
   })
 
   it('exposes /town, /watch, and /challenge without a player login', async () => {
@@ -357,5 +373,76 @@ describe('HomeRoute onboarding gate', () => {
     resolveCheck({ needs_onboarding: true, player_resident_id: null })
 
     expect(await screen.findByTestId('onboarding-page')).toBeInTheDocument()
+  })
+
+  it('keeps the legacy game home when the Living Loop entry flag is off', async () => {
+    vi.stubEnv('VITE_LIVING_LOOP_P0_ENABLED', 'false')
+    useGameStore.setState({ user, token: 'token' })
+
+    renderRoute('/')
+
+    expect(await screen.findByTestId('game-page')).toBeInTheDocument()
+    expect(screen.queryByTestId('today-page')).not.toBeInTheDocument()
+    expect(screen.getByTestId('route-location')).toHaveTextContent('/')
+  })
+
+  it('routes an onboarded authenticated user from / to /today when the entry flag is on', async () => {
+    vi.stubEnv('VITE_LIVING_LOOP_P0_ENABLED', 'true')
+    vi.mocked(checkOnboarding).mockResolvedValue({
+      needs_onboarding: false,
+      player_resident_id: 'resident-1',
+    })
+    useGameStore.setState({ user, token: 'token' })
+
+    renderRoute('/')
+
+    expect(await screen.findByTestId('today-page')).toBeInTheDocument()
+    expect(screen.getByTestId('route-location')).toHaveTextContent('/today')
+    expect(screen.queryByTestId('game-page')).not.toBeInTheDocument()
+  })
+
+  it('preserves /today through onboarding when the entry flag is on', async () => {
+    vi.stubEnv('VITE_LIVING_LOOP_P0_ENABLED', 'true')
+    vi.mocked(checkOnboarding).mockResolvedValue({
+      needs_onboarding: true,
+      player_resident_id: null,
+    })
+    useGameStore.setState({ user, token: 'token' })
+
+    renderRoute('/')
+
+    expect(await screen.findByTestId('onboarding-page')).toBeInTheDocument()
+    expect(screen.getByTestId('route-location')).toHaveTextContent(
+      '/onboarding?next=%2Ftoday',
+    )
+    expect(screen.queryByTestId('today-page')).not.toBeInTheDocument()
+  })
+
+  it('guards a direct authenticated /today visit with onboarding and preserves its return path', async () => {
+    vi.stubEnv('VITE_LIVING_LOOP_P0_ENABLED', 'true')
+    vi.mocked(checkOnboarding).mockResolvedValue({
+      needs_onboarding: true,
+      player_resident_id: null,
+    })
+    useGameStore.setState({ user, token: 'token' })
+
+    renderRoute('/today')
+
+    expect(await screen.findByTestId('onboarding-page')).toBeInTheDocument()
+    expect(screen.getByTestId('route-location')).toHaveTextContent(
+      '/onboarding?next=%2Ftoday',
+    )
+  })
+
+  it('fails open to the legacy game when the onboarding check fails with the entry flag on', async () => {
+    vi.stubEnv('VITE_LIVING_LOOP_P0_ENABLED', 'true')
+    vi.mocked(checkOnboarding).mockRejectedValue(new Error('network down'))
+    useGameStore.setState({ user, token: 'token' })
+
+    renderRoute('/')
+
+    expect(await screen.findByTestId('game-page')).toBeInTheDocument()
+    expect(screen.queryByTestId('today-page')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('onboarding-page')).not.toBeInTheDocument()
   })
 })

@@ -73,3 +73,6 @@ import app.models.civic_standing_history  # noqa: F401
 # Headless external players and their scoped opaque credentials.
 import app.models.agent_player  # noqa: F401
 import app.models.hosted_agent  # noqa: F401
+# Living Loop P0 — durable daily decisions and privacy-bounded product events.
+import app.models.living_loop_day  # noqa: F401
+import app.models.product_event  # noqa: F401

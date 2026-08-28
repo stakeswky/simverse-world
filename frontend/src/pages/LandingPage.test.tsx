@@ -10,7 +10,7 @@ afterEach(() => {
 })
 
 describe('LandingPage', () => {
-  it('presents the Simverse product and a working login entry', () => {
+  it('leads with the Living Loop promise and preserves /today through login', () => {
     render(
       <MemoryRouter>
         <LandingPage />
@@ -18,9 +18,14 @@ describe('LandingPage', () => {
     )
 
     expect(screen.getByRole('heading', { level: 1, name: 'Simverse World' })).toBeInTheDocument()
-    expect(screen.getAllByRole('link', { name: /进入世界/ })[0]).toHaveAttribute('href', '/login')
-    expect(screen.getAllByRole('link', { name: /观察小镇|观看小镇实况/ })[0]).toHaveAttribute('href', '/town')
+    expect(screen.getByText('你离开后，小镇仍在生活；你回来后，每个选择都会留下痕迹。')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /看看今天发生了什么/ })).toHaveAttribute(
+      'href',
+      '/login?next=%2Ftoday',
+    )
+    expect(screen.getAllByRole('link', { name: /观看小镇实况|观察小镇/ })[0]).toHaveAttribute('href', '/town')
     expect(screen.getByRole('heading', { level: 2, name: /不是 NPC/ })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: /给一个名字/ })).toBeInTheDocument()
   })
 
   it('exposes an accessible mobile navigation toggle', () => {

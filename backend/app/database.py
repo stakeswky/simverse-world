@@ -20,7 +20,12 @@ if not settings.database_url.startswith("sqlite"):
         pool_recycle=1800,
     )
 
-engine = create_async_engine(settings.database_url, echo=False, **_pool_kwargs)
+engine = create_async_engine(
+    settings.database_url,
+    echo=False,
+    hide_parameters=True,
+    **_pool_kwargs,
+)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

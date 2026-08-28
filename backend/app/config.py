@@ -72,6 +72,18 @@ class Settings(BaseSettings):
     # where /metrics is publicly reachable, e.g. behind the CF tunnel).
     metrics_token: str = ""
 
+    # --- Living Loop P0 ---
+    # Product experiment stays dark until both backend and frontend rollout
+    # gates are explicitly enabled. The delay is server-authoritative and
+    # bounded so a bad environment value cannot make results immediate or
+    # strand them indefinitely.
+    living_loop_p0_enabled: bool = False
+    living_loop_p0_delay_seconds: int = Field(
+        default=28_800,
+        ge=60,
+        le=604_800,
+    )
+
     # --- Budget circuit breaker (P1-1, E-24/E-18) ---
     # Global daily spend cap (USD). Background LLM work degrades in three tiers
     # as this fills: >=80% throttle (tick x2), >=95% rule-only (force plan, no

@@ -10,6 +10,8 @@ from app.routers import world as world_router
 from app.routers import townhall as townhall_router
 from app.routers import agent_players as agent_players_router
 from app.routers import challenge as challenge_router
+from app.routers import living_loop as living_loop_router
+from app.routers import product_events as product_events_router
 # Import the modules whose @on(...) handlers must register on the event bus.
 import app.events.achievements  # noqa: F401
 import app.services.daily_quest_service  # noqa: F401
@@ -201,6 +203,16 @@ app.add_middleware(
     detail="Hosted Agent request exceeds the body size limit",
 )
 
+from app.routers.product_events import PRODUCT_EVENTS_MAX_BODY_BYTES  # noqa: E402
+
+app.add_middleware(
+    RouteBodyLimitMiddleware,
+    limits={
+        ("POST", "/product-events/batch"): PRODUCT_EVENTS_MAX_BODY_BYTES,
+    },
+    detail="Product Event request exceeds the body size limit",
+)
+
 # --- REST rate limiting (OPTIMIZATION_PLAN P1-1, limit sub-item) ---
 # The Limiter instance lives in app.rate_limit so routers can import the
 # decorator without a circular dependency on this module. Here we only wire
@@ -251,6 +263,8 @@ app.include_router(townhall_router.router)
 app.include_router(townhall_router.alias_router)  # 收口: /town/{treasury,policies} 别名
 app.include_router(agent_players_router.router)
 app.include_router(challenge_router.router)
+app.include_router(living_loop_router.router)
+app.include_router(product_events_router.router)
 app.include_router(admin_router)
 
 # --- Observability (Phase 3): GET /metrics + runtime gauges ---

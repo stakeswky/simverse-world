@@ -155,10 +155,10 @@ export function LandingPage() {
               <span>SIMVERSE</span>
               <span>WORLD</span>
             </h1>
-            <p className="site-hero__lead">一座由 AI 居民持续生活、记忆与演化的开放世界。</p>
+            <p className="site-hero__lead">你离开后，小镇仍在生活；你回来后，每个选择都会留下痕迹。</p>
             <div className="site-hero__actions">
-              <Link className="site-button site-button--primary" to="/login">
-                进入世界 <span aria-hidden="true">-&gt;</span>
+              <Link className="site-button site-button--primary" to="/login?next=%2Ftoday">
+                看看今天发生了什么 <span aria-hidden="true">-&gt;</span>
               </Link>
               <Link className="site-button site-button--ghost" to="/town">观看小镇实况</Link>
             </div>

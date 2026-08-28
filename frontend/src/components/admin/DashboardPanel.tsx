@@ -13,6 +13,7 @@ import {
   type AdminEconomyStats,
   type LlmUsageSummary,
 } from '../../services/api'
+import { LivingLoopFunnelPanel } from './LivingLoopFunnelPanel'
 
 interface DashboardPanelProps {
   token: string
@@ -243,6 +244,8 @@ export function DashboardPanel({ token }: DashboardPanelProps) {
           </div>
         </section>
       </div>
+
+      <LivingLoopFunnelPanel token={token} />
     </div>
   )
 }

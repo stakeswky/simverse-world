@@ -141,8 +141,10 @@ async def delete_account(db: AsyncSession, user: User, confirm_email: str) -> No
 
     from app.models.conversation import Conversation, Message
     from app.models.forge_session import ForgeSession
+    from app.models.living_loop_day import LivingLoopDay
     from app.models.memory import Memory
     from app.models.pending_message import PendingMessage
+    from app.models.product_event import ProductEvent
     from app.models.transaction import Transaction
 
     # 1. Chat history: messages hang off conversations, so children first.
@@ -162,6 +164,11 @@ async def delete_account(db: AsyncSession, user: User, confirm_email: str) -> No
     # 2. User-owned rows with NOT NULL FKs to users.id.
     await db.execute(sa_delete(Transaction).where(Transaction.user_id == user.id))
     await db.execute(sa_delete(ForgeSession).where(ForgeSession.user_id == user.id))
+    # Living Loop records and analytics use stable pseudonymous user ids. Delete
+    # both explicitly for privacy and for SQLite/test environments where FK
+    # cascade enforcement may be disabled.
+    await db.execute(sa_delete(ProductEvent).where(ProductEvent.user_id == user.id))
+    await db.execute(sa_delete(LivingLoopDay).where(LivingLoopDay.user_id == user.id))
     await db.execute(
         sa_delete(PendingMessage).where(
             (PendingMessage.sender_id == user.id)

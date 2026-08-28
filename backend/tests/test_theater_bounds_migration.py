@@ -36,7 +36,7 @@ def test_068_chains_after_067_and_repository_has_single_head():
 
     ini = Path(__file__).resolve().parent.parent / "alembic.ini"
     script = ScriptDirectory.from_config(Config(str(ini)))
-    assert script.get_heads() == ["068_fix_theater_bounds"]
+    assert script.get_heads() == ["069_living_loop_p0"]
     rev = script.get_revision("068_fix_theater_bounds")
     assert rev.down_revision == "067_market_economy_loop"
     assert len(rev.revision) <= 32

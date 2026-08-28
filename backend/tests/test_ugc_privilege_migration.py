@@ -28,7 +28,7 @@ def test_065_chains_after_quota_migration_and_repository_has_single_head():
 
     ini = Path(__file__).resolve().parent.parent / "alembic.ini"
     script = ScriptDirectory.from_config(Config(str(ini)))
-    assert script.get_heads() == ["068_fix_theater_bounds"]
+    assert script.get_heads() == ["069_living_loop_p0"]
     revision = script.get_revision("065_sanitize_ugc_privileges")
     assert revision.down_revision == "064_forge_quota_counters"
     assert len(revision.revision) <= 32

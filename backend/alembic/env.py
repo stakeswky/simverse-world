@@ -48,6 +48,8 @@ from app.models.lab_lease import LabRunLease
 from app.models.lab_budget import LabRunBudget
 from app.models.world_revision import WorldRevision
 from app.models.resident_relation import ResidentRelation
+from app.models.living_loop_day import LivingLoopDay
+from app.models.product_event import ProductEvent
 
 config = context.config
 if config.config_file_name is not None:
