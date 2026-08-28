@@ -81,6 +81,7 @@ def _assert_living_loop_schema(connection: sa.Connection) -> None:
         "state",
         "scenario_snapshot_json",
         "choice_key",
+        "choice_idempotency_key",
         "immediate_result_json",
         "delayed_result_json",
         "first_viewed_at",
@@ -109,6 +110,8 @@ def _assert_living_loop_schema(connection: sa.Connection) -> None:
     assert day_columns["id"]["type"].length == 36
     assert isinstance(day_columns["day_key"]["type"], sa.Date)
     assert isinstance(day_columns["scenario_version"]["type"], sa.Integer)
+    assert isinstance(day_columns["choice_idempotency_key"]["type"], sa.String)
+    assert day_columns["choice_idempotency_key"]["type"].length == 36
     for column_name in (
         "scenario_snapshot_json",
         "immediate_result_json",
@@ -145,6 +148,9 @@ def _assert_living_loop_schema(connection: sa.Connection) -> None:
         "experiment_key",
         "day_key",
     ) in _unique_column_sets(inspector, "living_loop_days")
+    assert ("choice_idempotency_key",) in _unique_column_sets(
+        inspector, "living_loop_days"
+    )
     assert ("event_id",) in _unique_column_sets(inspector, "product_events")
 
     assert ("user_id",) in _indexed_column_sets(inspector, "living_loop_days")

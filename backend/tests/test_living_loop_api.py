@@ -187,6 +187,14 @@ async def test_first_get_creates_one_persisted_day_and_same_day_get_is_idempoten
     assert first["decision"]["scenario_version"] == 1
     assert first["decision"]["state"] == "pending"
     assert {choice["key"] for choice in first["decision"]["choices"]} == set(CHOICES)
+    assert {
+        choice["key"]: choice["risk"]
+        for choice in first["decision"]["choices"]
+    } == {
+        "public_support": "公开对立可能让谈判更困难",
+        "private_mediation": "双方都可能把调解视为拖延",
+        "collect_evidence": "短期内工人仍得不到补偿",
+    }
     assert first["decision"]["selected_choice"] is None
     assert first["decision"]["immediate_result"] is None
     assert first["decision"]["delayed_result"] is None
@@ -201,6 +209,10 @@ async def test_first_get_creates_one_persisted_day_and_same_day_get_is_idempoten
     ).astimezone(UTC).date()
     assert row.first_viewed_at is not None
     assert row.scenario_snapshot_json["scenario_key"] == "harbor_wage_dispute_v1"
+    assert all(
+        choice["risk"]
+        for choice in row.scenario_snapshot_json["choices"]
+    )
 
 
 async def test_different_users_receive_isolated_decisions_and_cannot_read_by_id(
@@ -309,6 +321,60 @@ async def test_choose_is_idempotent_and_a_later_change_conflicts(
         ProductEvent.user_id == user.id,
         ProductEvent.event_name == "living_loop_choice_confirmed",
     ) == 1
+
+
+async def test_choice_idempotency_binding_survives_event_retention_cleanup(
+    client, db_session, monkeypatch,
+) -> None:
+    from sqlalchemy import delete
+
+    from app.models.living_loop_day import LivingLoopDay
+    from app.models.product_event import ProductEvent
+
+    _enable(monkeypatch)
+    owner, _ = await create_user(db_session, "durable-idempotency-owner")
+    other, _ = await create_user(db_session, "durable-idempotency-other")
+    owner_today = await _today(client, owner)
+    other_today = await _today(client, other)
+    key = uuid4()
+
+    first = await _choose(
+        client,
+        owner,
+        owner_today["decision"]["id"],
+        "public_support",
+        key,
+    )
+    assert first.status_code == 200
+
+    await db_session.execute(
+        delete(ProductEvent).where(ProductEvent.event_id == str(key))
+    )
+    await db_session.commit()
+
+    replay = await _choose(
+        client,
+        owner,
+        owner_today["decision"]["id"],
+        "public_support",
+        key,
+    )
+    conflict = await _choose(
+        client,
+        other,
+        other_today["decision"]["id"],
+        "public_support",
+        key,
+    )
+
+    assert replay.status_code == 200
+    assert replay.json() == first.json()
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"]["code"] == "idempotency_conflict"
+    persisted = await db_session.get(
+        LivingLoopDay, owner_today["decision"]["id"]
+    )
+    assert persisted.choice_idempotency_key == str(key)
 
 
 async def test_choice_does_not_touch_coins_relations_or_challenge_state(

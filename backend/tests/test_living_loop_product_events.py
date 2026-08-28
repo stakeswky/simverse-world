@@ -6,7 +6,7 @@ import json
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from app.config import settings
 
@@ -346,6 +346,40 @@ async def test_client_event_ids_must_use_uuid4_namespace(
 
     assert response.status_code == 422
     assert await _count(db_session) == 0
+
+
+async def test_client_event_cannot_reuse_a_retained_choice_idempotency_key(
+    client, db_session, monkeypatch,
+) -> None:
+    from app.models.product_event import ProductEvent
+
+    _enable(monkeypatch)
+    user, _ = await create_user(db_session, "retained-choice-key")
+    today = await client.get(
+        "/living-loop/today", headers=auth_headers(user)
+    )
+    decision_id = today.json()["decision"]["id"]
+    key = str(uuid4())
+    chosen = await client.post(
+        f"/living-loop/decisions/{decision_id}/choose",
+        headers=auth_headers(user),
+        json={"choice_key": "public_support", "idempotency_key": key},
+    )
+    assert chosen.status_code == 200
+
+    await db_session.execute(
+        delete(ProductEvent).where(ProductEvent.event_id == key)
+    )
+    await db_session.commit()
+
+    response = await client.post(
+        "/product-events/batch",
+        headers=auth_headers(user),
+        json=event_payload(key),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "idempotency_conflict"
 
 
 def test_product_event_openapi_request_schema_has_resolvable_references() -> None:

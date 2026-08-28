@@ -15,24 +15,28 @@ vi.mock('../services/api', () => livingLoopApi)
 import { TodayPage } from './TodayPage'
 
 const DECISION_ID = 'afe0c239-bd26-401c-80cf-97d4fc9953bc'
+const PREVIOUS_DECISION_ID = 'd48c8cc7-c187-4d9a-9bed-f6b3bebaa571'
 
 const choices = [
   {
     key: 'public_support',
     label: '公开站出来支持工人',
     summary: '直接表明立场，立即回应工人的诉求。',
+    risk: '公开对立可能让谈判更困难',
     tradeoffs: ['工人信任 +8', '管理方信任 -5', '城市信用 +2'],
   },
   {
     key: 'private_mediation',
     label: '先组织一场私下调解',
     summary: '先让双方在不公开升级冲突的情况下谈判。',
+    risk: '双方都可能把调解视为拖延',
     tradeoffs: ['工人信任 +3', '管理方信任 +3', '城市信用 +1'],
   },
   {
     key: 'collect_evidence',
     label: '先核实排班和欠薪证据',
     summary: '先建立能够支持后续行动的事实基础。',
+    risk: '短期内工人仍得不到补偿',
     tradeoffs: ['工人信任 +2', '管理方信任 0', '城市信用 +4'],
   },
 ] as const
@@ -85,7 +89,10 @@ function readyDecision(state: 'result_ready' | 'result_viewed' = 'result_ready')
   }
 }
 
-function readyProjection(decision: typeof pendingDecision | ReturnType<typeof chosenDecision> | ReturnType<typeof readyDecision> = pendingDecision) {
+function readyProjection(
+  decision: typeof pendingDecision | ReturnType<typeof chosenDecision> | ReturnType<typeof readyDecision> = pendingDecision,
+  includePrevious = false,
+) {
   return {
     experiment: { key: 'living_loop_p0', enabled: true },
     server_now: '2026-08-28T12:00:00Z',
@@ -98,9 +105,9 @@ function readyProjection(decision: typeof pendingDecision | ReturnType<typeof ch
       district: 'harbor',
       sprite_key: '埃迪',
     },
-    since_you_left: [
+    since_you_left: includePrevious ? [
       {
-        id: 'result-1',
+        id: PREVIOUS_DECISION_ID,
         kind: 'previous_result',
         title: '昨天的选择有了结果',
         summary: '居民代表已经抵达港口。',
@@ -115,7 +122,7 @@ function readyProjection(decision: typeof pendingDecision | ReturnType<typeof ch
         occurred_at: '2026-08-28T09:00:00Z',
         deep_link: '/profile',
       },
-    ],
+    ] : [],
     city_pulse: {
       title: '今日村落日报',
       summary: '港口、学园与产品街区都出现了新的讨论。',
@@ -245,10 +252,13 @@ describe('TodayPage states and consequence flow', () => {
   })
 
   it('renders the three consequence-first regions, three native choices, and safe journey links', async () => {
+    livingLoopApi.getLivingLoopToday.mockResolvedValue(readyProjection(pendingDecision, true))
     renderToday()
 
-    expect(await screen.findByRole('heading', { name: '自你离开以后' })).toBeInTheDocument()
-    expect(screen.getByText('昨天的选择有了结果')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: '今天的小镇' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: '今日一览' })).toHaveTextContent('港口欠薪风波')
+    expect(screen.getByRole('heading', { name: '自你离开以后' })).toBeInTheDocument()
+    expect(screen.getAllByText('昨天的选择有了结果')).toHaveLength(2)
     expect(screen.getByText('一位居民给你留了消息')).toBeInTheDocument()
     expect(screen.getByRole('group', { name: '今天最重要的一件事' })).toBeInTheDocument()
     expect(screen.getAllByRole('radio')).toHaveLength(3)
@@ -273,6 +283,7 @@ describe('TodayPage states and consequence flow', () => {
     const confirmation = screen.getByRole('region', { name: '确认今天的选择' })
     expect(confirmation).toHaveTextContent('先组织一场私下调解')
     expect(confirmation).toHaveTextContent('先让双方在不公开升级冲突的情况下谈判。')
+    expect(confirmation).toHaveTextContent('双方都可能把调解视为拖延')
     expect(confirmation).toHaveTextContent('工人信任 +3')
     expect(livingLoopApi.chooseLivingLoopDecision).not.toHaveBeenCalled()
     expect(eventNames()).toContain('living_loop_choice_previewed')
@@ -360,6 +371,56 @@ describe('TodayPage states and consequence flow', () => {
     await waitFor(() => expect(livingLoopApi.markLivingLoopResultViewed).toHaveBeenCalledTimes(1))
     expect(livingLoopApi.markLivingLoopResultViewed).toHaveBeenCalledWith(DECISION_ID)
     expect(eventNames()).toContain('living_loop_delayed_result_viewed')
+  })
+
+  it('acknowledges and tracks a previous-day delayed result shown in the timeline', async () => {
+    const previous = {
+      ...readyDecision('result_viewed'),
+      id: PREVIOUS_DECISION_ID,
+      selected_choice: 'public_support',
+    }
+    livingLoopApi.getLivingLoopToday.mockResolvedValue(
+      readyProjection(pendingDecision, true),
+    )
+    livingLoopApi.markLivingLoopResultViewed.mockResolvedValue(previous)
+
+    renderToday()
+
+    expect(await screen.findByText('居民代表已经抵达港口。')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(livingLoopApi.markLivingLoopResultViewed).toHaveBeenCalledWith(
+        PREVIOUS_DECISION_ID,
+      )
+    })
+    await waitFor(() => {
+      const delayed = livingLoopApi.postProductEventsBatch.mock.calls
+        .flatMap(([batch]) => batch.events)
+        .find((event) => event.event_name === 'living_loop_delayed_result_viewed')
+      expect(delayed?.properties).toMatchObject({
+        decision_id: PREVIOUS_DECISION_ID,
+        choice_key: 'public_support',
+      })
+    })
+  })
+
+  it('does not move focus again when delayed-result acknowledgement returns a new object', async () => {
+    let resolveAck!: (decision: ReturnType<typeof readyDecision>) => void
+    livingLoopApi.getLivingLoopToday.mockResolvedValue(readyProjection(readyDecision()))
+    livingLoopApi.markLivingLoopResultViewed.mockReturnValue(
+      new Promise((resolve) => { resolveAck = resolve }),
+    )
+
+    renderToday()
+
+    const delayedHeading = await screen.findByRole('heading', { name: '港口传来新进展' })
+    expect(delayedHeading).toHaveFocus()
+    const townLink = screen.getAllByRole('link', { name: '进入小镇' })[0]
+    townLink.focus()
+    expect(townLink).toHaveFocus()
+
+    await act(async () => { resolveAck(readyDecision('result_viewed')) })
+
+    expect(townLink).toHaveFocus()
   })
 
   it('keeps choice confirmation and navigation working when every telemetry request fails', async () => {
