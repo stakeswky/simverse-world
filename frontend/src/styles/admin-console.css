@@ -516,6 +516,111 @@
   border-radius: 50%;
 }
 
+.living-loop-funnel {
+  display: grid;
+  gap: 24px;
+}
+
+.living-loop-funnel--state {
+  min-height: 180px;
+  place-content: center;
+  justify-items: center;
+  gap: 16px;
+  color: var(--admin-muted);
+  font-size: 12px;
+}
+
+.living-loop-funnel__eyebrow {
+  margin: 0 0 5px;
+  color: #248a3d;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+}
+
+.living-loop-funnel__metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--admin-line);
+  border-radius: 18px;
+  background: var(--admin-line);
+}
+
+.living-loop-funnel__metric {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  padding: 18px;
+  background: #fff;
+}
+
+.living-loop-funnel__metric span {
+  color: var(--admin-muted);
+  font-size: 10px;
+}
+
+.living-loop-funnel__metric strong {
+  color: #1d1d1f;
+  font-size: clamp(20px, 2vw, 29px);
+  font-weight: 660;
+  letter-spacing: -0.035em;
+}
+
+.living-loop-funnel__distribution h4 {
+  margin: 0 0 13px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.living-loop-funnel__distribution ul {
+  display: grid;
+  gap: 13px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.living-loop-funnel__distribution li {
+  display: grid;
+  grid-template-columns: minmax(210px, 0.75fr) minmax(120px, 1fr) 52px;
+  align-items: center;
+  gap: 14px;
+  color: #6e6e73;
+  font-size: 10px;
+}
+
+.living-loop-funnel__distribution li > div:first-child {
+  display: flex;
+  min-width: 0;
+  justify-content: space-between;
+  gap: 10px;
+  color: #3a3a3c;
+  font-size: 11px;
+}
+
+.living-loop-funnel__bar {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #ececef;
+}
+
+.living-loop-funnel__bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #34c759, #0071e3);
+}
+
+.living-loop-funnel__generated {
+  margin: 0;
+  color: var(--admin-muted);
+  font-size: 9px;
+  text-align: right;
+}
+
 .admin-status-list,
 .admin-ranked-list,
 .admin-event-stream {
@@ -654,6 +759,10 @@
   .admin-analytics-grid {
     grid-template-columns: 1fr;
   }
+
+  .living-loop-funnel__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 720px) {
@@ -705,6 +814,18 @@
   .admin-analytics-card {
     padding: 23px;
     border-radius: 23px;
+  }
+
+  .living-loop-funnel__metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .living-loop-funnel__distribution li {
+    grid-template-columns: 1fr 44px;
+  }
+
+  .living-loop-funnel__distribution li > div:first-child {
+    grid-column: 1 / -1;
   }
 
   .admin-chart-legend span:last-child {
