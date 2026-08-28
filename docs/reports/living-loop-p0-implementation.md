@@ -4,7 +4,7 @@
 
 ## 1. 结论
 
-Living Loop P0 的产品代码、迁移、自动测试、文档和默认关闭开关已经完成。开发分支未合并、未部署、未修改任何生产配置或数据。由于真实 PostgreSQL 往返、原生 Browser 历史矩阵和截图尚无可执行环境，本报告明确把“实现完成”和“发布证据门通过”分开：当前候选不是 release-ready，不得进入 staging。
+Living Loop P0 的产品代码、迁移、自动测试、文档和默认关闭开关已经完成；开发分支已交付并创建 Draft PR #16。开发分支未合并、未部署、未修改任何生产配置或数据。由于真实 PostgreSQL 往返、原生 Browser 历史矩阵和截图尚无可执行环境，本报告明确把“实现完成”和“发布证据门通过”分开：当前候选不是 release-ready，不得进入 staging。
 
 | 项目 | 实际结果 |
 |---|---|
@@ -16,8 +16,8 @@ Living Loop P0 的产品代码、迁移、自动测试、文档和默认关闭�
 | Challenge/WebMCP 自动回归 | PASS |
 | 真实 Browser 截图 | NOT CAPTURED：受控云浏览器禁止访问本地 loopback 和共享 `file:` 预览；未通过部署绕过 |
 | staging 发布证据门 | BLOCKED：真实 PostgreSQL、原生 Browser 矩阵和截图未完成 |
-| 分支推送 | PENDING：本 evidence commit 后普通推送；无强推 |
-| Draft PR | PENDING：分支推送后创建 |
+| 分支推送 | DELIVERED：本地 HTTPS CLI 无凭据；授权 GitHub Git 对象连接逐提交重建、逐 tree 校验，并以 `force=false` 快进分支；无强推 |
+| Draft PR | [#16](https://github.com/stakeswky/simverse-world/pull/16)，OPEN / DRAFT |
 | 合并 | NO |
 | 部署/生产修改 | NO |
 
@@ -38,8 +38,8 @@ Living Loop P0 的产品代码、迁移、自动测试、文档和默认关闭�
 | 起始 SHA | `b377de5d611b7fe10e91875d2b80780b8daae336` |
 | 代码与测试完成 SHA（evidence parent） | `a381bfd675431e7756f155ca55fac955e535e5a0` |
 | 最终分支 SHA / tree SHA | 以 Draft PR head 与最终交接为准；不把包含本报告的提交 SHA 写进自身，避免不可解的 Git 哈希自引用 |
-| 本地/远端一致 | PENDING：推送后以 `ls-remote` 和 ahead/behind 复核 |
-| 最终工作树 | 提交前仅本节证据文档 staged；无其他未提交修改 |
+| 本地/远端一致 | 16 个 PR 创建前交付提交的 tree SHA 与本地逐提交一致；最终 evidence commit 使用同一流程，最终 head/tree 见 PR 与交接 |
+| 最终工作树 | 最终 evidence commit 后以 `git status --short` 空输出复核，结果见交接 |
 
 ## 3. 实际提交序列
 
@@ -62,7 +62,7 @@ Living Loop P0 的产品代码、迁移、自动测试、文档和默认关闭�
 | `a381bfd675431e7756f155ca55fac955e535e5a0` | `test(frontend): stabilize delayed result focus assertion` | 等待异步 effect 后断言焦点，消除全量并行负载下的测试竞态 |
 | 本报告的提交 | `docs(living-loop): record rollout and verification evidence` | 路线图、runbook 和本报告；精确 SHA 由 Draft PR 提交列表和最终交接给出，不能嵌入提交自身 |
 
-提交序列比最初建议更细，是因为独立 QA 找到的安全、披露和幂等边界分别先固化为失败测试，再实现修复。
+提交序列比最初建议更细，是因为独立 QA 找到的安全、披露和幂等边界分别先固化为失败测试，再实现修复。表内 SHA 是本地开发对象；本地 HTTPS remote 没有凭据，授权 GitHub 连接据此逐提交重建，提交作者/时间元数据由 GitHub 生成，因此远端 commit SHA 不同，但 16 个对应 tree SHA 全部逐一相同，提交消息和顺序保持不变。
 
 ## 4. 实际变更
 
@@ -213,13 +213,13 @@ SQLite `3.53.1` 一次性数据库使用脱敏形式 `DATABASE_URL=sqlite+aiosql
 
 | 字段 | 实际值 |
 |---|---|
-| Push | PENDING：本 evidence commit 后执行普通 `git push -u origin product/living-loop-p0-20260828`；禁止强推 |
+| Push | `git push -u origin product/living-loop-p0-20260828` 因本地 HTTPS 无凭据 exit `128`，未写远端；随后授权 GitHub 连接重建 16 个提交并以 `force=false` 快进分支，最终 evidence commit 以同样方式追加 |
 | 远端分支 SHA | 以 Draft PR head 与最终交接的 40 字符 SHA 为准；报告不嵌入包含自身的最终提交 SHA |
 | PR 标题 | `feat(product): add Living Loop P0 consequence-first home` |
-| PR | PENDING：推送后创建并回填 |
-| 状态 | PENDING；目标必须为 Draft |
+| PR | [#16 — feat(product): add Living Loop P0 consequence-first home](https://github.com/stakeswky/simverse-world/pull/16) |
+| 状态 | OPEN / DRAFT；`merged=false` |
 | Base ← head | `challenge/webmcp-civic-copilot` ← `product/living-loop-p0-20260828` |
 | 合并 | NO |
 | 部署/生产变更 | NO |
 
-推送前证据封板：`2026-08-28T11:22:27Z`，Codex 实施代理。最终提交本身的 SHA/tree 由推送后的 Draft PR 与最终交接提供，以避免 Git 自引用。
+PR 证据回填：`2026-08-28T11:29:30Z`，Codex 实施代理。最终提交本身的 SHA/tree 由 Draft PR head 与最终交接提供，以避免 Git 自引用。
