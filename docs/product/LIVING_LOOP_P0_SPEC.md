@@ -301,6 +301,8 @@ stateDiagram-v2
 }
 ```
 
+`idempotency_key` 必须是规范 UUID4；稳定 UUID5 命名空间只保留给结算和首次查看服务端事件。
+
 成功返回当前权威 decision，包含 `selected_choice`、`immediate_result` 和 `result_available_at`，但 `delayed_result` 仍为 `null`。要求：
 
 - 验证功能开关、所有权、UUID、场景版本和选项白名单。

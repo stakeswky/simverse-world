@@ -226,7 +226,7 @@
 
 - 与 `pending → chosen` 同事务。
 - `occurred_at` 等于首次 `choice_confirmed_at`。
-- 用户提供的选择 `idempotency_key` 可直接作为该事件的 `event_id`，从而持久化完整重试绑定。
+- 用户提供的选择 `idempotency_key` 必须是规范 UUID4，可直接作为该事件的 `event_id`，从而持久化完整重试绑定，并与结算/首次查看的稳定 UUID5 命名空间隔离。
 - 同一 decision 后续相同选项请求不创建新确认事件。
 - 用于确认用户数、完成率、决策耗时和选项分布。
 

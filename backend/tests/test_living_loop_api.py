@@ -425,6 +425,40 @@ def _authoritative_event_id(event_name: str, decision_id: str) -> str:
     ))
 
 
+async def test_choose_idempotency_key_cannot_use_server_uuid5_namespace(
+    client, db_session, monkeypatch,
+) -> None:
+    from app.models.living_loop_day import LivingLoopDay
+    from app.models.product_event import ProductEvent
+
+    _enable(monkeypatch)
+    user, _ = await create_user(db_session, "choose-uuid-version")
+    today = await _today(client, user)
+    decision_id = today["decision"]["id"]
+    reserved = _authoritative_event_id(
+        "living_loop_result_settled",
+        decision_id,
+    )
+
+    response = await _choose(
+        client,
+        user,
+        decision_id,
+        "public_support",
+        reserved,
+    )
+
+    assert response.status_code == 422
+    row = await db_session.get(LivingLoopDay, decision_id)
+    await db_session.refresh(row)
+    assert row.state == "pending"
+    assert await _count(
+        db_session,
+        ProductEvent,
+        ProductEvent.event_id == reserved,
+    ) == 0
+
+
 async def _preclaim_authoritative_event_id(
     db,
     *,
