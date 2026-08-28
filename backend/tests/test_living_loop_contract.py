@@ -53,3 +53,9 @@ def test_living_loop_models_are_registered_with_base_metadata() -> None:
     from app.database import Base
 
     assert {"living_loop_days", "product_events"} <= set(Base.metadata.tables)
+
+
+def test_database_errors_hide_bound_parameters_from_logs_and_responses() -> None:
+    from app.database import engine
+
+    assert engine.sync_engine.hide_parameters is True
