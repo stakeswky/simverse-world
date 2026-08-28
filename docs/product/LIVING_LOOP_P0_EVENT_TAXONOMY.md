@@ -23,7 +23,7 @@
 | 字段 | 来源 | 约束 | 指标权威性 |
 |---|---|---|---|
 | `id` | 服务端 | UUID 主键 | 无业务含义 |
-| `event_id` | 客户端或服务端 | UUID、全局唯一 | 重试幂等键 |
+| `event_id` | 客户端或服务端 | 客户端 UUID4、服务端稳定 UUID5，全局唯一 | 重试幂等键；版本分区防止客户端预占服务端标识 |
 | `user_id` | 认证上下文 | 非空、索引 | 用户去重键，不得返回管理指标 |
 | `session_id` | 客户端可选 | UUID 或 `null`，最长 36 字符 | 仅诊断，不参与核心漏斗 |
 | `event_name` | 事件生产者 | 本文十个枚举之一 | 漏斗分类 |
@@ -65,7 +65,7 @@
 - `events` 必须有 `1..20` 项。
 - 解压前原始请求体最多 `32768` bytes；超限返回 `413`。
 - 单个事件对象只允许 `event_id`、`session_id`、`event_name`、`client_occurred_at`、`properties`。
-- `event_id` 必须是规范 UUID 字符串；`session_id` 若存在也必须是 UUID。
+- 客户端 `event_id` 必须是规范 UUID4 字符串；服务端权威事件使用稳定 UUID5，两个命名空间不得混用。`session_id` 若存在必须是规范 UUID 字符串。
 - `client_occurred_at` 若存在必须带时区并可转换为 UTC；它不会覆盖服务端时间。
 - `properties` 必须是对象，并与事件名对应的完整 schema 匹配。
 - 使用现有 REST limiter，按实际客户端 IP 每分钟最多 30 个批量请求；超限返回 `429`。

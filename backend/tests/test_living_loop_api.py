@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 import pytest
 from sqlalchemy import func, select, text
@@ -317,9 +317,11 @@ async def test_choice_does_not_touch_coins_relations_or_challenge_state(
     )
     assert response.status_code == 200
 
+    user_id = user.id
+    relation_id = relation.id
     db_session.expire_all()
-    refreshed_user = await db_session.get(type(user), user.id)
-    refreshed_relation = await db_session.get(ResidentRelation, relation.id)
+    refreshed_user = await db_session.get(type(user), user_id)
+    refreshed_relation = await db_session.get(ResidentRelation, relation_id)
     assert refreshed_user.soul_coin_balance == before_user_balance
     assert (
         refreshed_relation.familiarity,
@@ -386,6 +388,112 @@ async def test_result_is_hidden_until_due_then_settles_once_and_view_is_idempote
         ProductEvent.event_name == "living_loop_result_first_viewed",
         ProductEvent.user_id == user.id,
     ) == 1
+
+
+def _authoritative_event_id(event_name: str, decision_id: str) -> str:
+    return str(uuid5(
+        NAMESPACE_URL,
+        f"simverse-world:{event_name}:{decision_id}",
+    ))
+
+
+async def _preclaim_authoritative_event_id(
+    db,
+    *,
+    user_id: str,
+    event_id: str,
+) -> None:
+    from app.models.product_event import ProductEvent
+
+    now = datetime.now(UTC)
+    db.add(ProductEvent(
+        event_id=event_id,
+        user_id=user_id,
+        session_id=None,
+        event_name="living_loop_today_viewed",
+        properties_json={"surface_version": 1, "entry_point": "direct"},
+        occurred_at=now,
+        client_occurred_at=None,
+        created_at=now,
+    ))
+    await db.commit()
+
+
+async def test_settlement_rolls_back_if_authoritative_event_id_is_preclaimed(
+    client, db_session, monkeypatch,
+) -> None:
+    from app.models.living_loop_day import LivingLoopDay
+
+    _enable(monkeypatch, delay_seconds=3600)
+    user, _ = await create_user(db_session, "settled-event-collision")
+    today = await _today(client, user)
+    decision_id = today["decision"]["id"]
+    assert (await _choose(
+        client, user, decision_id, "public_support",
+    )).status_code == 200
+    row = await db_session.get(LivingLoopDay, decision_id)
+    row.result_available_at = datetime.now(UTC) - timedelta(seconds=1)
+    await db_session.commit()
+    await _preclaim_authoritative_event_id(
+        db_session,
+        user_id=user.id,
+        event_id=_authoritative_event_id(
+            "living_loop_result_settled",
+            decision_id,
+        ),
+    )
+
+    response = await client.get(
+        "/living-loop/today",
+        headers=auth_headers(user),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "authoritative_event_conflict"
+    await db_session.rollback()
+    db_session.expire_all()
+    persisted = await db_session.get(LivingLoopDay, decision_id)
+    assert persisted.state == "chosen"
+    assert persisted.result_settled_at is None
+
+
+async def test_result_view_rolls_back_if_authoritative_event_id_is_preclaimed(
+    client, db_session, monkeypatch,
+) -> None:
+    from app.models.living_loop_day import LivingLoopDay
+
+    _enable(monkeypatch, delay_seconds=3600)
+    user, _ = await create_user(db_session, "viewed-event-collision")
+    today = await _today(client, user)
+    decision_id = today["decision"]["id"]
+    assert (await _choose(
+        client, user, decision_id, "private_mediation",
+    )).status_code == 200
+    row = await db_session.get(LivingLoopDay, decision_id)
+    row.result_available_at = datetime.now(UTC) - timedelta(seconds=1)
+    await db_session.commit()
+    assert (await _today(client, user))["decision"]["state"] == "result_ready"
+    await _preclaim_authoritative_event_id(
+        db_session,
+        user_id=user.id,
+        event_id=_authoritative_event_id(
+            "living_loop_result_first_viewed",
+            decision_id,
+        ),
+    )
+
+    response = await client.post(
+        f"/living-loop/decisions/{decision_id}/result-viewed",
+        headers=auth_headers(user),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "authoritative_event_conflict"
+    await db_session.rollback()
+    db_session.expire_all()
+    persisted = await db_session.get(LivingLoopDay, decision_id)
+    assert persisted.state == "result_ready"
+    assert persisted.result_viewed_at is None
 
 
 async def test_notification_and_digest_sql_failures_leave_core_decision_available(

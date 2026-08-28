@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 import pytest
 from sqlalchemy import func, select
@@ -291,6 +291,24 @@ async def test_event_user_is_always_derived_from_authentication(
 
     assert response.status_code == 422
     assert await _count(db_session, ProductEvent.user_id == attacker_user_id) == 0
+
+
+async def test_client_event_ids_must_use_uuid4_namespace(
+    client, db_session, monkeypatch,
+) -> None:
+    """UUID5 is reserved for stable server-authoritative event identities."""
+    _enable(monkeypatch)
+    user, _ = await create_user(db_session, "client-uuid-version")
+    reserved = str(uuid5(NAMESPACE_URL, "simverse-world:reserved-client-id"))
+
+    response = await client.post(
+        "/product-events/batch",
+        headers=auth_headers(user),
+        json=event_payload(reserved),
+    )
+
+    assert response.status_code == 422
+    assert await _count(db_session) == 0
 
 
 async def test_product_event_endpoint_has_a_finite_per_ip_rate_limit(
