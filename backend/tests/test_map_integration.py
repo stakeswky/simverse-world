@@ -233,20 +233,22 @@ async def test_import_resident_emits_canonical_location_id(client, auth_headers)
     sbti_client = MagicMock()
     sbti_client.messages.create = AsyncMock(side_effect=RuntimeError("offline test"))
     with patch("app.services.sbti_service.get_client", return_value=sbti_client):
-        skill_content = """# Ability
-    ## Professional
-    - Backend engineering expert with 10 years experience
-    - Distributed systems and high availability architectures
-
-    # Persona
-    ## Layer 0: Core
-    - Methodical, calm under pressure, very detail-oriented
-    """
+        skill_content = (
+            "# Ability\n"
+            "## Professional\n"
+            "- Backend engineering expert with 10 years experience\n"
+            "- Distributed systems and high availability architectures\n\n"
+            "# Persona\n"
+            "## Layer 0: Core\n"
+            "- Methodical, calm under pressure, very detail-oriented\n\n"
+            "# Soul\n"
+            "- Build reliable systems and explain tradeoffs clearly\n"
+        )
         files = {"file": ("SKILL.md", io.BytesIO(skill_content.encode()), "text/markdown")}
         data = {"name": "Canonical Import", "slug": "canonical-import"}
 
         resp = await client.post("/residents/import", headers=auth_headers, files=files, data=data)
-        assert resp.status_code == 200
+        assert resp.status_code == 200, resp.text
         payload = resp.json()
         detail = (await client.get("/residents/canonical-import")).json()
 

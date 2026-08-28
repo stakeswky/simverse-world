@@ -110,14 +110,29 @@ def test_every_release_run_requires_disposable_and_image_identity_inputs():
         "LAB_RELEASE_GATE",
         "LAB_RELEASE_RUN_ID",
         "LAB_REDIS_DISPOSABLE_TOKEN",
-        "LAB_RUNTIME_IMAGE_DIGEST",
-        "LAB_EXECUTOR_IMAGE_DIGEST",
-        "LAB_CLEANUP_IMAGE_DIGEST",
+        "LAB_RUNTIME_SERVICE_IMAGE_DIGEST",
+        "LAB_EXECUTOR_SERVICE_IMAGE_DIGEST",
+        "LAB_ARTIFACT_INGEST_IMAGE_DIGEST",
+        "LAB_ARTIFACT_SCANNER_IMAGE_DIGEST",
+        "LAB_ARTIFACT_CLEANUP_IMAGE_DIGEST",
+        "LAB_ARTIFACT_RECEIPT_ALGORITHM",
+        "LAB_ARTIFACT_INGEST_RECEIPT_ALGORITHM",
+        "LAB_ARTIFACT_SCANNER_RECEIPT_ALGORITHM",
+        "LAB_ARTIFACT_CLEANUP_RECEIPT_ALGORITHM",
     }
 
     required = validate_required_env(
         (),
-        {name: "true" if name == "LAB_RELEASE_GATE" else "present" for name in COMMON_REQUIRED_ENV},
+        {
+            name: (
+                "true"
+                if name == "LAB_RELEASE_GATE"
+                else "EdDSA"
+                if name.endswith("RECEIPT_ALGORITHM")
+                else "present"
+            )
+            for name in COMMON_REQUIRED_ENV
+        },
     )
     assert required == sorted(COMMON_REQUIRED_ENV)
 

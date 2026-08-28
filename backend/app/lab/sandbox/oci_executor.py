@@ -240,8 +240,8 @@ class OciExecutor:
         env: dict | None = None,
         container_name: str | None = None,
         limits: SandboxLimits | None = None,
-        stdout_limit: int = _MAX_STREAM_CHARS,
-        stderr_limit: int = _MAX_STREAM_CHARS,
+        stdout_limit: int | None = None,
+        stderr_limit: int | None = None,
         on_started: Callable[[str], Awaitable[None] | None] | None = None,
         on_teardown_pending: Callable[[str], Awaitable[None] | None] | None = None,
         output_requests: tuple[SandboxOutputRequest, ...] = (),
@@ -249,6 +249,8 @@ class OciExecutor:
     ) -> SandboxResult:
         if self._broken:
             raise ExecutorError("executor is unusable after an unverified teardown")
+        stdout_limit = _MAX_STREAM_CHARS if stdout_limit is None else stdout_limit
+        stderr_limit = _MAX_STREAM_CHARS if stderr_limit is None else stderr_limit
         if (
             type(stdout_limit) is not int
             or type(stderr_limit) is not int

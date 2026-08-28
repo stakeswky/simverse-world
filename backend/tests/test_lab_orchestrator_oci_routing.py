@@ -81,7 +81,8 @@ async def test_fs_write_routes_to_mock_even_with_oci_enabled():
     # fs.write is not in _OCI_TOOLS, so it must still hit the Mock executor
     # (always ok=True) instead of the OCI path (which would need a command).
     orch = _orch()
-    executor = orch._select_executor("fs.write")
+    executor, prepare = orch._select_executor("fs.write")
+    assert prepare is None
     out = await executor("fs.write", {"path": "notes.md", "content": "hi"})
     assert out["ok"] is True
     assert "mock" in out["summary"]
@@ -120,7 +121,8 @@ async def test_second_action_in_same_run_is_quarantined_after_teardown_failure(m
 
     # Action 1: runs (spawns a container), then its teardown can't be
     # confirmed ⇒ the underlying OciExecutor is marked broken.
-    executor1 = orch._select_executor("code.run")
+    executor1, prepare1 = orch._select_executor("code.run")
+    assert prepare1 is None
     with pytest.raises(SandboxTeardownError):
         await executor1("code.run", {"command": "true"})
     assert len(run_calls) == 1
@@ -129,7 +131,8 @@ async def test_second_action_in_same_run_is_quarantined_after_teardown_failure(m
     # quarantined) instance — refusing immediately, WITHOUT spawning a new
     # container. This is the P2-E gap: a fresh-instance-per-action selector
     # would reset ``_broken`` and let action 2 through.
-    executor2 = orch._select_executor("shell.exec")
+    executor2, prepare2 = orch._select_executor("shell.exec")
+    assert prepare2 is None
     assert orch._oci_executor is orch._oci_executor  # still one instance
     with pytest.raises(ExecutorError):
         await executor2("shell.exec", {"command": "ls"})

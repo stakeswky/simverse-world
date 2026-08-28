@@ -27,6 +27,12 @@ NEXT_KID = "runtime-next"
 NEXT_KEY = "runtime-next-secret-at-least-32-bytes"
 
 
+@pytest.fixture(autouse=True)
+def configured_test_egress(monkeypatch):
+    monkeypatch.setenv("LAB_EGRESS_ENABLED", "true")
+    monkeypatch.setenv("LAB_EGRESS_SEARCH_ENDPOINT", "http://search.test")
+
+
 def _service_auth():
     return {
         "issuer": ISSUER,
@@ -176,7 +182,12 @@ async def test_create_is_fail_closed_and_accepts_current_and_next_keys(tmp_path)
     async with _client(app) as client:
         livez = await client.get("/livez")
         assert livez.status_code == 200
-        assert livez.json() == {"alive": True, "protocol_version": 2}
+        assert livez.json() == {
+            "alive": True,
+            "service": "lab-runtime",
+            "protocol_version": 2,
+            "runtime_shard_id": "reference-0",
+        }
 
         missing = await client.post("/runs", json=body)
         assert missing.status_code == 401
@@ -519,7 +530,13 @@ async def test_control_surfaces_require_runtime_control_before_lookup(tmp_path):
             f"/runs/{sid}/health", headers=_auth(token)
         )
         assert health.status_code == 200
-        assert health.json() == {"alive": True, "cancelled": False}
+        assert health.json() == {
+            "alive": True,
+            "cancelled": False,
+            "state": "created",
+            "epoch": 7,
+            "runtime_shard_id": "reference-0",
+        }
 
 
 @pytest.mark.anyio

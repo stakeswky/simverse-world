@@ -119,6 +119,19 @@ class Settings(BaseSettings):
         upgrade there can't drag up the 88%-of-tokens background traffic."""
         return self.background_llm_model or self.effective_model
     cors_origins: list[str] = ["http://localhost:5173"]
+    challenge_allowed_origins: list[str] | None = None
+    challenge_cookie_secure: bool | None = None
+
+    @model_validator(mode="after")
+    def _validate_challenge_origins(self) -> "Settings":
+        if self.challenge_allowed_origins is None:
+            self.challenge_allowed_origins = list(self.cors_origins)
+            return self
+        if not set(self.challenge_allowed_origins).issubset(self.cors_origins):
+            raise ValueError(
+                "CHALLENGE_ALLOWED_ORIGINS must be a subset of CORS_ORIGINS"
+            )
+        return self
 
     # --- LinuxDo OAuth (Plan 1) ---
     linuxdo_client_id: str = ""

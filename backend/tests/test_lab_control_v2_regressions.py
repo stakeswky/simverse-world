@@ -111,7 +111,7 @@ async def _register_runtime_and_executor(factory, run_id: str, *, epoch: int = 7
             db,
             run_id=run_id,
             action_id=f"action-{run_id}",
-            job_locator={"job_id": f"job-{run_id}"},
+            job_locator={"job_id": f"job-{run_id}", "epoch": epoch},
             epoch=epoch,
         )
         await db.commit()
@@ -395,7 +395,12 @@ async def test_global_kill_closes_admission_advances_epoch_and_fans_out_both_pla
         ("run-two", "executor"),
     }
     assert {target.status for target in targets} == {"pending"}
-    assert all(target.epoch == kill.fencing_epoch for target in targets)
+    assert {
+        (target.target_kind, target.epoch) for target in targets
+    } == {
+        ("runtime", kill.fencing_epoch),
+        ("executor", 5),
+    }
 
 
 async def test_global_kill_nominal_has_no_quarantine(control_factory):

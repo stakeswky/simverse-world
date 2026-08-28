@@ -23,7 +23,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
-from app.lab import budgets
+from app.lab import broker, budgets
 from app.lab.runner import run_one
 from app.lab.sandbox.base import ArtifactSpec, SandboxHandle, StepEvent
 from app.models.lab_budget import LabRunBudget
@@ -169,6 +169,18 @@ class FakeEgressAdapter(_BaseFake):
         yield StepEvent(phase="message", summary="收尾")
 
 
+async def _trusted_test_egress_executor(tool_name: str, args: dict):
+    return broker.TrustedEgressResult(
+        payload={
+            "tool": tool_name,
+            "ok": True,
+            "summary": f"executed {tool_name} (trusted test egress)",
+        },
+        requests=1,
+        bytes=64,
+    )
+
+
 def _make_clock(step_ms):
     """A monotonic-ms source that advances a fixed amount on every read, so the
     Nth orchestrator step accrues a predictable wall-clock delta."""
@@ -224,6 +236,9 @@ async def test_egress_requests_exhaustion_terminates_run(lab_env, monkeypatch):
     factory = lab_env
     await _seed(factory)
     monkeypatch.setattr("app.lab.orchestrator.get_adapter", lambda name: FakeEgressAdapter())
+    monkeypatch.setattr(
+        "app.lab.orchestrator._mock_executor", _trusted_test_egress_executor
+    )
     task_id, run_id = await _make_task(factory, scopes=["browse"], title="egress-req")
 
     await run_one(run_id)
@@ -245,6 +260,9 @@ async def test_egress_bytes_exhaustion_terminates_run(lab_env, monkeypatch):
     factory = lab_env
     await _seed(factory)
     monkeypatch.setattr("app.lab.orchestrator.get_adapter", lambda name: FakeEgressAdapter())
+    monkeypatch.setattr(
+        "app.lab.orchestrator._mock_executor", _trusted_test_egress_executor
+    )
     task_id, run_id = await _make_task(factory, scopes=["browse"], title="egress-bytes")
 
     await run_one(run_id)
@@ -327,6 +345,9 @@ async def test_default_limits_do_not_terminate_happy_path(lab_env, monkeypatch):
     factory = lab_env
     await _seed(factory)
     monkeypatch.setattr("app.lab.orchestrator.get_adapter", lambda name: FakeEgressAdapter())
+    monkeypatch.setattr(
+        "app.lab.orchestrator._mock_executor", _trusted_test_egress_executor
+    )
     task_id, run_id = await _make_task(factory, scopes=["browse"], title="happy")
 
     await run_one(run_id)

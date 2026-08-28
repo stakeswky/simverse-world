@@ -27,6 +27,7 @@ const DebatesPage = lazy(() => import('./pages/DebatesPage').then((m) => ({ defa
 const CapsulesPage = lazy(() => import('./pages/CapsulesPage').then((m) => ({ default: m.CapsulesPage })))
 const TownPage = lazy(() => import('./pages/TownPage').then((m) => ({ default: m.TownPage })))
 const WatchPage = lazy(() => import('./pages/WatchPage').then((m) => ({ default: m.WatchPage })))
+const ChallengePage = lazy(() => import('./pages/ChallengePage').then((m) => ({ default: m.ChallengePage })))
 
 function normalizePathname(pathname: string): string {
   if (pathname === '/') return pathname
@@ -154,6 +155,7 @@ function AuthenticatedOverlays() {
     || normalizedPath === '/auth/callback'
     || normalizedPath === '/town'
     || normalizedPath === '/watch'
+    || normalizedPath === '/challenge'
   ) return null
 
   return (
@@ -176,6 +178,7 @@ export function AppRoutes() {
             <Route path="/auth/callback" element={<AuthCallbackPage />} />
             <Route path="/town" element={<TownPage />} />
             <Route path="/watch" element={<WatchPage />} />
+            <Route path="/challenge" element={<ChallengePage />} />
             <Route path="/onboarding" element={<OnboardingPage />} />
             <Route path="/" element={<HomeRoute />} />
             {/* The game also lives at /play — many entry points (landing CTA,

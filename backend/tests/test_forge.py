@@ -61,6 +61,10 @@ async def test_forge_answers_advance_to_generating(
 
     release = asyncio.Event()
     llm_calls: list[dict] = []
+    background_tasks: list[asyncio.Task] = []
+
+    def capture_background_task(coro) -> None:
+        background_tasks.append(asyncio.create_task(coro))
 
     async def fake_create(*args, **kwargs):
         llm_calls.append(kwargs)
@@ -76,6 +80,7 @@ async def test_forge_answers_advance_to_generating(
     with (
         patch("app.forge.legacy_pipeline.get_client", return_value=mock_llm),
         patch("app.routers.forge.async_session", session_factory),
+        patch("app.routers.forge._spawn_bg", side_effect=capture_background_task),
     ):
         start = await client.post("/forge/start", json={"name": "张三"},
                                   headers=auth_headers)
@@ -99,18 +104,18 @@ async def test_forge_answers_advance_to_generating(
         assert data["status"] in {"generating", "running"}
 
         # Drain the background task before teardown: unblock the mocked LLM,
-        # let the injected error surface, and wait for the terminal state.
+        # then await that exact task instead of racing a fixed polling loop.
         release.set()
-        for _ in range(500):
-            status_resp = await client.get(
-                f"/forge/status/{forge_id}", headers=auth_headers
-            )
-            if status_resp.json()["status"] == "error":
-                break
-            await asyncio.sleep(0.01)
+        assert background_tasks, "background pipeline was not scheduled"
+        await asyncio.wait_for(
+            asyncio.gather(*background_tasks),
+            timeout=30,
+        )
+        status_resp = await client.get(
+            f"/forge/status/{forge_id}", headers=auth_headers
+        )
         assert status_resp.json()["status"] == "error"
         assert llm_calls, "background pipeline never reached the (mocked) LLM"
-        await asyncio.sleep(0)  # let the task object finish before teardown
 
 @pytest.mark.anyio
 async def test_score_content_completeness():

@@ -1057,7 +1057,6 @@ def _create_v2_app(
     ):
         _authenticate(authorization, action="runtime.handshake")
         capabilities = {
-            "artifact_manifests",
             "backpressure",
             "broker_mediation",
             "cancel",
@@ -1071,8 +1070,6 @@ def _create_v2_app(
             "scoped_auth",
             "terminate",
         }
-        if uploader is not None:
-            capabilities.update({"artifact_upload", "artifact_upload_ack"})
         manifest = RuntimeV2Handshake(
             protocol_version=2,
             provider_name="simverse_ref",
