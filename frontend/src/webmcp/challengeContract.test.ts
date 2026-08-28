@@ -353,6 +353,16 @@ describe('final five-tool WebMCP contract', () => {
     }
   })
 
+  it('executes every tool when the browser omits execution options', async () => {
+    for (const contract of contracts) {
+      const { actions, store } = toolStore()
+      const definition = createChallengeTool(contract.name, { store, document })
+
+      await expect(definition.execute(contract.validInput)).resolves.toBeDefined()
+      expect(actions[contract.action]).toHaveBeenCalledOnce()
+    }
+  })
+
   it('updates the visible Agent Activity region after an actual tool execution', async () => {
     const { store } = toolStore()
     render(createElement(AgentActivityPanel, { toolDocument: document }))

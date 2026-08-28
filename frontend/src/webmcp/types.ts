@@ -19,7 +19,7 @@ export interface WebMcpRegistrationOptions {
 }
 
 export interface WebMcpToolExecutionOptions {
-  readonly signal: AbortSignal
+  readonly signal?: AbortSignal
 }
 
 export interface RegisteredWebMcpTool {
@@ -45,7 +45,7 @@ export interface WebMcpToolDefinition {
   }
   readonly execute: (
     input: Record<string, unknown>,
-    options: WebMcpToolExecutionOptions,
+    options?: WebMcpToolExecutionOptions,
   ) => unknown | Promise<unknown>
 }
 

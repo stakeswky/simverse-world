@@ -183,6 +183,7 @@ export function createInvestigateTool(
       untrustedContentHint: true,
     },
     execute: async (input, executionOptions) => {
+      const signal = executionOptions?.signal ?? new AbortController().signal
       let startedAt = 0
       try {
         startedAt = clock()
@@ -210,7 +211,7 @@ export function createInvestigateTool(
         })
       }
 
-      if (executionOptions.signal.aborted) {
+      if (signal.aborted) {
         record('failed', 'REQUEST_ABORTED', before)
         return safeError(
           'REQUEST_ABORTED',
@@ -229,7 +230,7 @@ export function createInvestigateTool(
       try {
         await store.getState().investigate(
           { budget_cap_sc: input.budget_cap_sc },
-          executionOptions.signal,
+          signal,
         )
         const after = store.getState().session
         if (!after) throw new Error('Missing challenge projection.')
@@ -238,7 +239,7 @@ export function createInvestigateTool(
         return output
       } catch (error) {
         const after = store.getState().session
-        const code = errorCode(error, executionOptions.signal.aborted)
+        const code = errorCode(error, signal.aborted)
         record('failed', code, after)
         return safeError(
           code,
@@ -278,6 +279,7 @@ export function createPreviewTool(
       untrustedContentHint: false,
     },
     execute: async (input, executionOptions) => {
+      const signal = executionOptions?.signal ?? new AbortController().signal
       let startedAt = 0
       try {
         startedAt = clock()
@@ -305,7 +307,7 @@ export function createPreviewTool(
         })
       }
 
-      if (executionOptions.signal.aborted) {
+      if (signal.aborted) {
         record('failed', 'REQUEST_ABORTED', before)
         return safeError(
           'REQUEST_ABORTED',
@@ -327,7 +329,7 @@ export function createPreviewTool(
             crisis_id: input.crisis_id,
             budget_cap_sc: input.budget_cap_sc,
           },
-          executionOptions.signal,
+          signal,
         )
         const after = store.getState().session
         if (!after) throw new Error('Missing challenge projection.')
@@ -336,7 +338,7 @@ export function createPreviewTool(
         return output
       } catch (error) {
         const after = store.getState().session
-        const code = errorCode(error, executionOptions.signal.aborted)
+        const code = errorCode(error, signal.aborted)
         record('failed', code, after)
         return safeError(
           code,
@@ -380,6 +382,7 @@ export function createCommitTool(
       untrustedContentHint: false,
     },
     execute: async (input, executionOptions) => {
+      const signal = executionOptions?.signal ?? new AbortController().signal
       let startedAt = 0
       try {
         startedAt = clock()
@@ -409,7 +412,7 @@ export function createCommitTool(
         })
       }
 
-      if (executionOptions.signal.aborted) {
+      if (signal.aborted) {
         record('failed', 'REQUEST_ABORTED', before)
         return safeError(
           'REQUEST_ABORTED',
@@ -432,7 +435,7 @@ export function createCommitTool(
             expected_world_version: input.expected_world_version,
             diff_hash: input.diff_hash,
           },
-          executionOptions.signal,
+          signal,
         )
         const after = store.getState().session
         if (!after) throw new Error('Missing challenge projection.')
@@ -441,7 +444,7 @@ export function createCommitTool(
         return output
       } catch (error) {
         const after = store.getState().session
-        const code = errorCode(error, executionOptions.signal.aborted)
+        const code = errorCode(error, signal.aborted)
         record('failed', code, after)
         return safeError(
           code,
@@ -481,6 +484,7 @@ export function createVerifyTool(
       untrustedContentHint: false,
     },
     execute: async (input, executionOptions) => {
+      const signal = executionOptions?.signal ?? new AbortController().signal
       let startedAt = 0
       try {
         startedAt = clock()
@@ -510,7 +514,7 @@ export function createVerifyTool(
         })
       }
 
-      if (executionOptions.signal.aborted) {
+      if (signal.aborted) {
         record('failed', 'REQUEST_ABORTED', before)
         return safeError(
           'REQUEST_ABORTED',
@@ -532,7 +536,7 @@ export function createVerifyTool(
             receipt_id: input.receipt_id,
             advance_hours: input.advance_hours,
           },
-          executionOptions.signal,
+          signal,
         )
         const after = store.getState().session
         if (!after) throw new Error('Missing challenge projection.')
@@ -541,7 +545,7 @@ export function createVerifyTool(
         return output
       } catch (error) {
         const after = store.getState().session
-        const code = errorCode(error, executionOptions.signal.aborted)
+        const code = errorCode(error, signal.aborted)
         record('failed', code, after)
         return safeError(
           code,
@@ -580,6 +584,7 @@ export function createResetTool(
       untrustedContentHint: false,
     },
     execute: async (input, executionOptions) => {
+      const signal = executionOptions?.signal ?? new AbortController().signal
       let startedAt = 0
       try {
         startedAt = clock()
@@ -607,7 +612,7 @@ export function createResetTool(
         })
       }
 
-      if (executionOptions.signal.aborted) {
+      if (signal.aborted) {
         record('failed', 'REQUEST_ABORTED', before)
         return safeError(
           'REQUEST_ABORTED',
@@ -626,7 +631,7 @@ export function createResetTool(
       try {
         await store.getState().reset(
           { expected_generation: input.expected_generation },
-          executionOptions.signal,
+          signal,
         )
         const after = store.getState().session
         if (!after) throw new Error('Missing challenge projection.')
@@ -635,7 +640,7 @@ export function createResetTool(
         return output
       } catch (error) {
         const after = store.getState().session
-        const code = errorCode(error, executionOptions.signal.aborted)
+        const code = errorCode(error, signal.aborted)
         record('failed', code, after)
         return safeError(
           code,
