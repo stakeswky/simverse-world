@@ -160,6 +160,7 @@ LandingPage 保留现有视觉体系、公开小镇入口，以及世界、居�
 | `state` | `pending \| chosen \| result_ready \| result_viewed` |
 | `scenario_snapshot_json` | 创建时的完整可见场景快照 |
 | `choice_key` | 未选择时 `null`，选择后不可变 |
+| `choice_idempotency_key` | 未选择时 `null`；首次选择的全局唯一 UUID4 长期绑定，不随产品事件清理删除 |
 | `immediate_result_json` | 未选择时空对象或 `null`；选择后不可变 |
 | `delayed_result_json` | 未选择时空对象或 `null`；选择后保存，但到期前绝不出现在 API 响应中 |
 | `first_viewed_at` | 首次成功读取可用 `/today` 的服务端时间 |
@@ -172,6 +173,7 @@ LandingPage 保留现有视觉体系、公开小镇入口，以及世界、居�
 硬约束：
 
 - `UNIQUE(user_id, experiment_key, day_key)`。
+- 非空 `choice_idempotency_key` 全局唯一，且仅允许与非空 `choice_key` 同时存在。
 - 状态、场景版本和 choice 只能取注册表允许值。
 - 用户、实验、日期、场景、选择和全部结果快照一经进入下一状态不可改写。
 - JSON 只保存版本化产品内容，不保存聊天、记忆正文、邮箱、Token 或请求元数据。
