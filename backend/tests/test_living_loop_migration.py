@@ -193,6 +193,30 @@ def _exercise_constraints(connection: sa.Connection) -> None:
     }
     connection.execute(days.insert().values(**valid_day))
 
+    durable_key = "00000000-0000-4000-8000-000000000099"
+    connection.execute(days.insert().values(**{
+        **valid_day,
+        "id": "day-with-key",
+        "user_id": "user-2",
+        "choice_key": "public_support",
+        "choice_idempotency_key": durable_key,
+    }))
+    with pytest.raises(sa.exc.IntegrityError):
+        connection.execute(days.insert().values(**{
+            **valid_day,
+            "id": "day-duplicate-key",
+            "user_id": "user-3",
+            "choice_key": "private_mediation",
+            "choice_idempotency_key": durable_key,
+        }))
+    with pytest.raises(sa.exc.IntegrityError):
+        connection.execute(days.insert().values(**{
+            **valid_day,
+            "id": "day-key-without-choice",
+            "user_id": "user-3",
+            "choice_idempotency_key": "00000000-0000-4000-8000-000000000100",
+        }))
+
     with pytest.raises(sa.exc.IntegrityError):
         connection.execute(
             days.insert().values(
