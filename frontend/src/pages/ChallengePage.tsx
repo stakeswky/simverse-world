@@ -86,11 +86,11 @@ export function ChallengePage() {
   const setRegistrationState = useChallengeStore(
     (state) => state.setRegistrationState,
   )
+  const diagnosticsEnabled = new URLSearchParams(location.search).get('diagnostics') === '1'
   const [surfaceManager] = useState(() => new ChallengeToolSurfaceManager({
-    enabled: import.meta.env.VITE_WEBMCP_ENABLED === 'true',
+    enabled: import.meta.env.VITE_WEBMCP_ENABLED === 'true' && !diagnosticsEnabled,
     createTool: (name) => createChallengeTool(name),
   }))
-  const diagnosticsEnabled = new URLSearchParams(location.search).get('diagnostics') === '1'
 
   useEffect(() => {
     void initialize().catch(() => undefined)

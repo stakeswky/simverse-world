@@ -708,6 +708,10 @@ describe('ChallengePage', () => {
     renderPage('/challenge?diagnostics=1')
 
     await waitFor(() => expect(registeredTool?.name).toBe('simverse_get_challenge_status'))
+    expect(registerTool).toHaveBeenCalledTimes(1)
+    expect(registerTool.mock.calls.map(([tool]) => tool.name)).toEqual([
+      'simverse_get_challenge_status',
+    ])
     expect(screen.getByText('0.1.0')).toBeInTheDocument()
     expect(screen.getByText(registeredTool?.name ?? '')).toBeInTheDocument()
   })
