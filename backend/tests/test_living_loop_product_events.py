@@ -125,6 +125,42 @@ async def test_client_cannot_submit_server_authoritative_events(
     assert await _count(db_session) == 0
 
 
+async def test_auth_precedes_body_validation_and_errors_never_echo_secrets(
+    client, db_session, monkeypatch,
+) -> None:
+    _enable(monkeypatch)
+    user, _ = await create_user(db_session, "event-validation-privacy")
+    secret = "Bearer top-secret-must-not-echo"
+    malformed = {
+        "events": [{
+            "event_id": str(uuid4()),
+            "session_id": None,
+            "event_name": "living_loop_today_viewed",
+            "properties": {
+                "surface_version": 1,
+                "entry_point": "direct",
+                "token": secret,
+            },
+        }],
+    }
+
+    unauthenticated = await client.post(
+        "/product-events/batch",
+        json=malformed,
+    )
+    authenticated = await client.post(
+        "/product-events/batch",
+        headers=auth_headers(user),
+        json=malformed,
+    )
+
+    assert unauthenticated.status_code == 401
+    assert authenticated.status_code == 422
+    assert secret not in unauthenticated.text
+    assert secret not in authenticated.text
+    assert await _count(db_session) == 0
+
+
 @pytest.mark.parametrize(
     "properties",
     [

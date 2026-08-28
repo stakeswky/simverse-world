@@ -95,6 +95,34 @@ async def test_all_user_endpoints_require_authentication(client) -> None:
     assert [response.status_code for response in responses] == [401, 401, 401, 401]
 
 
+async def test_auth_precedes_choose_validation_and_errors_do_not_echo_input(
+    client, db_session, monkeypatch,
+) -> None:
+    _enable(monkeypatch)
+    user, _ = await create_user(db_session, "choose-validation-privacy")
+    secret = "private-effect-must-not-echo"
+    malformed = {
+        "choice_key": "public_support",
+        "idempotency_key": str(uuid4()),
+        "immediate_result": {"summary": secret},
+    }
+
+    unauthenticated = await client.post(
+        "/living-loop/decisions/not-a-uuid/choose",
+        json=malformed,
+    )
+    authenticated = await client.post(
+        f"/living-loop/decisions/{uuid4()}/choose",
+        headers=auth_headers(user),
+        json=malformed,
+    )
+
+    assert unauthenticated.status_code == 401
+    assert authenticated.status_code == 422
+    assert secret not in unauthenticated.text
+    assert secret not in authenticated.text
+
+
 async def test_feature_off_is_predictable_and_writes_no_day(
     client, db_session, monkeypatch,
 ) -> None:

@@ -171,7 +171,6 @@ async def test_metrics_calculate_unique_funnel_median_distribution_and_48h_retur
     assert body["choice_completion_rate"] == 1.0
     assert body["settled_result_count"] == 2
     assert body["delayed_result_viewed_unique_users"] == 2
-    assert body["return_within_48h_users"] == 1
     assert body["return_within_48h_rate"] == 0.5
     assert body["median_choice_seconds"] == 60.0
     assert body["choice_distribution"] == [
@@ -192,3 +191,42 @@ async def test_metrics_calculate_unique_funnel_median_distribution_and_48h_retur
         "must-not-leak",
     ):
         assert forbidden not in serialized
+
+
+async def test_48h_return_rate_uses_mature_decisions_not_unique_users(
+    client, db_session, monkeypatch,
+) -> None:
+    monkeypatch.setattr(settings, "living_loop_p0_enabled", True)
+    admin, _ = await create_user(db_session, "metrics-decision-admin", is_admin=True)
+    returning_user, _ = await create_user(db_session, "metrics-repeat-user")
+    now = datetime.now(UTC)
+    first_start = now - timedelta(days=5)
+    second_start = now - timedelta(days=3)
+
+    await _day(
+        db_session,
+        user_id=returning_user.id,
+        index=11,
+        choice_key="public_support",
+        first_viewed_at=first_start,
+        choice_confirmed_at=first_start + timedelta(seconds=20),
+        result_viewed_at=first_start + timedelta(hours=9),
+    )
+    await _day(
+        db_session,
+        user_id=returning_user.id,
+        index=12,
+        choice_key="collect_evidence",
+        first_viewed_at=second_start,
+        choice_confirmed_at=second_start + timedelta(seconds=40),
+        result_viewed_at=second_start + timedelta(hours=60),
+    )
+    await db_session.commit()
+
+    response = await client.get(
+        "/admin/product-metrics/living-loop-p0",
+        headers=auth_headers(admin),
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["return_within_48h_rate"] == 0.5
