@@ -366,7 +366,7 @@ describe('TodayPage states and consequence flow', () => {
     renderToday()
 
     const delayedHeading = await screen.findByRole('heading', { name: '港口传来新进展' })
-    expect(delayedHeading).toHaveFocus()
+    await waitFor(() => expect(delayedHeading).toHaveFocus())
     expect(screen.getByText(delayedResult.summary)).toBeInTheDocument()
     await waitFor(() => expect(livingLoopApi.markLivingLoopResultViewed).toHaveBeenCalledTimes(1))
     expect(livingLoopApi.markLivingLoopResultViewed).toHaveBeenCalledWith(DECISION_ID)
@@ -413,7 +413,7 @@ describe('TodayPage states and consequence flow', () => {
     renderToday()
 
     const delayedHeading = await screen.findByRole('heading', { name: '港口传来新进展' })
-    expect(delayedHeading).toHaveFocus()
+    await waitFor(() => expect(delayedHeading).toHaveFocus())
     const townLink = screen.getAllByRole('link', { name: '进入小镇' })[0]
     townLink.focus()
     expect(townLink).toHaveFocus()
